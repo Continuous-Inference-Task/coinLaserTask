@@ -1,0 +1,5 @@
+blockID,sourceImage,volatility,stochasticity,blockFileName
+1,radioactive2.png,1,0,onlineTrain_v4_block11.csv
+2,radioactive1.png,1,1,onlineTrain_v4_block12.csv
+3,radioactive4.png,0,0,onlineTrain_v4_block9.csv
+4,radioactive3.png,0,1,onlineTrain_v4_block10.csv

@@ -1,0 +1,96 @@
+# --- Runtime output ---
+data/
+# Keep the directory placeholder
+!data/.gitkeep
+
+# --- Sequence generation artifacts ---
+# Large pickle files are regenerated, not committed
+sequences/*.pkl
+sequences/*.mat
+sequences/**/*.pkl
+sequences/**/*.mat
+
+# --- Python ---
+__pycache__/
+*.py[codz]
+*$py.class
+*.so
+
+# --- Distribution / packaging ---
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Installer logs ---
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Unit test / coverage ---
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# --- Virtual environments ---
+stw/
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# --- IDEs ---
+.vscode/
+.spyderproject
+.spyproject
+.ropeproject
+.ruff_cache/
+
+# --- Jupyter ---
+.ipynb_checkpoints
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- MATLAB (for legacy reference) ---
+*.asv
+*.m~
+*.autosave
+*.p
+*.mex*
+*.mlappinstall
+*.mltbx
+*.ctf
+*.slxc
+.MATLABDriveTag
+helpsearch*/
+slprj/
+sccprj/
+codegen/
