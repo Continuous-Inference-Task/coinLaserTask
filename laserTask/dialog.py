@@ -34,18 +34,18 @@ from PyQt6.QtWidgets import (
 )
 
 # ── palette ────────────────────────────────────────────────────────────────
-_BG       = "#11111b"   # window background
-_CARD     = "#1e1e2e"   # form card background
-_SURFACE  = "#313244"   # input background
-_BORDER   = "#45475a"   # subtle border
-_BORDER_FOCUS = "#89b4fa"
-_ACCENT   = "#89b4fa"   # blue accent
-_ACCENT_H = "#b4befe"   # hover
-_TEXT     = "#cdd6f4"   # primary text
-_SUBTEXT  = "#a6adc8"   # labels / hints
-_PLACEHOLDER = "#7f849c"  # dropdown placeholder colour
-_SUCCESS  = "#a6e3a1"
-_ERROR    = "#f38ba8"
+_BG       = "#1e1e1e"   # window background
+_CARD     = "#252526"   # form card background
+_SURFACE  = "#333333"   # input background
+_BORDER   = "#666666"   # clear border
+_BORDER_FOCUS = "#007acc"
+_ACCENT   = "#007acc"   # standard blue accent
+_ACCENT_H = "#0098ff"   # hover
+_TEXT     = "#ffffff"   # primary text
+_SUBTEXT  = "#cccccc"   # labels / hints
+_PLACEHOLDER = "#aaaaaa"  # dropdown placeholder colour
+_SUCCESS  = "#4caf50"
+_ERROR    = "#f44336"
 
 _STYLESHEET = f"""
 /* ── window ── */
@@ -147,24 +147,27 @@ QFrame#sep {{
 }}
 
 /* ── buttons ── */
-QDialogButtonBox QPushButton {{
+QPushButton#btn_ok, QPushButton#btn_cancel {{
+    border-radius: 4px;
+    padding: 8px 24px;
+    font-size: 13px;
+    font-weight: 600;
+    min-width: 90px;
+}}
+QPushButton#btn_ok {{
     background-color: {_ACCENT};
     color: white;
     border: none;
-    border-radius: 7px;
-    padding: 9px 28px;
-    font-size: 13px;
-    font-weight: 600;
-    min-width: 100px;
 }}
-QDialogButtonBox QPushButton:hover  {{ background-color: {_ACCENT_H}; }}
-QDialogButtonBox QPushButton:pressed {{ background-color: #6c5ce7; }}
-QDialogButtonBox QPushButton[text="Cancel"] {{
+QPushButton#btn_ok:hover  {{ background-color: {_ACCENT_H}; }}
+QPushButton#btn_ok:pressed {{ background-color: #005a9e; }}
+
+QPushButton#btn_cancel {{
     background-color: transparent;
     color: {_SUBTEXT};
-    border: 1.5px solid {_BORDER};
+    border: 1px solid {_BORDER};
 }}
-QDialogButtonBox QPushButton[text="Cancel"]:hover {{
+QPushButton#btn_cancel:hover {{
     color: {_TEXT};
     border-color: {_BORDER_FOCUS};
     background-color: {_SURFACE};
@@ -297,10 +300,14 @@ class SessionDialog(QDialog):
         root.addWidget(card)
 
         # ── Buttons ──
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-        )
+        buttons = QDialogButtonBox()
+        btn_ok = QPushButton("OK")
+        btn_ok.setObjectName("btn_ok")
+        btn_cancel = QPushButton("Cancel")
+        btn_cancel.setObjectName("btn_cancel")
+
+        buttons.addButton(btn_ok, QDialogButtonBox.ButtonRole.AcceptRole)
+        buttons.addButton(btn_cancel, QDialogButtonBox.ButtonRole.RejectRole)
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
@@ -370,9 +377,6 @@ def show_session_dialog(
         Populated field values, or None if the user cancelled.
     """
     app = QApplication.instance() or QApplication([])
-
-    # Force Fusion so the system GTK/KDE theme doesn't override our styles
-    app.setStyle("Fusion")
 
     # Dark palette covers areas stylesheets can't reach (e.g. scrollbars,
     # combo popup shadow on some compositors)
