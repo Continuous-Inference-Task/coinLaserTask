@@ -213,6 +213,7 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "sessions": list(c.sessions),
         "orders": list(c.orders),
         "framings": list(c.framings),
+        "dialog_fields": list(c.dialog_fields),
         "keyboard_backend": c.keyboard_backend,
     }
 
@@ -346,6 +347,7 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
         "sessions": "sessions",
         "orders": "orders",
         "framings": "framings",
+        "dialog_fields": "dialog_fields",
         "keyboard_backend": "keyboard_backend",
     }
 
@@ -572,42 +574,25 @@ def configure_design(cfg: Dict[str, Any]) -> Dict[str, Any]:
         cfg.get("enable_practice", True),
         hint_text="Shown before the main blocks; good for first-time participants",
     )
-
-    visits = cfg.get("visits", ["1", "2"])
-    sessions = cfg.get("sessions", ["1", "2"])
-    orders = cfg.get("orders", ["1", "2"])
-
-    cfg["visits"] = prompt_list(
-        "Visit numbers",
-        visits,
-        hint_text="Comma-separated list shown in the pre-experiment dropdown",
-    )
-    cfg["sessions"] = prompt_list(
-        "Session numbers",
-        sessions,
-        hint_text="Comma-separated; usually 1–2 for a two-session study",
-    )
-    cfg["orders"] = prompt_list(
-        "Order numbers",
-        orders,
-        hint_text="Comma-separated; 1–4 gives full counterbalancing (2 stable-first, 2 volatile-first)",
-    )
-
-    n_visits = len(cfg["visits"])
-    n_sessions = len(cfg["sessions"])
-    n_orders = len(cfg["orders"])
-    info(
-        f"Design matrix: {n_visits} visits × {n_sessions} sessions "
-        f"× {n_orders} orders = {n_visits * n_sessions * n_orders} possible combinations"
-    )
     return cfg
 
 
 def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Startup Dialog Options")
     info("These control what appears in the popup when the experimenter runs the task.")
-    info("The dialog prompts for: participant ID, visit, session, order, and framing.")
 
+    # ── which fields appear ──
+    current_fields = cfg.get("dialog_fields", ["participant", "visit", "session", "order", "framing"])
+    info(f"Currently shown fields: {', '.join(current_fields)}")
+    info("Available: participant, visit, session, order, framing (plus any custom free-text field)")
+
+    cfg["dialog_fields"] = prompt_list(
+        "Dialog fields to show",
+        current_fields,
+        hint_text="Comma-separated; e.g. participant,visit,session to hide order & framing",
+    )
+
+    # ── dropdown options for known fields ──
     visits = cfg.get("visits", ["1", "2"])
     sessions = cfg.get("sessions", ["1", "2"])
     orders = cfg.get("orders", ["1", "2"])
@@ -634,8 +619,9 @@ def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
         hint_text="Comma-separated; e.g. 'loss,win' or just 'loss' to fix the framing",
     )
 
-    n = len(cfg["visits"]) * len(cfg["sessions"]) * len(cfg["orders"]) * len(cfg["framings"])
-    info(f"  → Experimenter will choose from: visit × session × order × framing = {n} combinations")
+    visible = [f for f in cfg["dialog_fields"] if f in ("visit", "session", "order", "framing")]
+    if visible:
+        info(f"  → Experimenter will choose from: {' × '.join(visible)} combinations")
     return cfg
 
 
@@ -962,11 +948,11 @@ SECTION_REGISTRY: List[Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]
     ("1", "Machine setup (monitor, fullscreen, refresh rate)", configure_machine),
     ("2", "Input & controls (keyboard vs. response box, keys)", configure_input),
     ("3", "Trigger mode & hardware ports", configure_triggers),
-    ("4", "Experiment design (blocks, visits, sessions, orders)", configure_design),
+    ("4", "Experiment design (blocks, practice)", configure_design),
     ("5", "Shield mechanics & reward (size, speed, loss factor)", configure_shield_reward),
     ("6", "Auditory MMN (tone frequencies, duration, ISI)", configure_audio),
     ("7", "Sequence generation (noise levels, volatility, durations)", configure_stimgen),
-    ("8", "Startup dialog (visit/session/order dropdowns, framing)", configure_dialog),
+    ("8", "Startup dialog (which fields, dropdown options, framing)", configure_dialog),
 ]
 
 SECTION_MAP: Dict[str, Tuple[str, Callable[[Dict[str, Any]], Dict[str, Any]]]] = {
