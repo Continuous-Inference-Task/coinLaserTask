@@ -301,20 +301,18 @@ class SessionDialog(QDialog):
         root.addWidget(card)
 
         # ── Buttons ──
-        buttons = QDialogButtonBox()
         btn_ok = QPushButton("OK")
         btn_ok.setObjectName("btn_ok")
         btn_cancel = QPushButton("Cancel")
         btn_cancel.setObjectName("btn_cancel")
 
-        buttons.addButton(btn_ok, QDialogButtonBox.ButtonRole.AcceptRole)
-        buttons.addButton(btn_cancel, QDialogButtonBox.ButtonRole.RejectRole)
-        buttons.accepted.connect(self._on_accept)
-        buttons.rejected.connect(self.reject)
+        btn_ok.clicked.connect(self._on_accept)
+        btn_cancel.clicked.connect(self.reject)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        btn_row.addWidget(buttons)
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(btn_ok)
         root.addLayout(btn_row)
 
     # ── validation ─────────────────────────────────────────────────────────
