@@ -182,6 +182,7 @@ def prompt_multiselect(
     *,
     hint_text: str = "",
     action_keys: Optional[Dict[str, str]] = None,
+    header_text: Optional[str] = None,
 ) -> Tuple[List[str], Optional[str]]:
     """Interactive checkbox list — space to toggle, arrows to navigate.
 
@@ -203,6 +204,9 @@ def prompt_multiselect(
         ``{"r": "run experiment", "g": "generate"}``.  When pressed the
         function returns immediately with that key as the second tuple
         element.
+    header_text :
+        Optional banner title drawn at the very top of every redraw
+        (e.g. ``"CoIn Laser Task — Setup"``).
 
     Returns
     -------
@@ -224,39 +228,41 @@ def prompt_multiselect(
         old = termios.tcgetattr(fd)
         cursor = 0
 
-        def _draw() -> None:
-            # Move cursor up to the start of our output and redraw everything
-            lines = 4 + len(options)  # prompt + hint + blank + footer + N items
-            if action_keys:
-                lines += 1
-            sys.stdout.write(f"\033[{lines}A\033[J")
+        def _redraw() -> None:
+            """Clear screen and repaint everything from scratch."""
+            clear()
+            if header_text:
+                width = 57
+                bar = "─" * (width - 2)
+                sys.stdout.write(
+                    _c(C["cyan"], f"\n╭{bar}╮\n")
+                    + _c(C["cyan"], "│")
+                    + _c(C["bold"], header_text.center(width - 2))
+                    + _c(C["cyan"], "│\n")
+                    + _c(C["cyan"], f"╰{bar}╯\n\n")
+                )
             sys.stdout.write(f"  {text}:\n")
             if hint_text:
-                print(_c(C["dim"], f"     {hint_text}"))
-            else:
-                print()
+                sys.stdout.write(_c(C["dim"], f"     {hint_text}") + "\n")
+            sys.stdout.write("\n")
             for i, opt in enumerate(options):
                 mark = _c(C["green"], "[x]") if opt in selected else _c(C["dim"], "[ ]")
                 pointer = _c(C["cyan"], " ›") if i == cursor else "  "
-                print(f"  {pointer} {mark} {opt}")
-            print()
-            footer_parts = [
-                f"{_c(C['dim'], '↑↓/jk')} navigate",
-                f"{_c(C['dim'], 'space')} toggle",
-                f"{_c(C['dim'], 'enter')} confirm",
-            ]
+                sys.stdout.write(f"  {pointer} {mark} {opt}\n")
+            sys.stdout.write("\n")
+            nav = f"{_c(C['dim'], '↑↓/jk')} navigate   {_c(C['dim'], 'space')} toggle   {_c(C['dim'], 'enter')} confirm"
             if action_keys:
-                ak_labels = "  ".join(
+                ak = "   ".join(
                     f"{_c(C['dim'], k)} {v}" for k, v in action_keys.items()
                 )
-                footer_parts.append(ak_labels)
-            footer_parts.append(f"{_c(C['dim'], 'a')} all  {_c(C['dim'], 'n')} none")
-            print(_c(C["dim"], "  " + "   ".join(footer_parts)))
+                nav += f"   {ak}"
+            nav += f"   {_c(C['dim'], 'a')} all  {_c(C['dim'], 'n')} none"
+            sys.stdout.write(f"  {nav}\n")
             sys.stdout.flush()
 
         try:
             tty.setraw(fd)
-            _draw()
+            _redraw()
             while True:
                 ch = sys.stdin.read(1)
 
@@ -294,19 +300,15 @@ def prompt_multiselect(
 
                 # ── action keys ──
                 elif action_keys and ch in action_keys:
-                    sys.stdout.write(f"\033[{4 + len(options)}B\n")
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old)
+                    clear()
                     return sorted(selected, key=lambda o: options.index(o)), ch
 
-                _draw()
+                _redraw()
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
-        # Clear the multiselect and leave one blank line below
-        lines = 4 + len(options)
-        if action_keys:
-            lines += 1
-        sys.stdout.write(f"\033[{lines}B\n")
-        sys.stdout.flush()
+        clear()
         return sorted(selected, key=lambda o: options.index(o)), None
 
     except (ImportError, termios.error, AttributeError):
@@ -770,14 +772,13 @@ def configure_design(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Startup Dialog Options")
-    info("These control what appears in the popup when the experimenter runs the task.")
 
     # ── which fields appear (interactive multiselect) ──
     available_fields = ["participant", "visit", "session", "order", "framing"]
     current_fields = cfg.get("dialog_fields", ["participant", "visit", "session", "order", "framing"])
 
     cfg["dialog_fields"], _ = prompt_multiselect(
-        "Show these fields in the session dialog",
+        "Which fields should appear in the session dialog?",
         available_fields,
         defaults=current_fields,
         hint_text="space=toggle  ↑↓/jk=navigate  enter=confirm",
@@ -1166,18 +1167,14 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
     all_slugs = [slug for slug, _, _ in ALL_SECTIONS]
 
     while True:
-        clear()
-        header("CoIn Laser Task — Setup")
-
-        if dirty:
-            print(_c(C["yellow"], "  ← unsaved changes in memory"))
-            print()
+        dirty_warn = _c(C["yellow"], "  ← unsaved changes in memory") if dirty else ""
 
         selected_labels, action = prompt_multiselect(
             "Select sections to configure",
             all_options,
             defaults=[],
-            hint_text="space=toggle  ↑↓/jk=navigate  enter=run selected",
+            header_text="CoIn Laser Task — Setup",
+            hint_text=dirty_warn or "space=toggle  ↑↓/jk=navigate  enter=run selected",
             action_keys={
                 "r": "run experiment",
                 "g": "generate sequences",
