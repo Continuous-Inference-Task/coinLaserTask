@@ -77,13 +77,13 @@ def wait_for_key(
         stim.setAutoDraw(True)
     win.flip()
 
-    resp_kb = keyboard.Keyboard()
+    default_kb.clearEvents()
     clk = core.Clock()
     key_name = None
 
     while True:
         if clk.getTime() >= min_wait:
-            keys = resp_kb.getKeys(waitRelease=False)
+            keys = default_kb.getKeys(waitRelease=False)
             if keys:
                 key_name = keys[-1].name
                 exp_handler.addData(f"{label}.key", key_name)

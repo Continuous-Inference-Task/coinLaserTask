@@ -126,7 +126,7 @@ class ExperimentConfig:
     """Framing options shown in the startup dialog dropdown."""
 
     # -- Keyboard backend --
-    keyboard_backend: str = "event"
+    keyboard_backend: str = ""
     """PsychoPy keyboard backend.
 
     Options: ``"ptb"`` (Psychtoolbox, best precision, requires elevated
@@ -213,7 +213,7 @@ class ExperimentConfig:
             )
         # Auto-select OS-appropriate defaults if not explicitly set
         if not self.keyboard_backend:
-            self.keyboard_backend = "ptb" if sys.platform == "win32" else "event"
+            self.keyboard_backend = "ptb" if sys.platform == "win32" else "iohub"
         if not self.serial_port:
             if sys.platform == "win32":
                 self.serial_port = "COM6"
