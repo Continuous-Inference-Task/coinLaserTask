@@ -786,7 +786,6 @@ def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "Which fields should appear in the session dialog?",
         available_fields,
         defaults=current_fields,
-        hint_text="space=toggle  ↑↓/jk=navigate  enter=confirm",
     )
 
     # Always force-include participant (required for data files)

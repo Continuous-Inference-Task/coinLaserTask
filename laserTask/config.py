@@ -124,24 +124,13 @@ class ExperimentConfig:
     )
     """Fields shown in the session setup dialog.
 
-    Each entry is either a known field name (``"participant"``, ``"visit"``,
-    ``"session"``, ``"order"``, ``"framing"``) or an arbitrary free-text
-    field.  Known fields render as appropriate widgets (auto-detected
-    participant ID, dropdowns for visit / session / order / framing);
-    unknown fields render as plain text inputs.
+    Must be a subset of ``["participant", "visit", "session", "order",
+    "framing"]``.  ``"participant"`` is always force-included even if
+    omitted (required for data-file naming).
 
-    ``"participant"`` is always force-included even if omitted from the
-    list because it is required for data-file naming.
-
-    Example
-    -------
-    To run without framings::
+    Example — run without framings::
 
         dialog_fields = ["participant", "visit", "session", "order"]
-
-    To add a custom experimenter-notes field::
-
-        dialog_fields = ["participant", …, "experimenter_notes"]
     """
 
     # -- Experiment structure --

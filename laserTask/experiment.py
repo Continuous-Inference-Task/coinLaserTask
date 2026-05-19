@@ -121,9 +121,7 @@ def run_experiment(
 
     # ------------------------------------------------------------------ #
     # Build dialog field dict dynamically from cfg.dialog_fields.
-    # Known fields get appropriate widgets (dropdowns, auto-detect);
-    # unknown fields default to free-text input with an empty string.
-    # ------------------------------------------------------------------ #
+    # Only the five known fields are supported.
     _FIELD_BUILDERS = {
         "participant": lambda c: ("participant", "000"),
         "visit":       lambda c: ("visit",       ["-- select visit --"] + c.visits),
@@ -137,8 +135,6 @@ def run_experiment(
         if field_name in _FIELD_BUILDERS:
             key, val = _FIELD_BUILDERS[field_name](cfg)
             _dialog_fields[key] = val
-        else:
-            _dialog_fields[field_name] = ""  # free-text, empty default
 
     # participant is required for data-file naming — force-include if omitted.
     if "participant" not in _dialog_fields:
