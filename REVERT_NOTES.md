@@ -7,7 +7,13 @@ This document keeps track of the main behavioral modifications made to the `coin
 ## 1. Simultaneous Key Inputs
 *   **Behavioral Change:** Replaces Pyglet's naive key-release event handler (which stopped movement if *any* key was released) with a robust list-based key state tracker (`active_keys`). Releasing one key now correctly resumes movement in the direction of another key that remains physically held down.
 *   **Commit:** `2e287244e53fc6f334f25ea3d76c7f3d9a1b1b79` (marked as `feat(controls): implement robust multi-key state tracker for simultaneous inputs`)
-*   **Reversion / Discussion:**
+*   **How Legacy Key Tracking is Impaired / Changed:**
+    1.  **Missing `key_release` Triggers:** In the original script, releasing *any* key sent a `key_release` trigger (`102`). In the new version, if a subject holds **K** (Right) and presses/releases **D** (Left) while keeping **K** held, no `key_release` trigger is emitted during the transition. The trigger sequence records an immediate direction switch: `press_right` -> `press_left` -> `press_right` without a `release` trigger in between. This can break legacy EEG/behavioral analysis parsing scripts that strictly expect alternating `press` and `release` event sequences.
+    2.  **Continuous Movement (No Stationary Phases):** In the original version, releasing one of two simultaneously held keys would flush the keyboard queue, leaving the shield stationary until all keys were lifted and a new key was pressed. The new method automatically resumes movement in the direction of the remaining held key. Any mathematical model expecting the shield to come to a halt upon a key release will see a discrepancy in the trajectory coordinates.
+*   **Alternative Compatibility Options:**
+    *   **Option A: Hybrid Trigger Sequence (Recommended for compatibility):** If a key is released while another remains held, we can programmatically emit a `key_release` trigger *immediately before* emitting the trigger for the resumed direction (within the same frame or on the next frame). This preserves the `press -> release -> press` event loop for the analysis scripts while maintaining smooth movement for the user.
+    *   **Option B: Full-State CSV Logging:** We could add a dedicated CSV column logging the exact set of physically held keys (e.g., `"['k']"`, `"['k', 'd']"`) on every frame, allowing researchers to retrospectively analyze overlapping inputs without relying purely on trigger sequences.
+*   **Reversion:**
     *   If researchers prefer the original "naive stop" behavior (e.g. because modeling subject decision-making counts simultaneous releases as a full stop/reset), this commit can be easily reverted:
         ```bash
         git revert 2e287244e53fc6f334f25ea3d76c7f3d9a1b1b79
