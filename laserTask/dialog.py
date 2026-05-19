@@ -17,178 +17,18 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QPalette, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QFrame,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
-
-# ── palette ────────────────────────────────────────────────────────────────
-_BG       = "#1e1e1e"   # window background
-_CARD     = "#252526"   # form card background
-_SURFACE  = "#333333"   # input background
-_BORDER   = "#666666"   # clear border
-_BORDER_FOCUS = "#007acc"
-_ACCENT   = "#007acc"   # standard blue accent
-_ACCENT_H = "#0098ff"   # hover
-_TEXT     = "#ffffff"   # primary text
-_SUBTEXT  = "#cccccc"   # labels / hints
-_PLACEHOLDER = "#aaaaaa"  # dropdown placeholder colour
-_SUCCESS  = "#4caf50"
-_ERROR    = "#f44336"
-
-_STYLESHEET = f"""
-/* ── window ── */
-QDialog {{
-    background-color: {_BG};
-    color: {_TEXT};
-}}
-
-/* ── card frame ── */
-QFrame#card {{
-    background-color: {_CARD};
-    border-radius: 10px;
-    border: 1px solid {_BORDER};
-}}
-
-/* ── labels ── */
-QLabel {{
-    color: {_TEXT};
-    font-size: 13px;
-    background: transparent;
-}}
-QLabel#title {{
-    font-size: 20px;
-    font-weight: 700;
-    color: {_TEXT};
-    letter-spacing: 0.3px;
-}}
-QLabel#subtitle {{
-    font-size: 12px;
-    color: {_SUBTEXT};
-}}
-QLabel#field_label {{
-    font-size: 12px;
-    font-weight: 600;
-    color: {_SUBTEXT};
-    min-width: 90px;
-}}
-QLabel#hint {{
-    font-size: 11px;
-    color: {_PLACEHOLDER};
-    font-style: italic;
-}}
-
-/* ── text input ── */
-QLineEdit {{
-    background-color: {_SURFACE};
-    color: {_TEXT};
-    border: 1.5px solid {_BORDER};
-    border-radius: 7px;
-    padding: 8px 12px;
-    font-size: 13px;
-    selection-background-color: {_ACCENT};
-}}
-QLineEdit:focus {{
-    border-color: {_BORDER_FOCUS};
-    background-color: #2a2d45;
-}}
-
-/* ── dropdown ── */
-QComboBox {{
-    background-color: {_SURFACE};
-    color: {_TEXT};
-    border: 1.5px solid {_BORDER};
-    border-radius: 7px;
-    padding: 8px 12px;
-    font-size: 13px;
-    min-width: 220px;
-}}
-QComboBox:focus {{
-    border-color: {_BORDER_FOCUS};
-    background-color: #3b3c50;
-}}
-/* popup list */
-QComboBox QAbstractItemView {{
-    background-color: {_SURFACE};
-    color: {_TEXT};
-    border: 1.5px solid {_BORDER_FOCUS};
-    border-radius: 7px;
-    padding: 4px;
-    outline: 0;
-    selection-background-color: {_ACCENT};
-    selection-color: white;
-    show-decoration-selected: 1;
-}}
-QComboBox QAbstractItemView::item {{
-    padding: 7px 12px;
-    border-radius: 4px;
-    min-height: 26px;
-}}
-QComboBox QAbstractItemView::item:selected {{
-    background-color: {_ACCENT};
-    color: white;
-}}
-
-/* ── separator ── */
-QFrame#sep {{
-    background-color: {_BORDER};
-    max-height: 1px;
-}}
-
-/* ── buttons ── */
-QPushButton#btn_ok, QPushButton#btn_cancel {{
-    border-radius: 4px;
-    padding: 8px 24px;
-    font-size: 13px;
-    font-weight: 600;
-    min-width: 90px;
-}}
-QPushButton#btn_ok {{
-    background-color: {_ACCENT};
-    color: white;
-    border: none;
-}}
-QPushButton#btn_ok:hover  {{ background-color: {_ACCENT_H}; }}
-QPushButton#btn_ok:pressed {{ background-color: #005a9e; }}
-
-QPushButton#btn_cancel {{
-    background-color: transparent;
-    color: {_SUBTEXT};
-    border: 1px solid {_BORDER};
-}}
-QPushButton#btn_cancel:hover {{
-    color: {_TEXT};
-    border-color: {_BORDER_FOCUS};
-    background-color: {_SURFACE};
-}}
-
-/* ── error message box ── */
-QMessageBox {{
-    background-color: {_CARD};
-    color: {_TEXT};
-}}
-QMessageBox QLabel {{ color: {_TEXT}; font-size: 13px; }}
-QMessageBox QPushButton {{
-    background-color: {_ACCENT};
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 6px 20px;
-    font-size: 13px;
-}}
-"""
 
 
 # ── participant ID helpers ─────────────────────────────────────────────────
@@ -240,56 +80,40 @@ class SessionDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
-        self.setMinimumWidth(460)
-        self.setStyleSheet(_STYLESHEET)
+        self.setMinimumWidth(400)
 
-        self._fields = fields
         self._widgets: dict[str, QLineEdit | QComboBox] = {}
-        self._build_ui(title)
+        self._build_ui(title, fields)
 
     # ── layout ─────────────────────────────────────────────────────────────
 
-    def _build_ui(self, title: str) -> None:
+    def _build_ui(self, title: str, fields: dict) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 16)
-        root.setSpacing(12)
 
         # ── Header ──
-        hdr = QVBoxLayout()
-        hdr.setSpacing(3)
         lbl_title = QLabel(title)
-        lbl_title.setObjectName("title")
+        font = lbl_title.font()
+        font.setPointSize(font.pointSize() + 4)
+        font.setBold(True)
+        lbl_title.setFont(font)
+        root.addWidget(lbl_title)
+
         lbl_sub = QLabel("Complete all fields before starting the session.")
-        lbl_sub.setObjectName("subtitle")
-        hdr.addWidget(lbl_title)
-        hdr.addWidget(lbl_sub)
-        root.addLayout(hdr)
+        root.addWidget(lbl_sub)
+        root.addSpacing(8)
 
-        # ── Card ──
-        card = QFrame()
-        card.setObjectName("card")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(20, 18, 20, 18)
-        card_layout.setSpacing(12)
-
+        # ── Form ──
         form = QFormLayout()
-        form.setSpacing(10)
-        form.setHorizontalSpacing(16)
-        form.setLabelAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
+        form.setSpacing(6)
 
-        for name, value in self._fields.items():
+        for name, value in fields.items():
             lbl = QLabel(name.replace("_", " ").capitalize() + ":")
-            lbl.setObjectName("field_label")
 
             if isinstance(value, list):
                 widget: QLineEdit | QComboBox = QComboBox()
                 for item in value:
                     widget.addItem(str(item))
                 widget.setCurrentIndex(0)
-                # Grey out the placeholder item visually
-                widget.model().item(0).setForeground(QColor(_PLACEHOLDER))
             else:
                 widget = QLineEdit(str(value))
                 widget.setPlaceholderText("Enter value…")
@@ -297,23 +121,17 @@ class SessionDialog(QDialog):
             self._widgets[name] = widget
             form.addRow(lbl, widget)
 
-        card_layout.addLayout(form)
-        root.addWidget(card)
+        root.addLayout(form)
+        root.addSpacing(8)
 
         # ── Buttons ──
-        btn_ok = QPushButton("OK")
-        btn_ok.setObjectName("btn_ok")
-        btn_cancel = QPushButton("Cancel")
-        btn_cancel.setObjectName("btn_cancel")
-
-        btn_ok.clicked.connect(self._on_accept)
-        btn_cancel.clicked.connect(self.reject)
-
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        btn_row.addWidget(btn_cancel)
-        btn_row.addWidget(btn_ok)
-        root.addLayout(btn_row)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
 
     # ── validation ─────────────────────────────────────────────────────────
 
@@ -331,7 +149,6 @@ class SessionDialog(QDialog):
             msg.setWindowTitle("Incomplete")
             msg.setText("Please complete the following fields:\n" + "\n".join(errors))
             msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setStyleSheet(self.styleSheet())
             msg.exec()
             return
         self.accept()
@@ -375,23 +192,7 @@ def show_session_dialog(
     dict
         Populated field values, or None if the user cancelled.
     """
-    app = QApplication.instance() or QApplication([])
-
-    # Dark palette covers areas stylesheets can't reach (e.g. scrollbars,
-    # combo popup shadow on some compositors)
-    pal = QPalette()
-    pal.setColor(QPalette.ColorRole.Window,          QColor(_BG))
-    pal.setColor(QPalette.ColorRole.WindowText,      QColor(_TEXT))
-    pal.setColor(QPalette.ColorRole.Base,            QColor(_SURFACE))
-    pal.setColor(QPalette.ColorRole.AlternateBase,   QColor(_BG))
-    pal.setColor(QPalette.ColorRole.Text,            QColor(_TEXT))
-    pal.setColor(QPalette.ColorRole.Button,          QColor(_SURFACE))
-    pal.setColor(QPalette.ColorRole.ButtonText,      QColor(_TEXT))
-    pal.setColor(QPalette.ColorRole.Highlight,       QColor(_ACCENT))
-    pal.setColor(QPalette.ColorRole.HighlightedText, QColor("white"))
-    pal.setColor(QPalette.ColorRole.ToolTipBase,     QColor(_SURFACE))
-    pal.setColor(QPalette.ColorRole.ToolTipText,     QColor(_TEXT))
-    app.setPalette(pal)
+    QApplication.instance() or QApplication([])
 
     # Auto-fill participant with next ID if data_root is given
     if data_root is not None and "participant" in fields:
