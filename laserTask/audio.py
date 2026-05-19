@@ -1,11 +1,39 @@
 import sys
 from typing import List, Optional
-from typing import List, Optional
 
-from psychopy import sound, visual, logging
+from psychopy import visual, logging
+if sys.platform == "win32":
+    from psychopy import sound
 
 from laserTask.config import ExperimentConfig, TRIGGER_CODES
 from laserTask.triggers import TriggerManager
+
+if sys.platform != "win32":
+    import numpy as np
+    import sounddevice as sd
+
+    class SimpleTone:
+        def __init__(self, freq, secs, volume):
+            self.secs = secs
+            self.volume = volume
+            
+            sample_rate = 44100
+            t = np.linspace(0, secs, int(sample_rate * secs), False)
+            tone = np.sin(freq * t * 2 * np.pi)
+            
+            window = np.hamming(len(tone))
+            mono = (tone * window * volume).astype(np.float32)
+            self.waveform = np.column_stack((mono, mono))
+
+        def play(self):
+            sd.play(self.waveform, samplerate=44100)
+
+        def stop(self):
+            sd.stop()
+
+        def setVolume(self, vol):
+            self.waveform = self.waveform / self.volume * vol
+            self.volume = vol
 
 class AudioStimulationManager:
     """Background auditory oddball stimulation (optional).
@@ -36,21 +64,33 @@ class AudioStimulationManager:
             return
 
         logging.exp("Audio stimulation ENABLED")
-        self.tone_standard = sound.Sound(
-            config.tone_freq_standard,
-            secs=config.tone_duration,
-            stereo=True, hamming=True,
-            syncToWin=True, name="tone_standard",
-        )
-        self.tone_standard.setVolume(config.tone_volume)
+        if sys.platform == "win32":
+            self.tone_standard = sound.Sound(
+                config.tone_freq_standard,
+                secs=config.tone_duration,
+                stereo=True, hamming=True,
+                syncToWin=True, name="tone_standard",
+            )
+            self.tone_standard.setVolume(config.tone_volume)
 
-        self.tone_deviant = sound.Sound(
-            config.tone_freq_deviant,
-            secs=config.tone_duration,
-            stereo=True, hamming=True,
-            syncToWin=True, name="tone_deviant",
-        )
-        self.tone_deviant.setVolume(config.tone_volume)
+            self.tone_deviant = sound.Sound(
+                config.tone_freq_deviant,
+                secs=config.tone_duration,
+                stereo=True, hamming=True,
+                syncToWin=True, name="tone_deviant",
+            )
+            self.tone_deviant.setVolume(config.tone_volume)
+        else:
+            self.tone_standard = SimpleTone(
+                config.tone_freq_standard,
+                secs=config.tone_duration,
+                volume=config.tone_volume,
+            )
+            self.tone_deviant = SimpleTone(
+                config.tone_freq_deviant,
+                secs=config.tone_duration,
+                volume=config.tone_volume,
+            )
 
         self._reset()
 
