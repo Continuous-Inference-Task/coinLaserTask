@@ -175,6 +175,197 @@ def prompt_list(text: str, default: List[str], *, hint_text: str = "") -> List[s
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+def prompt_multiselect(
+    text: str,
+    options: List[str],
+    defaults: Optional[List[str]] = None,
+    *,
+    hint_text: str = "",
+    action_keys: Optional[Dict[str, str]] = None,
+) -> Tuple[List[str], Optional[str]]:
+    """Interactive checkbox list — space to toggle, arrows to navigate.
+
+    Uses raw terminal mode on Unix for real-time input.  Falls back to a
+    simple numbered-list prompt on platforms without ``termios``.
+
+    Parameters
+    ----------
+    text :
+        Prompt shown above the list.
+    options :
+        All selectable items.
+    defaults :
+        Pre-selected items (must be a subset of *options*).
+    hint_text :
+        Dim explanatory text below the prompt.
+    action_keys :
+        Extra single-key shortcuts with descriptions, e.g.
+        ``{"r": "run experiment", "g": "generate"}``.  When pressed the
+        function returns immediately with that key as the second tuple
+        element.
+
+    Returns
+    -------
+    (selected, action)
+        *selected* – items the user chose (in original *options* order).
+        *action* – ``None`` if confirmed with Enter, or the action-key
+        string if an action key was pressed.
+    """
+    if defaults is None:
+        defaults = []
+    selected: List[str] = [o for o in options if o in defaults]
+
+    # ── Unix raw-terminal path ──
+    try:
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        cursor = 0
+
+        def _draw() -> None:
+            # Move cursor up to the start of our output and redraw everything
+            lines = 4 + len(options)  # prompt + hint + blank + footer + N items
+            if action_keys:
+                lines += 1
+            sys.stdout.write(f"\033[{lines}A\033[J")
+            sys.stdout.write(f"  {text}:\n")
+            if hint_text:
+                print(_c(C["dim"], f"     {hint_text}"))
+            else:
+                print()
+            for i, opt in enumerate(options):
+                mark = _c(C["green"], "[x]") if opt in selected else _c(C["dim"], "[ ]")
+                pointer = _c(C["cyan"], " ›") if i == cursor else "  "
+                print(f"  {pointer} {mark} {opt}")
+            print()
+            footer_parts = [
+                f"{_c(C['dim'], '↑↓/jk')} navigate",
+                f"{_c(C['dim'], 'space')} toggle",
+                f"{_c(C['dim'], 'enter')} confirm",
+            ]
+            if action_keys:
+                ak_labels = "  ".join(
+                    f"{_c(C['dim'], k)} {v}" for k, v in action_keys.items()
+                )
+                footer_parts.append(ak_labels)
+            footer_parts.append(f"{_c(C['dim'], 'a')} all  {_c(C['dim'], 'n')} none")
+            print(_c(C["dim"], "  " + "   ".join(footer_parts)))
+            sys.stdout.flush()
+
+        try:
+            tty.setraw(fd)
+            _draw()
+            while True:
+                ch = sys.stdin.read(1)
+
+                # ── escape sequences (arrows) ──
+                if ch == "\x1b":
+                    nxt = sys.stdin.read(2)
+                    if nxt == "[A":  # up
+                        cursor = (cursor - 1) % len(options)
+                    elif nxt == "[B":  # down
+                        cursor = (cursor + 1) % len(options)
+
+                # ── enter ──
+                elif ch in ("\r", "\n"):
+                    break
+
+                # ── space ──
+                elif ch == " ":
+                    opt = options[cursor]
+                    if opt in selected:
+                        selected.remove(opt)
+                    else:
+                        selected.append(opt)
+
+                # ── j / k vim keys ──
+                elif ch == "j":
+                    cursor = (cursor + 1) % len(options)
+                elif ch == "k":
+                    cursor = (cursor - 1) % len(options)
+
+                # ── a = all, n = none ──
+                elif ch == "a":
+                    selected = list(options)
+                elif ch == "n":
+                    selected = []
+
+                # ── action keys ──
+                elif action_keys and ch in action_keys:
+                    sys.stdout.write(f"\033[{4 + len(options)}B\n")
+                    return sorted(selected, key=lambda o: options.index(o)), ch
+
+                _draw()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+        # Clear the multiselect and leave one blank line below
+        lines = 4 + len(options)
+        if action_keys:
+            lines += 1
+        sys.stdout.write(f"\033[{lines}B\n")
+        sys.stdout.flush()
+        return sorted(selected, key=lambda o: options.index(o)), None
+
+    except (ImportError, termios.error, AttributeError):
+        pass
+
+    # ── fallback: simple numbered prompt ──
+    return _prompt_multiselect_fallback(text, options, defaults, hint_text, action_keys)
+
+
+def _prompt_multiselect_fallback(
+    text: str,
+    options: List[str],
+    defaults: List[str],
+    hint_text: str,
+    action_keys: Optional[Dict[str, str]],
+) -> Tuple[List[str], Optional[str]]:
+    """Fallback when raw terminal mode is unavailable (e.g. Windows)."""
+    selected = set(defaults)
+    while True:
+        print(f"\n  {text}:")
+        if hint_text:
+            print(_c(C["dim"], f"     {hint_text}"))
+        for i, opt in enumerate(options, 1):
+            mark = _c(C["green"], "[x]") if opt in selected else _c(C["dim"], "[ ]")
+            print(f"     {mark} {i}. {opt}")
+        print()
+        print(_c(C["dim"], "  Enter numbers to toggle (e.g. 3,5), or press Enter to confirm."))
+        if action_keys:
+            ak = ", ".join(f"'{k}'={v}" for k, v in action_keys.items())
+            print(_c(C["dim"], f"  Actions: {ak}, 'a'=all, 'n'=none"))
+        raw = input(f"  {_c(C['bold'], '>')} ").strip().lower()
+
+        if not raw:
+            return sorted(selected, key=lambda o: options.index(o)), None
+        if action_keys and raw in action_keys:
+            return sorted(selected, key=lambda o: options.index(o)), raw
+        if raw == "a":
+            selected = set(options)
+            continue
+        if raw == "n":
+            selected = set()
+            continue
+
+        for part in raw.replace(" ", ",").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                idx = int(part) - 1
+                if 0 <= idx < len(options):
+                    opt = options[idx]
+                    if opt in selected:
+                        selected.discard(opt)
+                    else:
+                        selected.add(opt)
+            except ValueError:
+                pass
+
+
 # ── config readers / writers ────────────────────────────────────────────────
 
 def _read_laser_task_config() -> Dict[str, Any]:
@@ -581,16 +772,21 @@ def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Startup Dialog Options")
     info("These control what appears in the popup when the experimenter runs the task.")
 
-    # ── which fields appear ──
+    # ── which fields appear (interactive multiselect) ──
+    available_fields = ["participant", "visit", "session", "order", "framing"]
     current_fields = cfg.get("dialog_fields", ["participant", "visit", "session", "order", "framing"])
-    info(f"Currently shown fields: {', '.join(current_fields)}")
-    info("Available: participant, visit, session, order, framing (plus any custom free-text field)")
 
-    cfg["dialog_fields"] = prompt_list(
-        "Dialog fields to show",
-        current_fields,
-        hint_text="Comma-separated; e.g. participant,visit,session to hide order & framing",
+    cfg["dialog_fields"], _ = prompt_multiselect(
+        "Show these fields in the session dialog",
+        available_fields,
+        defaults=current_fields,
+        hint_text="space=toggle  ↑↓/jk=navigate  enter=confirm",
     )
+
+    # Always force-include participant (required for data files)
+    if "participant" not in cfg["dialog_fields"]:
+        cfg["dialog_fields"] = ["participant"] + cfg["dialog_fields"]
+        info("'participant' was force-included (required for data-file naming).")
 
     # ── dropdown options for known fields ──
     visits = cfg.get("visits", ["1", "2"])
@@ -961,35 +1157,43 @@ SECTION_MAP: Dict[str, Tuple[str, Callable[[Dict[str, Any]], Dict[str, Any]]]] =
 
 
 def run_section_menu(cfg: Dict[str, Any]) -> None:
-    """Interactive menu: pick sections to configure, or run actions."""
+    """Interactive menu — multi-select sections with space, arrows to navigate."""
     dirty = False
+
+    ALL_SECTIONS = [(slug, desc, fn) for slug, desc, fn in SECTION_REGISTRY]
+    slug_to_fn = {slug: fn for slug, _, fn in ALL_SECTIONS}
+    all_options = [f"{slug}. {desc}" for slug, desc, _ in ALL_SECTIONS]
+    all_slugs = [slug for slug, _, _ in ALL_SECTIONS]
 
     while True:
         clear()
         header("CoIn Laser Task — Setup")
 
-        print("  Sections to configure:\n")
-        for slug, desc, _ in SECTION_REGISTRY:
-            print(f"    {_c(C['green'], slug)})  {desc}")
-
-        print()
-        print(f"    {_c(C['green'], 'a')})  Configure everything (all sections)")
-        print(f"  {_c(C['cyan'], 's')})  Show current configuration")
-        print(f"  {_c(C['cyan'], 'g')})  Generate sequences")
-        print(f"  {_c(C['cyan'], 'r')})  Run experiment" + _c(C["dim"], "  (python main.py)"))
         if dirty:
+            print(_c(C["yellow"], "  ← unsaved changes in memory"))
             print()
-            print(f"  {_c(C['yellow'], '  ← unsaved changes in memory')}")
-        print(f"  {_c(C['dim'], 'q')})  Quit & save")
 
-        print()
-        choice = input(f"  {_c(C['bold'], '>')} ").strip().lower()
+        selected_labels, action = prompt_multiselect(
+            "Select sections to configure",
+            all_options,
+            defaults=[],
+            hint_text="space=toggle  ↑↓/jk=navigate  enter=run selected",
+            action_keys={
+                "r": "run experiment",
+                "g": "generate sequences",
+                "s": "show config",
+                "q": "quit & save",
+            },
+        )
 
-        if choice == "q":
+        # ── action keys ──
+        if action == "q":
             break
-        elif choice == "s":
+        elif action == "s":
             show_summary(cfg)
-        elif choice == "r":
+            input(_c(C["dim"], "  Press Enter to continue …"))
+            continue
+        elif action == "r":
             if dirty:
                 warn("Unsaved config changes — run anyway?")
                 if not prompt_yn("Proceed without saving?", True):
@@ -999,43 +1203,8 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
             print()
             subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
             return
-        elif choice == "a":
-            cfg = configure_machine(cfg)
-            cfg = configure_input(cfg)
-            cfg = configure_triggers(cfg)
-            cfg = configure_design(cfg)
-            cfg = configure_shield_reward(cfg)
-            cfg = configure_audio(cfg)
-            cfg = configure_dialog(cfg)
-            cfg = configure_stimgen(cfg)
-            dirty = True
+        elif action == "g":
             show_summary(cfg)
-            if prompt_yn("Save all changes?", True):
-                _write_laser_task_config(cfg)
-                _save_stimgen_from_cfg(cfg.copy())
-                dirty = False
-                success("Configuration saved.")
-                if prompt_yn("Generate sequences now?", True):
-                    if run_sequence_generation(cfg.copy()):
-                        dirty = False
-                    print()
-                    if prompt_yn("Start the experiment?", True):
-                        subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-                        return
-                else:
-                    print()
-                    if prompt_yn("Start the experiment?", True):
-                        subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-                        return
-                    info("Run manually with:  python main.py")
-            else:
-                info("Changes held in memory — save later with 'q'.")
-        elif choice == "g":
-            show_summary(cfg)
-            if prompt_yn("Review sequence generation parameters first?", True):
-                cfg = configure_stimgen(cfg)
-                dirty = True
-                show_summary(cfg)
             if dirty:
                 warn("You have unsaved config changes.")
                 if prompt_yn("Save before generating?", True):
@@ -1048,23 +1217,32 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
                     if prompt_yn("Start the experiment?", True):
                         subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
                         return
-        elif choice in SECTION_MAP:
-            desc, fn = SECTION_MAP[choice]
+            continue
+
+        # ── run selected sections ──
+        if not selected_labels:
+            continue
+
+        selected_slugs = []
+        for label in selected_labels:
+            slug = label.split(".")[0]
+            selected_slugs.append(slug)
+
+        info(f"Running {len(selected_slugs)} section(s): {', '.join(selected_slugs)}")
+        for slug in selected_slugs:
+            fn = slug_to_fn[slug]
             cfg = fn(cfg)
             dirty = True
-            show_summary(cfg)
-            if prompt_yn("Save this section?", True):
-                _write_laser_task_config(cfg)
-                dirty = False
-                success(f"Section {choice} saved.")
-            else:
-                info("Change held in memory.")
-        else:
-            warn(f"Unknown option: '{choice}'")
 
-        if choice != "q":
-            print()
-            input(_c(C["dim"], "  Press Enter to continue …"))
+        show_summary(cfg)
+        if prompt_yn("Save all changes?", True):
+            _write_laser_task_config(cfg)
+            _save_stimgen_from_cfg(cfg.copy())
+            dirty = False
+            success("Configuration saved.")
+        else:
+            info("Changes held in memory — save later with 'q'.")
+        input(_c(C["dim"], "  Press Enter to continue …"))
 
     if dirty:
         print()
