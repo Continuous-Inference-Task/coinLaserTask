@@ -229,8 +229,10 @@ def prompt_multiselect(
         cursor = 0
 
         def _redraw() -> None:
-            """Clear screen and repaint everything from scratch."""
-            clear()
+            """Repaint the entire list in-place using ANSI escape codes.
+            Works directly on the terminal fd — no subprocess, no cursor
+            arithmetic, safe on any terminal width."""
+            sys.stdout.write("\033[H\033[2J")
             if header_text:
                 width = 57
                 bar = "─" * (width - 2)
@@ -246,18 +248,19 @@ def prompt_multiselect(
                 sys.stdout.write(_c(C["dim"], f"     {hint_text}") + "\n")
             sys.stdout.write("\n")
             for i, opt in enumerate(options):
-                mark = _c(C["green"], "[x]") if opt in selected else _c(C["dim"], "[ ]")
+                sel = opt in selected
+                mark = _c(C["green"], "[x]") if sel else _c(C["dim"], "[ ]")
                 pointer = _c(C["cyan"], " ›") if i == cursor else "  "
                 sys.stdout.write(f"  {pointer} {mark} {opt}\n")
             sys.stdout.write("\n")
-            nav = f"{_c(C['dim'], '↑↓/jk')} navigate   {_c(C['dim'], 'space')} toggle   {_c(C['dim'], 'enter')} confirm"
+            # Navigation hints on one line, action keys on another if present.
+            nav = f"  {_c(C['dim'], '↑↓/jk')} navigate   {_c(C['dim'], 'space')} toggle   {_c(C['dim'], 'enter')} confirm   {_c(C['dim'], 'a')} all  {_c(C['dim'], 'n')} none"
+            sys.stdout.write(nav + "\n")
             if action_keys:
                 ak = "   ".join(
                     f"{_c(C['dim'], k)} {v}" for k, v in action_keys.items()
                 )
-                nav += f"   {ak}"
-            nav += f"   {_c(C['dim'], 'a')} all  {_c(C['dim'], 'n')} none"
-            sys.stdout.write(f"  {nav}\n")
+                sys.stdout.write(f"  {ak}\n")
             sys.stdout.flush()
 
         try:
@@ -301,14 +304,16 @@ def prompt_multiselect(
                 # ── action keys ──
                 elif action_keys and ch in action_keys:
                     termios.tcsetattr(fd, termios.TCSADRAIN, old)
-                    clear()
+                    sys.stdout.write("\033[H\033[2J")
+                    sys.stdout.flush()
                     return sorted(selected, key=lambda o: options.index(o)), ch
 
                 _redraw()
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
-        clear()
+        sys.stdout.write("\033[H\033[2J")
+        sys.stdout.flush()
         return sorted(selected, key=lambda o: options.index(o)), None
 
     except (ImportError, termios.error, AttributeError):
