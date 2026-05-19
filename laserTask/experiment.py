@@ -473,6 +473,9 @@ def run_experiment(
         # For explicit laser duration logging
         laser_on = False
         laser_on_time = None
+        
+        active_keys = []
+        last_movement_trigger = None
 
         # --- frame loop ------------------------------------------------ #
         while cur_frame <= n_frames:
@@ -555,38 +558,51 @@ def run_experiment(
                         trig.send(size_trig_val)
 
             # --- (B) check for movement keys  --------------------------- #
-            released = default_kb.getKeys(
+            # 1. Gather all releases
+            new_releases = default_kb.getKeys(
                 keyList=keys_move,
                 clear=True,
                 waitRelease=True,
             )
-            if released:
-                default_kb.getKeys(
-                    keyList=keys_move,
-                    clear=True,
-                    waitRelease=False,
-                )
-                trig_val = TRIGGER_CODES["key_release"]
-                do_send = True
-                key_released = True
+            for k in new_releases:
+                if k.name in active_keys:
+                    active_keys.remove(k.name)
+
+            # 2. Gather all presses
+            new_presses = default_kb.getKeys(
+                keyList=keys_move,
+                clear=True,
+                waitRelease=False,
+            )
+            for k in new_presses:
+                if k.name not in active_keys:
+                    active_keys.append(k.name)
+
+            # 3. Process movement and triggers based on held keys
+            if not active_keys:
+                if not send_resp_triggers:
+                    # We just released all keys
+                    trig_val = TRIGGER_CODES["key_release"]
+                    do_send = True
+                    key_released = True
+                    last_movement_trigger = None
             else:
-                pressed = default_kb.getKeys(
-                    keyList=keys_move,
-                    clear=False,
-                    waitRelease=False,
-                )
-                if pressed:
-                    last = pressed[-1]
-                    if last == cfg.key_right:
-                        shield_rot += cfg.rotation_speed
-                        new_tv = TRIGGER_CODES["key_right"]
-                    else:
-                        shield_rot -= cfg.rotation_speed
-                        new_tv = TRIGGER_CODES["key_left"]
-                    if send_resp_triggers:
-                        trig_val = new_tv
-                        do_send = True
-                        send_resp_triggers = False
+                last_key = active_keys[-1]
+                
+                # Determine intended direction
+                if last_key == cfg.key_right:
+                    shield_rot += cfg.rotation_speed
+                    new_tv = TRIGGER_CODES["key_right"]
+                else:
+                    shield_rot -= cfg.rotation_speed
+                    new_tv = TRIGGER_CODES["key_left"]
+                
+                # Trigger logic
+                if send_resp_triggers or last_movement_trigger != new_tv:
+                    trig_val = new_tv
+                    do_send = True
+                    send_resp_triggers = False
+                    last_movement_trigger = new_tv
 
             # --- (C) stimulus-change trigger (if nothing else sent) -- #
             if is_new and not do_send:
