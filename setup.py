@@ -21,7 +21,6 @@ from __future__ import annotations
 import os
 import re
 import sys
-import textwrap
 import subprocess
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -121,8 +120,11 @@ def prompt(
 
     default_display = _c(C["dim"], f" [default: {default}]") if default else ""
     if hint_text:
-        hint(hint_text)
-    raw = input(f"  {text}{default_display}: ").strip()
+        print(f"  {text}{default_display}:")
+        print(_c(C["dim"], f"     {hint_text}"))
+        raw = input("  > ").strip()
+    else:
+        raw = input(f"  {text}{default_display}: ").strip()
     return raw if raw else default
 
 
@@ -175,95 +177,108 @@ def prompt_list(text: str, default: List[str], *, hint_text: str = "") -> List[s
 
 # ── config readers / writers ────────────────────────────────────────────────
 
-def _read_py_config(path: Path) -> Dict[str, Any]:
-    namespace: Dict[str, Any] = {}
-    if not path.exists():
-        return namespace
-    source = path.read_text()
-    for match in re.finditer(
-        r'^(?P<name>[A-Za-z_]\w*)\s*=\s*(?P<value>.+?)(?:\s*#.*)?$',
-        source,
-        re.MULTILINE,
-    ):
-        name = match.group("name")
-        value_str = match.group("value").strip()
-        if name.startswith("_"):
-            continue
-        try:
-            namespace[name] = eval(value_str, {"__builtins__": {}}, {})
-        except Exception:
-            pass
-    return namespace
-
-
 def _read_laser_task_config() -> Dict[str, Any]:
-    cfg_path = PROJECT_ROOT / "laserTask" / "config.py"
-    source = cfg_path.read_text()
-    result: Dict[str, Any] = {}
-
-    patterns = {
-        "window_size_w": (r'window_size:\s*Tuple\[int,\s*int\]\s*=\s*\((\d+),\s*(\d+)\)', 1),
-        "window_size_h": (r'window_size:\s*Tuple\[int,\s*int\]\s*=\s*\((\d+),\s*(\d+)\)', 2),
-        "fullscreen": (r'fullscreen:\s*bool\s*=\s*(True|False)', 1),
-        "screen_index": (r'screen_index:\s*int\s*=\s*(\d+)', 1),
-        "monitor_name": (r'monitor_name:\s*str\s*=\s*"([^"]*)"', 1),
-        "target_refresh_rate": (r'target_refresh_rate:\s*int\s*=\s*(\d+)', 1),
-        "key_right": (r'key_right:\s*str\s*=\s*"([^"]*)"', 1),
-        "key_left": (r'key_left:\s*str\s*=\s*"([^"]*)"', 1),
-        "input_device": (r'input_device:\s*str\s*=\s*"([^"]*)"', 1),
-        "rotation_speed": (r'rotation_speed:\s*float\s*=\s*([\d.]+)', 1),
-        "circle_radius": (r'circle_radius:\s*float\s*=\s*([\d.]+)', 1),
-        "allow_shield_adjustment": (r'allow_shield_adjustment:\s*bool\s*=\s*(True|False)', 1),
-        "loss_factor": (r'loss_factor:\s*float\s*=\s*([\d.]+)', 1),
-        "currency_symbol": (r'currency_symbol:\s*str\s*=\s*"([^"]*)"', 1),
-        "trigger_mode": (r'trigger_mode:\s*str\s*=\s*"([^"]*)"', 1),
-        "serial_port": (r'serial_port:\s*str\s*=\s*"([^"]*)"', 1),
-        "serial_baud_rate": (r'serial_baud_rate:\s*int\s*=\s*(\d+)', 1),
-        "parallel_address": (r'parallel_address:\s*int\s*=\s*(0x[0-9A-Fa-f]+)', 1),
-        "enable_audio": (r'enable_audio:\s*bool\s*=\s*(True|False)', 1),
-        "tone_freq_standard": (r'tone_freq_standard:\s*float\s*=\s*([\d.]+)', 1),
-        "tone_freq_deviant": (r'tone_freq_deviant:\s*float\s*=\s*([\d.]+)', 1),
-        "tone_duration": (r'tone_duration:\s*float\s*=\s*([\d.]+)', 1),
-        "tone_volume": (r'tone_volume:\s*float\s*=\s*([\d.]+)', 1),
-        "tone_isi_frames": (r'tone_isi_frames:\s*int\s*=\s*(\d+)', 1),
-        "enable_practice": (r'enable_practice:\s*bool\s*=\s*(True|False)', 1),
-        "n_blocks": (r'n_blocks:\s*int\s*=\s*(\d+)', 1),
-        "min_laser_duration_frames": (r'min_laser_duration_frames:\s*int\s*=\s*(\d+)', 1),
+    """Read laserTask/config.py via direct import."""
+    from laserTask.config import ExperimentConfig
+    c = ExperimentConfig()
+    return {
+        "window_size_w": c.window_size[0],
+        "window_size_h": c.window_size[1],
+        "fullscreen": c.fullscreen,
+        "screen_index": c.screen_index,
+        "monitor_name": c.monitor_name,
+        "target_refresh_rate": c.target_refresh_rate,
+        "key_right": c.key_right,
+        "key_left": c.key_left,
+        "input_device": c.input_device,
+        "rotation_speed": c.rotation_speed,
+        "circle_radius": c.circle_radius,
+        "allow_shield_adjustment": c.allow_shield_adjustment,
+        "loss_factor": c.loss_factor,
+        "currency_symbol": c.currency_symbol,
+        "trigger_mode": c.trigger_mode,
+        "serial_port": c.serial_port,
+        "serial_baud_rate": c.serial_baud_rate,
+        "parallel_address": c.parallel_address,
+        "enable_audio": c.enable_audio,
+        "tone_freq_standard": c.tone_freq_standard,
+        "tone_freq_deviant": c.tone_freq_deviant,
+        "tone_duration": c.tone_duration,
+        "tone_volume": c.tone_volume,
+        "tone_isi_frames": c.tone_isi_frames,
+        "enable_practice": c.enable_practice,
+        "n_blocks": c.n_blocks,
+        "min_laser_duration_frames": c.min_laser_duration_frames,
+        "visits": list(c.visits),
+        "sessions": list(c.sessions),
+        "orders": list(c.orders),
+        "framings": list(c.framings),
+        "keyboard_backend": c.keyboard_backend,
     }
-
-    for key, (pat, group) in patterns.items():
-        m = re.search(pat, source)
-        if m:
-            val = m.group(group)
-            if val in ("True", "False"):
-                result[key] = val == "True"
-            elif val.startswith("0x"):
-                result[key] = int(val, 16)
-            elif "." in val:
-                try:
-                    result[key] = float(val)
-                except ValueError:
-                    result[key] = val
-            else:
-                try:
-                    result[key] = int(val)
-                except ValueError:
-                    result[key] = val
-
-    for list_key, pat in [
-        ("visits", r'visits:\s*list\s*=\s*(?:field\(default_factory=lambda:\s*)?\[(.*?)\](?:\))?'),
-        ("sessions", r'sessions:\s*list\s*=\s*(?:field\(default_factory=lambda:\s*)?\[(.*?)\](?:\))?'),
-        ("orders", r'orders:\s*list\s*=\s*(?:field\(default_factory=lambda:\s*)?\[(.*?)\](?:\))?'),
-    ]:
-        m = re.search(pat, source)
-        if m:
-            result[list_key] = [x.strip().strip('"').strip("'") for x in m.group(1).split(",")]
-
-    return result
 
 
 def _read_stimgen_config() -> Dict[str, Any]:
-    return _read_py_config(PROJECT_ROOT / "stimgen" / "laser" / "config.py")
+    """Read stimgen/laser/config.py via direct import (no eval, no regex)."""
+    import importlib
+    from stimgen.laser import config as _cfg
+    importlib.reload(_cfg)  # bust cache so writes are visible
+    return {
+        "SAMPLE_RATE": _cfg.SAMPLE_RATE,
+        "NOISE_STD_LOW": _cfg.NOISE_STD_LOW,
+        "NOISE_STD_HIGH": _cfg.NOISE_STD_HIGH,
+        "JUMP_DURATION_MEAN_SEC": _cfg.JUMP_DURATION_MEAN_SEC,
+        "JUMP_DURATION_MIN_SEC": _cfg.JUMP_DURATION_MIN_SEC,
+        "JUMP_DURATION_MAX_SEC": _cfg.JUMP_DURATION_MAX_SEC,
+        "JUMP_VALUE_SET": _cfg.JUMP_VALUE_SET,
+        "MAIN_SESSION": dict(_cfg.MAIN_SESSION),
+        "PRACTICE_SESSION": dict(_cfg.PRACTICE_SESSION),
+        "ONLINE_TRAINING_SESSION": dict(_cfg.ONLINE_TRAINING_SESSION),
+        "DEFAULT_SESSION": dict(_cfg.DEFAULT_SESSION),
+    }
+
+
+def _save_stimgen_from_cfg(cfg: Dict[str, Any]) -> bool:
+    """Write stimgen config if there are pending updates in cfg."""
+    stimgen_updates = cfg.pop("_stimgen_updates", None)
+    if not stimgen_updates:
+        return True
+
+    ms = _read_stimgen_config()
+    ms_dict = ms.get("MAIN_SESSION", {})
+    ps_dict = ms.get("PRACTICE_SESSION", {})
+    ot_dict = ms.get("ONLINE_TRAINING_SESSION", {})
+
+    flat: Dict[str, Any] = {}
+    for k, v in stimgen_updates.items():
+        if k == "_main_block_dur":
+            ms_dict["blockDurationMin"] = v
+        elif k == "_main_n_blocks":
+            ms_dict["nBlocks"] = v
+        elif k == "_practice_block_dur":
+            ps_dict["blockDurationMin"] = v
+        elif k == "_practice_n_blocks":
+            ps_dict["nBlocks"] = v
+        elif k == "_online_block_dur":
+            ot_dict["blockDurationMin"] = v
+        elif k == "_online_n_blocks":
+            ot_dict["nBlocks"] = v
+        elif not k.startswith("_"):
+            flat[k] = v
+
+    if ms_dict:
+        flat["MAIN_SESSION"] = ms_dict
+    if ps_dict:
+        flat["PRACTICE_SESSION"] = ps_dict
+    if ot_dict:
+        flat["ONLINE_TRAINING_SESSION"] = ot_dict
+
+    try:
+        _write_stimgen_config(flat)
+        success("stimgen/laser/config.py updated")
+        return True
+    except Exception as exc:
+        fail(f"Could not write stimgen config: {exc}")
+        return False
 
 
 def _write_stimgen_config(updates: Dict[str, Any]) -> None:
@@ -330,6 +345,8 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
         "visits": "visits",
         "sessions": "sessions",
         "orders": "orders",
+        "framings": "framings",
+        "keyboard_backend": "keyboard_backend",
     }
 
     # Handle window_size specially
@@ -337,7 +354,7 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
         new_val = f"({updates['window_size_w']}, {updates['window_size_h']})"
         source = re.sub(
             r'(window_size:\s*\S+\s*=\s*).+?(?=\s*(?:#.*)?$)',
-            rf'\1{new_val}',
+            rf'\g<1>{new_val}',
             source,
             count=1,
             flags=re.MULTILINE,
@@ -355,7 +372,8 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
         elif isinstance(value, str) and not value.startswith("["):
             new_val = f'"{value}"'
         elif isinstance(value, list):
-            new_val = "[" + ", ".join(f'"{x}"' for x in value) + "]"
+            inner = ", ".join(f'"{x}"' for x in value)
+            new_val = f"field(default_factory=lambda: [{inner}])"
         else:
             new_val = str(value)
 
@@ -369,11 +387,54 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
     cfg_path.write_text(source)
 
 
+def detect_os() -> str:
+    """Return 'linux', 'windows', or 'macos'."""
+    if sys.platform.startswith("linux"):
+        return "linux"
+    elif sys.platform == "win32":
+        return "windows"
+    elif sys.platform == "darwin":
+        return "macos"
+    return sys.platform
+
+
+OS_DEFAULTS = {
+    "linux": {
+        "serial_port": "/dev/ttyUSB0",
+        "serial_hint": "Common: /dev/ttyUSB0 or /dev/ttyACM0",
+        "parallel_addr": "/dev/parport0",
+        "parallel_hint": "Common: /dev/parport0",
+    },
+    "windows": {
+        "serial_port": "COM6",
+        "serial_hint": "BrainVision TriggerBox is usually COM6",
+        "parallel_addr": "0x0378",
+        "parallel_hint": "LPT1 = 0x0378, LPT2 = 0x0278",
+    },
+    "macos": {
+        "serial_port": "/dev/cu.usbserial-*",
+        "serial_hint": "Check /dev/cu.* for your USB-serial adapter",
+        "parallel_addr": None,
+        "parallel_hint": "macOS does not support parallel ports",
+    },
+}
+
+
 # ── interactive configuration sections ──────────────────────────────────────
 
 def configure_machine(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Machine Setup")
     info("These settings are specific to your lab computer.")
+
+    current_os = detect_os()
+    target_os = prompt(
+        "Target operating system",
+        current_os,
+        choices=["linux", "windows", "macos"],
+        hint_text=f"Detected: {current_os} — change if the experiment runs on a different machine",
+    )
+    cfg["_target_os"] = target_os
+    print()
 
     cfg["monitor_name"] = prompt(
         "Monitor name",
@@ -412,6 +473,15 @@ def configure_machine(cfg: Dict[str, Any]) -> Dict[str, Any]:
         cfg.get("target_refresh_rate", 60),
         min_val=30,
         hint_text="60 Hz is standard; use 120 or 144 for high-refresh monitors",
+    )
+
+    current_os = cfg.get("_target_os", detect_os())
+    _kb_os_default = "ptb" if current_os == "windows" else "event"
+    cfg["keyboard_backend"] = prompt(
+        "Keyboard backend",
+        cfg.get("keyboard_backend") or _kb_os_default,
+        choices=["event", "ptb", "iohub"],
+        hint_text="'event' works everywhere; 'ptb' gives best timing but requires elevated privileges on Linux/macOS",
     )
     return cfg
 
@@ -456,10 +526,11 @@ def configure_triggers(cfg: Dict[str, Any]) -> Dict[str, Any]:
     cfg["trigger_mode"] = mode
 
     if mode == "serial":
+        osdef = OS_DEFAULTS.get(cfg.get("_target_os", "linux"), OS_DEFAULTS["linux"])
         cfg["serial_port"] = prompt(
             "Serial port",
-            cfg.get("serial_port", "COM6"),
-            hint_text="BrainVision TriggerBox is usually COM6 on Windows, /dev/ttyUSB0 on Linux",
+            cfg.get("serial_port", osdef["serial_port"]),
+            hint_text=osdef["serial_hint"],
         )
         cfg["serial_baud_rate"] = prompt_int(
             "Baud rate",
@@ -467,11 +538,17 @@ def configure_triggers(cfg: Dict[str, Any]) -> Dict[str, Any]:
             hint_text="115200 for BrainVision TriggerBox",
         )
     elif mode == "parallel":
-        cfg["parallel_address"] = prompt(
-            "Parallel port address",
-            cfg.get("parallel_address", "0x0378"),
-            hint_text="LPT1 = 0x0378, LPT2 = 0x0278 (common on older setups)",
-        )
+        osdef = OS_DEFAULTS.get(cfg.get("_target_os", "linux"), OS_DEFAULTS["linux"])
+        if osdef["parallel_addr"] is None:
+            warn(f"Parallel ports are not supported on {cfg.get('_target_os', 'linux')}.")
+            cfg["trigger_mode"] = "dummy"
+            info("Falling back to dummy trigger mode.")
+        else:
+            cfg["parallel_address"] = prompt(
+                "Parallel port address",
+                cfg.get("parallel_address", osdef["parallel_addr"]),
+                hint_text=osdef["parallel_hint"],
+            )
     elif mode == "lsl":
         info("LSL will auto-discover streams at runtime — no extra config needed.")
     else:
@@ -523,6 +600,42 @@ def configure_design(cfg: Dict[str, Any]) -> Dict[str, Any]:
         f"Design matrix: {n_visits} visits × {n_sessions} sessions "
         f"× {n_orders} orders = {n_visits * n_sessions * n_orders} possible combinations"
     )
+    return cfg
+
+
+def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    section("Startup Dialog Options")
+    info("These control what appears in the popup when the experimenter runs the task.")
+    info("The dialog prompts for: participant ID, visit, session, order, and framing.")
+
+    visits = cfg.get("visits", ["1", "2"])
+    sessions = cfg.get("sessions", ["1", "2"])
+    orders = cfg.get("orders", ["1", "2"])
+    framings = cfg.get("framings", ["loss", "win"])
+
+    cfg["visits"] = prompt_list(
+        "Visit options",
+        visits,
+        hint_text="Comma-separated values shown in the visit dropdown (e.g. 1,2,3)",
+    )
+    cfg["sessions"] = prompt_list(
+        "Session options",
+        sessions,
+        hint_text="Comma-separated values shown in the session dropdown (e.g. 1,2)",
+    )
+    cfg["orders"] = prompt_list(
+        "Order options",
+        orders,
+        hint_text="Comma-separated; 1,2,3,4 gives full counterbalancing",
+    )
+    cfg["framings"] = prompt_list(
+        "Framing options",
+        framings,
+        hint_text="Comma-separated; e.g. 'loss,win' or just 'loss' to fix the framing",
+    )
+
+    n = len(cfg["visits"]) * len(cfg["sessions"]) * len(cfg["orders"]) * len(cfg["framings"])
+    info(f"  → Experimenter will choose from: visit × session × order × framing = {n} combinations")
     return cfg
 
 
@@ -619,41 +732,73 @@ def configure_audio(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Sequence Generation Parameters")
-    info("These control noise levels, volatility, and block durations.")
+    info("Generation always produces all session types. Configure each below.")
+    info("Press Enter at any prompt to keep the current value.")
 
     stimgen = _read_stimgen_config()
 
+    # ── practice ──
+    ps = stimgen.get("PRACTICE_SESSION", {})
+    print()
+    info(_c(C["bold"], "Practice session"))
+    stimgen["_practice_block_dur"] = prompt_int(
+        "  Block duration (min)",
+        ps.get("blockDurationMin", 1), min_val=1,
+        hint_text="1 minute is standard for a short practice",
+    )
+    stimgen["_practice_n_blocks"] = prompt_int(
+        "  Number of blocks",
+        ps.get("nBlocks", 4), min_val=1, max_val=20,
+        hint_text="Usually 4 blocks covering all condition types",
+    )
+
+    # ── online training ──
+    ot = stimgen.get("ONLINE_TRAINING_SESSION", {})
+    print()
+    info(_c(C["bold"], "Online training session"))
+    stimgen["_online_block_dur"] = prompt_float(
+        "  Block duration (min)",
+        ot.get("blockDurationMin", 0.5),
+        hint_text="Shorter blocks for online training (default: 0.5 min = 30 s)",
+    )
+    stimgen["_online_n_blocks"] = prompt_int(
+        "  Number of blocks",
+        ot.get("nBlocks", 4), min_val=1, max_val=20,
+        hint_text="Usually a short subset of condition types",
+    )
+
+    # ── main / baseline ──
+    ms = stimgen.get("MAIN_SESSION", {})
+    print()
+    info(_c(C["bold"], "Main & baseline sessions"))
+    stimgen["_main_block_dur"] = prompt_int(
+        "  Block duration (min)",
+        ms.get("blockDurationMin", 3), min_val=1,
+        hint_text="3 minutes is standard for MEG/EEG blocks",
+    )
+    stimgen["_main_n_blocks"] = prompt_int(
+        "  Number of blocks (main)",
+        ms.get("nBlocks", 12), min_val=1, max_val=30,
+        hint_text="12 blocks = 4 condition types × 3 repetitions",
+    )
+
+    # ── common ──
+    print()
+    info(_c(C["bold"], "Common parameters (all session types)"))
     stimgen["NOISE_STD_LOW"] = prompt_int(
-        "Observation noise — low (degrees)",
-        stimgen.get("NOISE_STD_LOW", 10),
-        min_val=1,
-        hint_text="Standard deviation of laser observations around true mean in low-noise blocks (default: 10°)",
+        "  Observation noise — low (°)",
+        stimgen.get("NOISE_STD_LOW", 10), min_val=1,
+        hint_text="Standard deviation in low-noise blocks (default: 10°)",
     )
     stimgen["NOISE_STD_HIGH"] = prompt_int(
-        "Observation noise — high (degrees)",
-        stimgen.get("NOISE_STD_HIGH", 20),
-        min_val=1,
+        "  Observation noise — high (°)",
+        stimgen.get("NOISE_STD_HIGH", 20), min_val=1,
         hint_text="Standard deviation in high-noise blocks (default: 20°)",
     )
     stimgen["JUMP_DURATION_MEAN_SEC"] = prompt_float(
-        "Mean jump duration (seconds)",
+        "  Mean jump duration (s)",
         stimgen.get("JUMP_DURATION_MEAN_SEC", 0.3),
-        hint_text="On average, how long the true mean stays in one position before jumping (default: 0.3 s)",
-    )
-
-    ms = stimgen.get("MAIN_SESSION", {})
-    stimgen["_main_block_dur"] = prompt_int(
-        "Main block duration (minutes)",
-        ms.get("blockDurationMin", 3),
-        min_val=1,
-        hint_text="How long each main block lasts (default: 3 min)",
-    )
-    ps = stimgen.get("PRACTICE_SESSION", {})
-    stimgen["_practice_block_dur"] = prompt_int(
-        "Practice block duration (minutes)",
-        ps.get("blockDurationMin", 1),
-        min_val=1,
-        hint_text="How long the practice block lasts (default: 1 min)",
+        hint_text="How long the true mean stays in one position (default: 0.3 s)",
     )
 
     cfg["_stimgen_updates"] = stimgen
@@ -675,20 +820,24 @@ def show_summary(cfg: Dict[str, Any]) -> None:
 
     fullscr = "fullscreen" if cfg.get("fullscreen") else f"{cfg.get('window_size_w', '?')}×{cfg.get('window_size_h', '?')}"
     items = [
+        ("Target OS", cfg.get("_target_os", detect_os())),
+        ("Keyboard backend", cfg.get("keyboard_backend", "?")),
         ("Monitor", f"{cfg.get('monitor_name', '?')} ({fullscr})"),
+        ("Screen index", cfg.get("screen_index", "?")),
         ("Refresh rate", f"{cfg.get('target_refresh_rate', '?')} Hz"),
         ("Input", f"{cfg.get('input_device', '?')}  ({cfg.get('key_left', '?')} / {cfg.get('key_right', '?')})"),
         ("Triggers", cfg.get("trigger_mode", "?")),
     ]
     if cfg.get("trigger_mode") == "serial":
         items.append(("  Serial port", cfg.get("serial_port", "?")))
+        items.append(("  Baud rate", cfg.get("serial_baud_rate", "?")))
     elif cfg.get("trigger_mode") == "parallel":
         items.append(("  Parallel addr", cfg.get("parallel_address", "?")))
 
     items += [
         ("Blocks", f"{cfg.get('n_blocks', '?')} main" + (" + 1 practice" if cfg.get("enable_practice") else "")),
         ("Shield", f"{'adjustable' if cfg.get('allow_shield_adjustment') else 'fixed'}  ({cfg.get('rotation_speed', '?')}°/frame, r={cfg.get('circle_radius', '?')})"),
-        ("Loss factor", cfg.get("loss_factor", "?")),
+        ("Loss factor", f"{cfg.get('loss_factor', '?')}  ({cfg.get('currency_symbol', '?')})"),
         ("Min laser dur", f"{cfg.get('min_laser_duration_frames', '?')} frames"),
     ]
 
@@ -696,13 +845,17 @@ def show_summary(cfg: Dict[str, Any]) -> None:
         items += [
             ("Tones", f"{cfg.get('tone_freq_standard', '?')} / {cfg.get('tone_freq_deviant', '?')} Hz"),
             ("Tone dur / ISI", f"{cfg.get('tone_duration', '?')*1000:.0f} ms / {cfg.get('tone_isi_frames', '?')} frames"),
+            ("Tone volume", cfg.get("tone_volume", "?")),
         ]
     else:
         items.append(("Tones", _c(C["dim"], "disabled")))
 
     items += [
         ("Seq version", f"main={SEQUENCE_VERSION}, practice={PRACTICE_SEQUENCE_VERSION}"),
+        ("Visits", f"{', '.join(cfg.get('visits', ['?']))}"),
+        ("Sessions", f"{', '.join(cfg.get('sessions', ['?']))}"),
         ("Orders", f"{', '.join(cfg.get('orders', ['?']))}"),
+        ("Framings", f"{', '.join(cfg.get('framings', ['?']))}"),
     ]
 
     for label, value in items:
@@ -718,27 +871,7 @@ def show_summary(cfg: Dict[str, Any]) -> None:
 def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
     section("Generating Sequences")
 
-    stimgen_updates = cfg.pop("_stimgen_updates", None)
-    if stimgen_updates:
-        # Flatten the special keys into the stimgen config format
-        ms = _read_stimgen_config()
-        ms_dict = ms.get("MAIN_SESSION", {})
-        ps_dict = ms.get("PRACTICE_SESSION", {})
-
-        flat: Dict[str, Any] = {}
-        for k, v in stimgen_updates.items():
-            if k == "_main_block_dur":
-                ms_dict["blockDurationMin"] = v
-            elif k == "_practice_block_dur":
-                ps_dict["blockDurationMin"] = v
-            elif not k.startswith("_"):
-                flat[k] = v
-
-        if ms_dict:
-            flat["MAIN_SESSION"] = ms_dict
-        if ps_dict:
-            flat["PRACTICE_SESSION"] = ps_dict
-        _write_stimgen_config(flat)
+    _save_stimgen_from_cfg(cfg)
 
     # Laser sequences
     info("Generating laser stimulus sequences …")
@@ -761,15 +894,14 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
 
     # MMN sequences
     info("Generating MMN tone sequences …")
-    mmn_dir = PROJECT_ROOT / "stimgen" / "mmn"
     mmn_out = str(PROJECT_ROOT / "sequences" / "mmn")
     result = subprocess.run(
         [
             sys.executable, "-c",
-            f"from generate_all_peduks_sessions import generate_all_peduks_sessions; "
+            f"from stimgen.mmn.generate_all_peduks_sessions import generate_all_peduks_sessions; "
             f"generate_all_peduks_sessions('{mmn_out}')",
         ],
-        cwd=str(mmn_dir),
+        cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
         timeout=60,
@@ -834,6 +966,7 @@ SECTION_REGISTRY: List[Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]
     ("5", "Shield mechanics & reward (size, speed, loss factor)", configure_shield_reward),
     ("6", "Auditory MMN (tone frequencies, duration, ISI)", configure_audio),
     ("7", "Sequence generation (noise levels, volatility, durations)", configure_stimgen),
+    ("8", "Startup dialog (visit/session/order dropdowns, framing)", configure_dialog),
 ]
 
 SECTION_MAP: Dict[str, Tuple[str, Callable[[Dict[str, Any]], Dict[str, Any]]]] = {
@@ -857,8 +990,10 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
         print(f"    {_c(C['green'], 'a')})  Configure everything (all sections)")
         print(f"  {_c(C['cyan'], 's')})  Show current configuration")
         print(f"  {_c(C['cyan'], 'g')})  Generate sequences")
+        print(f"  {_c(C['cyan'], 'r')})  Run experiment" + _c(C["dim"], "  (python main.py)"))
         if dirty:
-            print(f"  {_c(C['yellow'], '  (unsaved changes in memory)')}")
+            print()
+            print(f"  {_c(C['yellow'], '  ← unsaved changes in memory')}")
         print(f"  {_c(C['dim'], 'q')})  Quit & save")
 
         print()
@@ -868,6 +1003,16 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
             break
         elif choice == "s":
             show_summary(cfg)
+        elif choice == "r":
+            if dirty:
+                warn("Unsaved config changes — run anyway?")
+                if not prompt_yn("Proceed without saving?", True):
+                    continue
+            print()
+            info("Launching experiment …")
+            print()
+            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+            return
         elif choice == "a":
             cfg = configure_machine(cfg)
             cfg = configure_input(cfg)
@@ -875,28 +1020,48 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
             cfg = configure_design(cfg)
             cfg = configure_shield_reward(cfg)
             cfg = configure_audio(cfg)
+            cfg = configure_dialog(cfg)
             cfg = configure_stimgen(cfg)
             dirty = True
             show_summary(cfg)
             if prompt_yn("Save all changes?", True):
                 _write_laser_task_config(cfg)
+                _save_stimgen_from_cfg(cfg.copy())
                 dirty = False
                 success("Configuration saved.")
                 if prompt_yn("Generate sequences now?", True):
                     if run_sequence_generation(cfg.copy()):
                         dirty = False
+                    print()
+                    if prompt_yn("Start the experiment?", True):
+                        subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                        return
+                else:
+                    print()
+                    if prompt_yn("Start the experiment?", True):
+                        subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                        return
+                    info("Run manually with:  python main.py")
             else:
                 info("Changes held in memory — save later with 'q'.")
         elif choice == "g":
             show_summary(cfg)
+            if prompt_yn("Review sequence generation parameters first?", True):
+                cfg = configure_stimgen(cfg)
+                dirty = True
+                show_summary(cfg)
             if dirty:
                 warn("You have unsaved config changes.")
                 if prompt_yn("Save before generating?", True):
                     _write_laser_task_config(cfg)
-                    dirty = False
-                    success("Saved.")
-            if prompt_yn("Generate sequences with current settings?", True):
-                run_sequence_generation(cfg.copy())
+                    if _save_stimgen_from_cfg(cfg.copy()):
+                        dirty = False
+            if prompt_yn("Generate sequences now?", True):
+                if run_sequence_generation(cfg.copy()):
+                    print()
+                    if prompt_yn("Start the experiment?", True):
+                        subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                        return
         elif choice in SECTION_MAP:
             desc, fn = SECTION_MAP[choice]
             cfg = fn(cfg)
@@ -961,18 +1126,26 @@ def main() -> None:
         cfg = configure_design(cfg)
         cfg = configure_shield_reward(cfg)
         cfg = configure_audio(cfg)
+        cfg = configure_dialog(cfg)
         cfg = configure_stimgen(cfg)
         show_summary(cfg)
         if prompt_yn("Save configuration and proceed?", True):
             _write_laser_task_config(cfg)
+            _save_stimgen_from_cfg(cfg.copy())
             success("Configuration saved.")
             if prompt_yn("Generate sequences now?", True):
                 if run_sequence_generation(cfg.copy()):
                     print()
                     header("Setup Complete")
-                    info("Run the experiment:")
-                    print(_c(C["green"], f"\n    cd {PROJECT_ROOT}"))
-                    print(_c(C["green"], "    python main.py\n"))
+                    print()
+                    info("Run the experiment with:")
+                    print(_c(C["green"], f"    cd {PROJECT_ROOT}"))
+                    print(_c(C["green"], "    python main.py"))
+            else:
+                print()
+                info("Run the experiment with:")
+                print(_c(C["green"], f"    cd {PROJECT_ROOT}"))
+                print(_c(C["green"], "    python main.py"))
     else:
         run_section_menu(cfg)
 

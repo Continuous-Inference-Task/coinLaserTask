@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
-from psychopy import core, data, gui, logging, plugins, visual
+from psychopy import core, data, logging, visual
 from psychopy.hardware import keyboard
 
-plugins.activatePlugins()
+from laserTask.dialog import show_session_dialog
 
 from laserTask.audio import AudioStimulationManager
 from laserTask.config import TRIGGER_CODES, ExperimentConfig
@@ -106,24 +106,21 @@ def run_experiment(
 
     exp_name = "laserTask"
 
-    exp_info = {
-        "participant": "000",
+    _dialog_fields = {
+        "participant": "000",  # overridden by auto-detection in dialog
         "visit": ["-- select visit --"] + cfg.visits,
         "session": ["-- select session --"] + cfg.sessions,
         "order": ["-- select order --"] + cfg.orders,
-        "framing": ["-- select framing --", "loss", "win"],
+        "framing": ["-- select framing --"] + cfg.framings,
     }
 
-    while True:
-        dlg = gui.DlgFromDict(exp_info, sortKeys=False, title=exp_name)
-        if not dlg.OK:
-            core.quit()
-
-        if all(
-            not str(exp_info[k]).startswith("-- select")
-            for k in ["visit", "session", "order", "framing"]
-        ):
-            break
+    exp_info = show_session_dialog(
+        _dialog_fields,
+        title=exp_name,
+        data_root=root / cfg.data_root,
+    )
+    if exp_info is None:
+        core.quit()
 
     exp_info["date"] = data.getDateStr()
     exp_info["expName"] = exp_name
@@ -167,7 +164,7 @@ def run_experiment(
     # ------------------------------------------------------------------ #
     #  MANAGERS & STIMULI                                                 #
     # ------------------------------------------------------------------ #
-    default_kb = keyboard.Keyboard(backend="ptb")
+    default_kb = keyboard.Keyboard(backend=cfg.keyboard_backend)
     keys_move = [cfg.key_left, cfg.key_right]
     # Keys for shield size adjustments
     keys_size = (

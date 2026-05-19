@@ -1,4 +1,5 @@
 # StimulusStyle, ExperimentConfig, TRIGGER_CODES
+import sys
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict
 
@@ -118,9 +119,23 @@ class ExperimentConfig:
     input_device: str = "keyboard" 
 
     # -- Experiment structure --
-    visits: list = ["1", "2"]
-    sessions: list = ["1", "2"]
-    orders: list = ["1", "2"]
+    visits: list = field(default_factory=lambda: ["1", "2"])
+    sessions: list = field(default_factory=lambda: ["1", "2"])
+    orders: list = field(default_factory=lambda: ["1", "2"])
+    framings: list = field(default_factory=lambda: ["loss", "win"])
+    """Framing options shown in the startup dialog dropdown."""
+
+    # -- Keyboard backend --
+    keyboard_backend: str = "event"
+    """PsychoPy keyboard backend.
+
+    Options: ``"ptb"`` (Psychtoolbox, best precision, requires elevated
+    privileges on Linux), ``"event"`` (pyglet events, works everywhere),
+    ``"iohub"`` (ioHub, cross-platform).
+
+    Leave empty for OS-appropriate auto-selection:
+    Windows → ``"ptb"``,  Linux / macOS → ``"event"``.
+    """
     
 
     # -- Shield mechanics --
@@ -151,10 +166,14 @@ class ExperimentConfig:
     ``"parallel"`` – Write to a parallel/LPT port.
     ``"lsl"``      – Push via Lab Streaming Layer.
     """
-    serial_port: str = "COM6"
+    serial_port: str = "/dev/ttyUSB0"
+    """Serial port for trigger output.  Leave empty for OS-appropriate default
+    (Linux: /dev/ttyUSB0, Windows: COM6, macOS: /dev/cu.usbserial-*)."""
     serial_baud_rate: int = 115200
     serial_timeout: float = 0.001
-    parallel_address: int = 888
+    parallel_address: str = "/dev/parport0"
+    """Parallel port address.  Leave empty for OS-appropriate default
+    (Linux: /dev/parport0, Windows: 0x0378, macOS: unsupported)."""
 
     # -- Auditory stimulation --
     enable_audio: bool = True
@@ -192,6 +211,23 @@ class ExperimentConfig:
                 f"input_device '{self.input_device}' not recognised. "
                 f"Choose from: {valid_devices}"
             )
+        # Auto-select OS-appropriate defaults if not explicitly set
+        if not self.keyboard_backend:
+            self.keyboard_backend = "ptb" if sys.platform == "win32" else "event"
+        if not self.serial_port:
+            if sys.platform == "win32":
+                self.serial_port = "COM6"
+            elif sys.platform == "darwin":
+                self.serial_port = "/dev/cu.usbserial-*"
+            else:
+                self.serial_port = "/dev/ttyUSB0"
+        if not self.parallel_address:
+            if sys.platform == "win32":
+                self.parallel_address = "0x0378"
+            elif sys.platform == "darwin":
+                self.parallel_address = ""  # macOS has no parallel port
+            else:
+                self.parallel_address = "/dev/parport0"
 
 
 # Trigger event codes — used both for sending and for data logging.

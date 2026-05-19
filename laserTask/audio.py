@@ -1,8 +1,14 @@
+import sys
 from typing import List, Optional
 from psychopy import prefs
 
-# Audio backend must be set BEFORE importing sound
-prefs.hardware["audioLib"] = ["ptb"]
+# Audio backend must be set BEFORE importing sound.
+# PTB gives the best timing but requires real-time kernel privileges on Linux/macOS
+# (same restriction as the PTB keyboard backend). sounddevice works everywhere.
+if sys.platform == "win32":
+    prefs.hardware["audioLib"] = ["ptb", "sounddevice"]
+else:
+    prefs.hardware["audioLib"] = ["sounddevice", "pygame"]
 from psychopy import sound, visual, logging
 
 from laserTask.config import ExperimentConfig, TRIGGER_CODES
