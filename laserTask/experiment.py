@@ -1,7 +1,20 @@
 import os
+import sys
 from itertools import groupby
 from pathlib import Path
 from typing import List, Optional
+
+from psychopy import prefs
+
+# ------------------------------------------------------------------ #
+#  HARDWARE PREFERENCES                                               #
+# ------------------------------------------------------------------ #
+# Audio backend must be set BEFORE importing psychopy modules.
+# PTB gives the best timing but requires real-time kernel privileges on Linux/macOS.
+if sys.platform == "win32":
+    prefs.hardware["audioLib"] = ["ptb", "sounddevice"]
+else:
+    prefs.hardware["audioLib"] = ["sounddevice", "pygame"]
 
 import numpy as np
 from psychopy import core, data, logging, visual

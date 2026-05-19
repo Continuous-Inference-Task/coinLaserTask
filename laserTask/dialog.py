@@ -34,16 +34,16 @@ from PyQt6.QtWidgets import (
 )
 
 # ── palette ────────────────────────────────────────────────────────────────
-_BG       = "#16161e"   # window background
+_BG       = "#11111b"   # window background
 _CARD     = "#1e1e2e"   # form card background
-_SURFACE  = "#24273a"   # input background
-_BORDER   = "#363a4f"   # subtle border
-_BORDER_FOCUS = "#7c6af7"
-_ACCENT   = "#7c6af7"   # purple accent
-_ACCENT_H = "#9580ff"   # hover
-_TEXT     = "#cad3f5"   # primary text
-_SUBTEXT  = "#8087a2"   # labels / hints
-_PLACEHOLDER = "#45475a"  # dropdown placeholder colour
+_SURFACE  = "#313244"   # input background
+_BORDER   = "#45475a"   # subtle border
+_BORDER_FOCUS = "#89b4fa"
+_ACCENT   = "#89b4fa"   # blue accent
+_ACCENT_H = "#b4befe"   # hover
+_TEXT     = "#cdd6f4"   # primary text
+_SUBTEXT  = "#a6adc8"   # labels / hints
+_PLACEHOLDER = "#7f849c"  # dropdown placeholder colour
 _SUCCESS  = "#a6e3a1"
 _ERROR    = "#f38ba8"
 
@@ -110,27 +110,13 @@ QComboBox {{
     color: {_TEXT};
     border: 1.5px solid {_BORDER};
     border-radius: 7px;
-    padding: 8px 36px 8px 12px;
+    padding: 8px 12px;
     font-size: 13px;
     min-width: 220px;
 }}
 QComboBox:focus {{
     border-color: {_BORDER_FOCUS};
-    background-color: #2a2d45;
-}}
-QComboBox::drop-down {{
-    border: none;
-    width: 32px;
-    subcontrol-origin: padding;
-    subcontrol-position: center right;
-}}
-QComboBox::down-arrow {{
-    image: none;
-    border-left:  5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top:   6px solid {_SUBTEXT};
-    width: 0; height: 0;
-    margin-right: 10px;
+    background-color: #3b3c50;
 }}
 /* popup list */
 QComboBox QAbstractItemView {{
