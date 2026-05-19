@@ -119,13 +119,30 @@ def run_experiment(
 
     exp_name = "laserTask"
 
-    _dialog_fields = {
-        "participant": "000",  # overridden by auto-detection in dialog
-        "visit": ["-- select visit --"] + cfg.visits,
-        "session": ["-- select session --"] + cfg.sessions,
-        "order": ["-- select order --"] + cfg.orders,
-        "framing": ["-- select framing --"] + cfg.framings,
+    # ------------------------------------------------------------------ #
+    # Build dialog field dict dynamically from cfg.dialog_fields.
+    # Known fields get appropriate widgets (dropdowns, auto-detect);
+    # unknown fields default to free-text input with an empty string.
+    # ------------------------------------------------------------------ #
+    _FIELD_BUILDERS = {
+        "participant": lambda c: ("participant", "000"),
+        "visit":       lambda c: ("visit",       ["-- select visit --"] + c.visits),
+        "session":     lambda c: ("session",     ["-- select session --"] + c.sessions),
+        "order":       lambda c: ("order",       ["-- select order --"] + c.orders),
+        "framing":     lambda c: ("framing",     ["-- select framing --"] + c.framings),
     }
+
+    _dialog_fields = {}
+    for field_name in cfg.dialog_fields:
+        if field_name in _FIELD_BUILDERS:
+            key, val = _FIELD_BUILDERS[field_name](cfg)
+            _dialog_fields[key] = val
+        else:
+            _dialog_fields[field_name] = ""  # free-text, empty default
+
+    # participant is required for data-file naming — force-include if omitted.
+    if "participant" not in _dialog_fields:
+        _dialog_fields["participant"] = "000"
 
     exp_info = show_session_dialog(
         _dialog_fields,
@@ -577,6 +594,8 @@ def run_experiment(
                     active_keys.append(k.name)
 
             # 3. Process movement and triggers based on held keys
+            partial_release = False
+
             if not active_keys:
                 if not send_resp_triggers:
                     # We just released all keys
@@ -595,8 +614,25 @@ def run_experiment(
                     shield_rot -= cfg.rotation_speed
                     new_tv = TRIGGER_CODES["key_left"]
                 
-                # Trigger logic
-                if send_resp_triggers or last_movement_trigger != new_tv:
+                # Hybrid trigger sequence (Option A from REVERT_NOTES.md):
+                # When a key is released while another remains held, emit a
+                # key_release trigger (50) via trig.send() to preserve the
+                # press→release→press event loop expected by legacy analysis
+                # scripts.  The `partial_release` flag forces a direction
+                # trigger in the same frame so the stream reads:
+                #   … → key_release(50) → key_<dir>(30/40) → …
+                if new_releases:
+                    trig.send(TRIGGER_CODES["key_release"])
+                    partial_release = True
+                
+                # Trigger gate matching the original behaviour: direction
+                # triggers only fire when (a) send_resp_triggers is armed
+                # (initial press or after a full release), or (b) a partial
+                # release just occurred and we need to log the resumed
+                # direction.  Intermediate direction changes during multi-key
+                # overlap are suppressed — identical to the original silent
+                # frames where `send_resp_triggers` was False.
+                if send_resp_triggers or partial_release:
                     trig_val = new_tv
                     do_send = True
                     send_resp_triggers = False

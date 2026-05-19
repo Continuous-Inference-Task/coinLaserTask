@@ -118,15 +118,41 @@ class ExperimentConfig:
     # NOTE: must still set key mappings to code the device sends! 
     input_device: str = "keyboard" 
 
+    # -- Dialog configuration --
+    dialog_fields: list = field(
+        default_factory=lambda: ["participant", "visit", "session", "order", "framing"]
+    )
+    """Fields shown in the session setup dialog.
+
+    Each entry is either a known field name (``"participant"``, ``"visit"``,
+    ``"session"``, ``"order"``, ``"framing"``) or an arbitrary free-text
+    field.  Known fields render as appropriate widgets (auto-detected
+    participant ID, dropdowns for visit / session / order / framing);
+    unknown fields render as plain text inputs.
+
+    ``"participant"`` is always force-included even if omitted from the
+    list because it is required for data-file naming.
+
+    Example
+    -------
+    To run without framings::
+
+        dialog_fields = ["participant", "visit", "session", "order"]
+
+    To add a custom experimenter-notes field::
+
+        dialog_fields = ["participant", …, "experimenter_notes"]
+    """
+
     # -- Experiment structure --
     visits: list = field(default_factory=lambda: ["1", "2"])
     sessions: list = field(default_factory=lambda: ["1", "2"])
     orders: list = field(default_factory=lambda: ["1", "2"])
     framings: list = field(default_factory=lambda: ["loss", "win"])
-    """Framing options shown in the startup dialog dropdown."""
+    """Dropdown options for the session dialog (if enabled via dialog_fields)."""
 
     # -- Keyboard backend --
-    keyboard_backend: str = ""
+    keyboard_backend: str = "iohub"
     """PsychoPy keyboard backend.
 
     Options: ``"ptb"`` (Psychtoolbox, best precision, requires elevated
