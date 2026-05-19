@@ -423,6 +423,7 @@ def create_stimuli(
         lineWidth=s.laser_line_width,
         lineColor=s.laser_color,
         fillColor=s.laser_color,
+        opacity=0.0,
     )
     S["laser_long"] = visual.ShapeStim(
         win,
@@ -434,7 +435,7 @@ def create_stimuli(
         lineWidth=s.laser_line_width,
         lineColor=s.laser_color,
         fillColor=s.laser_color,
-        opacity=1.0,
+        opacity=0.0,
     )
     S["source"] = visual.ImageStim(
         win,

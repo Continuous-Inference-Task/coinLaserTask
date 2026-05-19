@@ -455,6 +455,8 @@ def run_experiment(
             S["shield"],
             S["shield_centre"],
             S["shield_bg"],
+            S["laser"],
+            S["laser_long"],
             S["source"],
             S["rbar_change"],
             S["rbar"],
@@ -467,8 +469,6 @@ def run_experiment(
         ]
         for stim in trial_stims:
             stim.setAutoDraw(True)
-        S["laser"].setAutoDraw(False)
-        S["laser_long"].setAutoDraw(False)
 
         # For explicit laser duration logging
         laser_on = False
@@ -516,9 +516,7 @@ def run_experiment(
                 #     "laser_duration", block_id, cur_frame, laser_duration
                 # ])
 
-            S["laser"].setAutoDraw(show_laser)
-            # Extended beam only appears after the first successful block
-            S["laser_long"].setAutoDraw(show_laser and first_hit_occurred)
+
 
             # ---- hit detection --------------------------------------- #
             hit = (shield_rot - laser_rot + sd) % 360 <= 2 * sd
@@ -646,12 +644,13 @@ def run_experiment(
 
             cr = cfg.circle_radius
             S["laser"].setOri(laser_rot, log=False)
+            S["laser"].setOpacity(1.0 if show_laser else 0.0, log=False)
             S["laser"].setVertices(
                 [[0, 0], [0, cr * cfg.style.laser_radius_factor]],
                 log=False,
             )
             S["laser_long"].setOri(laser_rot, log=False)
-            S["laser_long"].setOpacity(ll_opacity, log=False)
+            S["laser_long"].setOpacity(ll_opacity if (show_laser and first_hit_occurred) else 0.0, log=False)
             S["laser_long"].setVertices(
                 [[0, 0], [0, cr * cfg.style.laser_long_radius_factor]],
                 log=False,

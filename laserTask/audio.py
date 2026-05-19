@@ -21,9 +21,18 @@ if sys.platform != "win32":
             t = np.linspace(0, secs, int(sample_rate * secs), False)
             tone = np.sin(freq * t * 2 * np.pi)
             
-            window = np.hamming(len(tone))
-            mono = (tone * window * volume).astype(np.float32)
-            self.waveform = np.column_stack((mono, mono))
+            # Apply Hanning apodization (5ms ramp at start/end) like PsychoPy's sound
+            hwSize = int(min(sample_rate // 200, len(tone) // 15))
+            if hwSize > 0:
+                hanningWindow = np.hanning(2 * hwSize + 1)
+                tone = tone.copy()
+                tone[:hwSize] *= hanningWindow[:hwSize]
+                tone[-hwSize:] *= hanningWindow[hwSize + 1:]
+            
+            mono = tone.astype(np.float32)
+            self.base_waveform = np.column_stack((mono, mono))
+            self.waveform = self.base_waveform * volume
+            self.volume = volume
 
         def play(self):
             sd.play(self.waveform, samplerate=44100)
@@ -32,7 +41,7 @@ if sys.platform != "win32":
             sd.stop()
 
         def setVolume(self, vol):
-            self.waveform = self.waveform / self.volume * vol
+            self.waveform = self.base_waveform * vol
             self.volume = vol
 
 class AudioStimulationManager:
