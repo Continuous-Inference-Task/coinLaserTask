@@ -237,30 +237,30 @@ def prompt_multiselect(
                 width = 57
                 bar = "─" * (width - 2)
                 sys.stdout.write(
-                    _c(C["cyan"], f"\n╭{bar}╮\n")
+                    _c(C["cyan"], f"\r\n╭{bar}╮\r\n")
                     + _c(C["cyan"], "│")
                     + _c(C["bold"], header_text.center(width - 2))
-                    + _c(C["cyan"], "│\n")
-                    + _c(C["cyan"], f"╰{bar}╯\n\n")
+                    + _c(C["cyan"], "│\r\n")
+                    + _c(C["cyan"], f"╰{bar}╯\r\n\r\n")
                 )
-            sys.stdout.write(f"  {text}:\n")
+            sys.stdout.write(f"  {text}:\r\n")
             if hint_text:
-                sys.stdout.write(_c(C["dim"], f"     {hint_text}") + "\n")
-            sys.stdout.write("\n")
+                sys.stdout.write(_c(C["dim"], f"     {hint_text}") + "\r\n")
+            sys.stdout.write("\r\n")
             for i, opt in enumerate(options):
                 sel = opt in selected
                 mark = _c(C["green"], "[x]") if sel else _c(C["dim"], "[ ]")
                 pointer = _c(C["cyan"], " ›") if i == cursor else "  "
-                sys.stdout.write(f"  {pointer} {mark} {opt}\n")
-            sys.stdout.write("\n")
+                sys.stdout.write(f"  {pointer} {mark} {opt}\r\n")
+            sys.stdout.write("\r\n")
             # Navigation hints on one line, action keys on another if present.
             nav = f"  {_c(C['dim'], '↑↓/jk')} navigate   {_c(C['dim'], 'space')} toggle   {_c(C['dim'], 'enter')} confirm   {_c(C['dim'], 'a')} all  {_c(C['dim'], 'n')} none"
-            sys.stdout.write(nav + "\n")
+            sys.stdout.write(nav + "\r\n")
             if action_keys:
                 ak = "   ".join(
                     f"{_c(C['dim'], k)} {v}" for k, v in action_keys.items()
                 )
-                sys.stdout.write(f"  {ak}\n")
+                sys.stdout.write(f"  {ak}\r\n")
             sys.stdout.flush()
 
         try:
@@ -1163,39 +1163,35 @@ SECTION_MAP: Dict[str, Tuple[str, Callable[[Dict[str, Any]], Dict[str, Any]]]] =
 
 
 def run_section_menu(cfg: Dict[str, Any]) -> None:
-    """Interactive menu — multi-select sections with space, arrows to navigate."""
+    """Interactive menu — numbered single-select sections + action keys."""
     dirty = False
 
-    ALL_SECTIONS = [(slug, desc, fn) for slug, desc, fn in SECTION_REGISTRY]
-    slug_to_fn = {slug: fn for slug, _, fn in ALL_SECTIONS}
-    all_options = [f"{slug}. {desc}" for slug, desc, _ in ALL_SECTIONS]
-    all_slugs = [slug for slug, _, _ in ALL_SECTIONS]
-
     while True:
-        dirty_warn = _c(C["yellow"], "  ← unsaved changes in memory") if dirty else ""
+        clear()
+        header("CoIn Laser Task — Setup")
 
-        selected_labels, action = prompt_multiselect(
-            "Select sections to configure",
-            all_options,
-            defaults=[],
-            header_text="CoIn Laser Task — Setup",
-            hint_text=dirty_warn or "space=toggle  ↑↓/jk=navigate  enter=run selected",
-            action_keys={
-                "r": "run experiment",
-                "g": "generate sequences",
-                "s": "show config",
-                "q": "quit & save",
-            },
-        )
+        if dirty:
+            print(_c(C["yellow"], "  ← unsaved changes in memory"))
+            print()
 
-        # ── action keys ──
-        if action == "q":
+        print("  Sections to configure:\n")
+        for slug, desc, _ in SECTION_REGISTRY:
+            print(f"    {_c(C['green'], slug)})  {desc}")
+
+        print()
+        print(f"  {_c(C['cyan'], 's')})  Show current configuration")
+        print(f"  {_c(C['cyan'], 'g')})  Generate sequences")
+        print(f"  {_c(C['cyan'], 'r')})  Run experiment" + _c(C["dim"], "  (python main.py)"))
+        print(f"  {_c(C['dim'], 'q')})  Quit & save")
+
+        print()
+        choice = input(f"  {_c(C['bold'], '>')} ").strip().lower()
+
+        if choice == "q":
             break
-        elif action == "s":
+        elif choice == "s":
             show_summary(cfg)
-            input(_c(C["dim"], "  Press Enter to continue …"))
-            continue
-        elif action == "r":
+        elif choice == "r":
             if dirty:
                 warn("Unsaved config changes — run anyway?")
                 if not prompt_yn("Proceed without saving?", True):
@@ -1205,7 +1201,7 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
             print()
             subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
             return
-        elif action == "g":
+        elif choice == "g":
             show_summary(cfg)
             if dirty:
                 warn("You have unsaved config changes.")
@@ -1219,32 +1215,23 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
                     if prompt_yn("Start the experiment?", True):
                         subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
                         return
-            continue
-
-        # ── run selected sections ──
-        if not selected_labels:
-            continue
-
-        selected_slugs = []
-        for label in selected_labels:
-            slug = label.split(".")[0]
-            selected_slugs.append(slug)
-
-        info(f"Running {len(selected_slugs)} section(s): {', '.join(selected_slugs)}")
-        for slug in selected_slugs:
-            fn = slug_to_fn[slug]
+        elif choice in SECTION_MAP:
+            desc, fn = SECTION_MAP[choice]
             cfg = fn(cfg)
             dirty = True
-
-        show_summary(cfg)
-        if prompt_yn("Save all changes?", True):
-            _write_laser_task_config(cfg)
-            _save_stimgen_from_cfg(cfg.copy())
-            dirty = False
-            success("Configuration saved.")
+            show_summary(cfg)
+            if prompt_yn("Save this section?", True):
+                _write_laser_task_config(cfg)
+                dirty = False
+                success(f"Section {choice} saved.")
+            else:
+                info("Change held in memory.")
         else:
-            info("Changes held in memory — save later with 'q'.")
-        input(_c(C["dim"], "  Press Enter to continue …"))
+            warn(f"Unknown option: '{choice}'")
+
+        if choice != "q":
+            print()
+            input(_c(C["dim"], "  Press Enter to continue …"))
 
     if dirty:
         print()
