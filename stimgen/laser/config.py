@@ -76,8 +76,8 @@ MAIN_SESSION = {
 
 # For short practice sessions (e.g. before the main task)
 PRACTICE_SESSION = {
-    "nBlocks": 4,
-    "blockDurationMin": 2,
+    "nBlocks": 1,
+    "blockDurationMin": 1,
 }
 
 # For general testing and standard "generate_laser_session" function defaults

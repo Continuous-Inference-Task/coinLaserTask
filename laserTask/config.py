@@ -117,7 +117,7 @@ class ExperimentConfig:
     # controls instruction screen -- other option is "response_box"
     # if set to response_box, instruction do not name the keys
     # NOTE: must still set key mappings to code the device sends! 
-    input_device: str = "keyboard" 
+    input_device: str = "keyboard"
 
     # -- Dialog configuration --
     dialog_fields: list = field(default_factory=lambda: ["participant", "visit", "session", "order", "framing", "practice_only"])
@@ -157,7 +157,7 @@ class ExperimentConfig:
     """Shield rotation speed in degrees per frame."""
     circle_radius: float = 3.0
     """Radius of the game circle (PsychoPy height units)."""
-    allow_shield_adjustment: bool = False # If True, participant can resize shield with key_shrink/key_grow.
+    allow_shield_adjustment: bool = False
     """Fixed angular half-width of the shield in degrees."""
     shield_sizes: ShieldSizeConfig = field(
         default_factory=ShieldSizeConfig.peduks_fixed
