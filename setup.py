@@ -1165,6 +1165,13 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
         live_formatter=frames_live_formatter,
     )
 
+    # ── total time summary ──
+    print()
+    pract_total = stimgen.get("_practice_n_blocks", ps.get("nBlocks", 4)) * stimgen.get("_practice_block_dur", ps.get("blockDurationMin", 2))
+    main_total = stimgen.get("_main_n_blocks", ms.get("nBlocks", 1)) * stimgen.get("_main_block_dur", ms.get("blockDurationMin", 1))
+    grand_total = pract_total + main_total
+    info(_c(C["bold"], f"Total experiment time: {pract_total} min (practice) + {main_total} min (main) = {grand_total} min"))
+
     cfg["_stimgen_updates"] = stimgen
     return cfg
 
@@ -1224,6 +1231,7 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
         ("Run blocks", f"{cfg.get('n_blocks', '?')} main" + (" + practice" if cfg.get("enable_practice") else ""), "4"),
         ("Gen practice", f"{prac_n} blocks @ {prac_dur} min", "7"),
         ("Gen main", f"{main_n} blocks @ {main_dur} min", "7"),
+        ("Total time", f"{prac_n * prac_dur + main_n * main_dur} min", "7"),
         ("Gen noise (L/H)", f"{noise_low}° / {noise_high}°", "7"),
         ("Gen jump range", f"{jump_min}s - {jump_max}s (mean: {jump_mean}s)", "7"),
         ("Shield", f"{'adjustable' if cfg.get('allow_shield_adjustment') else 'fixed'}  ({cfg.get('rotation_speed', '?')}°/frame, r={cfg.get('circle_radius', '?')})", "5"),
@@ -1299,10 +1307,11 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
         fail("Laser sequence generation failed!")
         print(_c(C["red"], result.stderr[-500:]))
         return False
-    success("Laser sequences written")
-    for line in result.stdout.strip().split("\n")[-3:]:
-        if line.strip():
-            info(line.strip())
+    # Count generated files
+    seq_dir = PROJECT_ROOT / "sequences"
+    csv_count = len(list(seq_dir.glob("*.csv"))) if seq_dir.is_dir() else 0
+    order_count = len([d for d in seq_dir.iterdir() if d.is_dir() and d.name.startswith("coin_")]) if seq_dir.is_dir() else 0
+    success(f"Laser sequences written ({csv_count} block CSVs, {order_count} order dirs)")
 
     # MMN sequences
     info("Generating MMN tone sequences …")
@@ -1375,7 +1384,7 @@ SECTION_REGISTRY: List[Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]
     ("1", "Machine setup (monitor, fullscreen, refresh rate)", configure_machine),
     ("2", "Input & controls (keyboard vs. response box, keys)", configure_input),
     ("3", "Trigger mode & hardware ports", configure_triggers),
-    ("4", "Experiment design (blocks, practice)", configure_design),
+    ("4", "Experiment design (practice, earth bg, reward reset)", configure_design),
     ("5", "Shield mechanics & reward (size, speed, loss factor)", configure_shield_reward),
     ("6", "Auditory MMN (tone frequencies, duration, ISI)", configure_audio),
     ("7", "Sequence generation (noise levels, volatility, durations)", configure_stimgen),
@@ -1391,6 +1400,23 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
     """Interactive menu — numbered single-select sections + action keys."""
     dirty = False
 
+    def _quick_setup():
+        """Run all sections sequentially with current defaults."""
+        nonlocal cfg, dirty
+        for slug, desc, fn in SECTION_REGISTRY:
+            print()
+            info(_c(C["bold"], f"Running section {slug}: {desc}"))
+            cfg = fn(cfg)
+            dirty = True
+        show_summary(cfg)
+        if prompt_yn("Save all sections?", True):
+            _write_laser_task_config(cfg)
+            _save_stimgen_from_cfg(cfg.copy())
+            dirty = False
+            success("All sections saved.")
+        else:
+            info("Changes held in memory — use 's' to review, 'q' to save & quit.")
+
     while True:
         clear()
         header("CoIn Laser Task — Setup")
@@ -1404,6 +1430,7 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
             print(f"    {_c(C['green'], slug)})  {desc}")
 
         print()
+        print(f"  {_c(C['cyan'], 'a')})  Quick setup — run all sections")
         print(f"  {_c(C['cyan'], 's')})  Show current configuration")
         print(f"  {_c(C['cyan'], 'g')})  Generate sequences")
         print(f"  {_c(C['cyan'], 'r')})  Run experiment" + _c(C["dim"], "  (python main.py)"))
@@ -1413,7 +1440,14 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
         choice = input(_c(C["magenta"], "  ❯ ")).strip().lower()
 
         if choice == "q":
+            if dirty:
+                if prompt_yn("Save changes before quitting?", True):
+                    _write_laser_task_config(cfg)
+                    _save_stimgen_from_cfg(cfg.copy())
+                    success("Config saved.")
             break
+        elif choice == "a":
+            _quick_setup()
         elif choice == "s":
             show_summary(cfg)
         elif choice == "r":

@@ -55,7 +55,7 @@ DUR_MEAN_STD_MIN_MAX_VOLATILE = [
 ]  # [Mean, Std, Min, Max] of epochs per block
 
 # Noise values for the observations (in degrees)
-NOISE_STD_LOW = 10
+NOISE_STD_LOW = 15
 NOISE_STD_HIGH = 20
 
 # Allowed jumps for the mean position in degrees
@@ -76,8 +76,8 @@ MAIN_SESSION = {
 
 # For short practice sessions (e.g. before the main task)
 PRACTICE_SESSION = {
-    "nBlocks": 1,
-    "blockDurationMin": 1,
+    "nBlocks": 4,
+    "blockDurationMin": 2,
 }
 
 # For general testing and standard "generate_laser_session" function defaults
