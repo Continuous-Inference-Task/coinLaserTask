@@ -74,12 +74,6 @@ MAIN_SESSION = {
     "blockDurationMin": 1,
 }
 
-# For online training sessions
-ONLINE_TRAINING_SESSION = {
-    "nBlocks": 4,
-    "blockDurationMin": 0.5,
-}
-
 # For short practice sessions (e.g. before the main task)
 PRACTICE_SESSION = {
     "nBlocks": 4,

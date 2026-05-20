@@ -568,7 +568,6 @@ def _read_stimgen_config() -> Dict[str, Any]:
         "JUMP_VALUE_SET": _cfg.JUMP_VALUE_SET,
         "MAIN_SESSION": dict(_cfg.MAIN_SESSION),
         "PRACTICE_SESSION": dict(_cfg.PRACTICE_SESSION),
-        "ONLINE_TRAINING_SESSION": dict(_cfg.ONLINE_TRAINING_SESSION),
         "DEFAULT_SESSION": dict(_cfg.DEFAULT_SESSION),
     }
 
@@ -582,7 +581,6 @@ def _save_stimgen_from_cfg(cfg: Dict[str, Any]) -> bool:
     ms = _read_stimgen_config()
     ms_dict = ms.get("MAIN_SESSION", {})
     ps_dict = ms.get("PRACTICE_SESSION", {})
-    ot_dict = ms.get("ONLINE_TRAINING_SESSION", {})
 
     flat: Dict[str, Any] = {}
     for k, v in stimgen_updates.items():
@@ -594,19 +592,13 @@ def _save_stimgen_from_cfg(cfg: Dict[str, Any]) -> bool:
             ps_dict["blockDurationMin"] = v
         elif k == "_practice_n_blocks":
             ps_dict["nBlocks"] = v
-        elif k == "_online_block_dur":
-            ot_dict["blockDurationMin"] = v
-        elif k == "_online_n_blocks":
-            ot_dict["nBlocks"] = v
-        elif not k.startswith("_") and k not in ("MAIN_SESSION", "PRACTICE_SESSION", "ONLINE_TRAINING_SESSION", "DEFAULT_SESSION"):
+        elif not k.startswith("_") and k not in ("MAIN_SESSION", "PRACTICE_SESSION", "DEFAULT_SESSION"):
             flat[k] = v
 
     if ms_dict:
         flat["MAIN_SESSION"] = ms_dict
     if ps_dict:
         flat["PRACTICE_SESSION"] = ps_dict
-    if ot_dict:
-        flat["ONLINE_TRAINING_SESSION"] = ot_dict
 
     try:
         _write_stimgen_config(flat)

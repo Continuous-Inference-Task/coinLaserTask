@@ -32,8 +32,10 @@ def generate_training_session_online_random_walk(session_file_name='test_trainin
 
     # Design choices
     session = {}
-    session['nBlocks'] = config.ONLINE_TRAINING_SESSION['nBlocks']
-    session['blockDuration'] = config.ONLINE_TRAINING_SESSION['blockDurationMin']
+    # Fall back to MAIN_SESSION since ONLINE_TRAINING_SESSION was removed
+    train_cfg = getattr(config, "ONLINE_TRAINING_SESSION", config.MAIN_SESSION)
+    session['nBlocks'] = train_cfg['nBlocks']
+    session['blockDuration'] = train_cfg['blockDurationMin']
     session['design'] = design_vola_stocha_random_walk()
     session['blockSequence'] = block_sequence
     session['blockTypes'] = session['design']['blockTypes']
