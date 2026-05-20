@@ -247,6 +247,10 @@ class ExperimentConfig:
             else:
                 self.parallel_address = "/dev/parport0"
 
+        # Rebuild shield_sizes with the configured loss_factor so that
+        # changing loss_factor actually reaches the shield cost calculations.
+        self.shield_sizes = ShieldSizeConfig.peduks_fixed(loss_factor=self.loss_factor)
+
 
 # Trigger event codes — used both for sending and for data logging.
 TRIGGER_CODES: Dict[str, int] = {
