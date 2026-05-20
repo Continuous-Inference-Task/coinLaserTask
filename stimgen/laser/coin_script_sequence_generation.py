@@ -5,14 +5,10 @@ sequences in the Laser task (CoIn / Continuous Inference study).
 This is the Python translation of peduksScriptSequenceGeneration.m (renamed to CoIn).
 """
 import os
-import sys
 import pickle
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for saving figures
 import matplotlib.pyplot as plt
-
-# Add this directory to path so we can import sibling modules
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from generate_laser_session import generate_laser_session
 from generate_laser_session_practice import generate_laser_session_practice

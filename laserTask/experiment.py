@@ -129,6 +129,7 @@ def run_experiment(
         "session":     lambda c: ("session",     ["-- select session --"] + c.sessions),
         "order":       lambda c: ("order",       ["-- select order --"] + c.orders),
         "framing":     lambda c: ("framing",     ["-- select framing --"] + c.framings),
+        "practice_only": lambda c: ("practice_only", False),
     }
 
     _dialog_fields = {}
@@ -210,9 +211,37 @@ def run_experiment(
     save_path = build_save_path(cfg, exp_info)
     main_conditions = data.importConditions(session_path)
 
-    # NOTE: win-loss framing as dropdown in dialog
     wins_condition = 1 if exp_info["framing"] == "win" else 0
-    S = create_stimuli(win, cfg, wins_cond=wins_condition, n_main_blocks=len(main_conditions))
+
+    practice_conditions = []
+    if cfg.enable_practice:
+        practice_session_path = build_practice_session_path(cfg, exp_info)
+        practice_conditions = data.importConditions(practice_session_path)
+
+    practice_only = exp_info.get("practice_only", False)
+    n_display_blocks = len(practice_conditions) if practice_only else len(main_conditions)
+
+    # Calculate block duration from the first loaded block file if possible
+    block_duration_min = 3.0
+    try:
+        if practice_only and len(practice_conditions) > 0:
+            first_bf = practice_conditions[0]["blockFileName"]
+            first_stream = load_stimulus_stream(cfg.sequence_root + first_bf)
+            block_duration_min = len(first_stream) / 3600.0
+        elif len(main_conditions) > 0:
+            first_bf = main_conditions[0]["blockFileName"]
+            first_stream = load_stimulus_stream(cfg.sequence_root + first_bf)
+            block_duration_min = len(first_stream) / 3600.0
+    except Exception:
+        pass
+
+    S = create_stimuli(
+        win,
+        cfg,
+        wins_cond=wins_condition,
+        n_main_blocks=n_display_blocks,
+        block_duration_min=block_duration_min,
+    )
     # Reward tracker passed as argument, allowing for easier custom implementations
     if reward_tracker is None:
         reward_tracker = RewardTracker(cfg, wins=wins_condition)
@@ -225,8 +254,6 @@ def run_experiment(
     block_conditions: list = []
 
     if cfg.enable_practice:
-        practice_session_path = build_practice_session_path(cfg, exp_info)
-        practice_conditions = data.importConditions(practice_session_path)
         n_practice = len(practice_conditions)
         for i, _pc in enumerate(practice_conditions):
             _row = dict(_pc)
@@ -238,13 +265,14 @@ def run_experiment(
             _row["toneStochasticity"] = np.nan
             block_conditions.append(_row)
 
-    main_block_total = len(main_conditions)
-    for _idx, _mc in enumerate(main_conditions, start=1):
-        _row = dict(_mc)
-        _row["phase"] = PHASE_MAIN
-        _row["phaseBlockIndex"] = _idx
-        _row["phaseBlockTotal"] = main_block_total
-        block_conditions.append(_row)
+    if not exp_info.get("practice_only", False):
+        main_block_total = len(main_conditions)
+        for _idx, _mc in enumerate(main_conditions, start=1):
+            _row = dict(_mc)
+            _row["phase"] = PHASE_MAIN
+            _row["phaseBlockIndex"] = _idx
+            _row["phaseBlockTotal"] = main_block_total
+            block_conditions.append(_row)
 
     # Display warning screen when actual frame rate is not close to 60Hz
     FPS_TOLERANCE = 5
@@ -572,70 +600,108 @@ def run_experiment(
                         trig.send(size_trig_val)
 
             # --- (B) check for movement keys  --------------------------- #
-            # 1. Gather all releases
-            new_releases = default_kb.getKeys(
-                keyList=keys_move,
-                clear=True,
-                waitRelease=True,
-            )
-            for k in new_releases:
-                if k.name in active_keys:
-                    active_keys.remove(k.name)
-
-            # 2. Gather all presses
-            new_presses = default_kb.getKeys(
-                keyList=keys_move,
-                clear=True,
-                waitRelease=False,
-            )
-            for k in new_presses:
-                if k.name not in active_keys:
-                    active_keys.append(k.name)
-
-            # 3. Process movement and triggers based on held keys
-            partial_release = False
-
-            if not active_keys:
-                if not send_resp_triggers:
-                    # We just released all keys
+            if cfg.use_legacy_key_tracking:
+                released = default_kb.getKeys(
+                    keyList=keys_move,
+                    clear=True,
+                    waitRelease=True,
+                )
+                if released:
+                    default_kb.getKeys(
+                        keyList=keys_move,
+                        clear=True,
+                        waitRelease=False,
+                    )
                     trig_val = TRIGGER_CODES["key_release"]
                     do_send = True
                     key_released = True
                     last_movement_trigger = None
-            else:
-                last_key = active_keys[-1]
-                
-                # Determine intended direction
-                if last_key == cfg.key_right:
-                    shield_rot += cfg.rotation_speed
-                    new_tv = TRIGGER_CODES["key_right"]
                 else:
-                    shield_rot -= cfg.rotation_speed
-                    new_tv = TRIGGER_CODES["key_left"]
-                
-                # Hybrid trigger sequence (Option A from REVERT_NOTES.md):
-                # When a key is released while another remains held, emit a
-                # key_release trigger (50) via trig.send() to preserve the
-                # press→release→press event loop expected by legacy analysis
-                # scripts.  The `partial_release` flag forces a direction
-                # trigger in the same frame so the stream reads:
-                #   … → key_release(50) → key_<dir>(30/40) → …
-                if new_releases:
-                    trig.send(TRIGGER_CODES["key_release"])
-                    partial_release = True
-                
-                # Trigger gate matching the original behaviour: direction
-                # triggers only fire when (a) send_resp_triggers is armed
-                # (initial press or after a full release), or (b) a partial
-                # release just occurred and we need to log the resumed
-                # direction.  Intermediate direction changes during multi-key
-                # overlap are suppressed — identical to the original silent
-                # frames where `send_resp_triggers` was False.
-                if send_resp_triggers or partial_release:
-                    trig_val = new_tv
-                    do_send = True
-                    send_resp_triggers = False
-                    last_movement_trigger = new_tv
+                    pressed = default_kb.getKeys(
+                        keyList=keys_move,
+                        clear=False,
+                        waitRelease=False,
+                    )
+                    if pressed:
+                        last = pressed[-1]
+                        if last.name == cfg.key_right:
+                            shield_rot += cfg.rotation_speed
+                            new_tv = TRIGGER_CODES["key_right"]
+                        else:
+                            shield_rot -= cfg.rotation_speed
+                            new_tv = TRIGGER_CODES["key_left"]
+                        if send_resp_triggers:
+                            trig_val = new_tv
+                            do_send = True
+                            send_resp_triggers = False
+                            last_movement_trigger = new_tv
+            else:
+                # 1. Gather all releases
+                new_releases = default_kb.getKeys(
+                    keyList=keys_move,
+                    clear=True,
+                    waitRelease=True,
+                )
+                for k in new_releases:
+                    if k.name in active_keys:
+                        active_keys.remove(k.name)
+                    # Flush the press buffer for this specific key
+                    default_kb.getKeys(keyList=[k.name], clear=True, waitRelease=False)
+
+                # 2. Gather all presses
+                new_presses = default_kb.getKeys(
+                    keyList=keys_move,
+                    clear=False,
+                    waitRelease=False,
+                )
+                for k in new_presses:
+                    if k.name not in active_keys:
+                        active_keys.append(k.name)
+
+                # 3. Process movement and triggers based on held keys
+                partial_release = False
+
+                if not active_keys:
+                    if not send_resp_triggers:
+                        # We just released all keys
+                        trig_val = TRIGGER_CODES["key_release"]
+                        do_send = True
+                        key_released = True
+                        last_movement_trigger = None
+                else:
+                    last_key = active_keys[-1]
+                    
+                    # Determine intended direction
+                    if last_key == cfg.key_right:
+                        shield_rot += cfg.rotation_speed
+                        new_tv = TRIGGER_CODES["key_right"]
+                    else:
+                        shield_rot -= cfg.rotation_speed
+                        new_tv = TRIGGER_CODES["key_left"]
+                    
+                    # Hybrid trigger sequence (Option A from REVERT_NOTES.md):
+                    # When a key is released while another remains held, emit a
+                    # key_release trigger (50) via trig.send() to preserve the
+                    # press→release→press event loop expected by legacy analysis
+                    # scripts.  The `partial_release` flag forces a direction
+                    # trigger in the same frame so the stream reads:
+                    #   … → key_release(50) → key_<dir>(30/40) → …
+                    if new_releases:
+                        trig.send(TRIGGER_CODES["key_release"])
+                        partial_release = True
+                    
+                    # Trigger gate matching the original behaviour: direction
+                    # triggers only fire when (a) send_resp_triggers is armed
+                    # (initial press or after a full release), or (b) a partial
+                    # release just occurred and we need to log the resumed
+                    # direction.  Intermediate direction changes during multi-key
+                    # overlap are suppressed — identical to the original silent
+                    # frames where `send_resp_triggers` was False.
+                    if send_resp_triggers or partial_release:
+                        trig_val = new_tv
+                        do_send = True
+                        send_resp_triggers = False
+                        last_movement_trigger = new_tv
 
             # --- (C) stimulus-change trigger (if nothing else sent) -- #
             if is_new and not do_send:

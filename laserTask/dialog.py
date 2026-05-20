@@ -19,6 +19,7 @@ from typing import Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -82,7 +83,7 @@ class SessionDialog(QDialog):
         self.setModal(True)
         self.setMinimumWidth(400)
 
-        self._widgets: dict[str, QLineEdit | QComboBox] = {}
+        self._widgets: dict[str, QLineEdit | QComboBox | QCheckBox] = {}
         self._build_ui(title, fields)
 
     # ── layout ─────────────────────────────────────────────────────────────
@@ -110,10 +111,13 @@ class SessionDialog(QDialog):
             lbl = QLabel(name.replace("_", " ").capitalize() + ":")
 
             if isinstance(value, list):
-                widget: QLineEdit | QComboBox = QComboBox()
+                widget: QLineEdit | QComboBox | QCheckBox = QComboBox()
                 for item in value:
                     widget.addItem(str(item))
                 widget.setCurrentIndex(0)
+            elif isinstance(value, bool):
+                widget = QCheckBox()
+                widget.setChecked(value)
             else:
                 widget = QLineEdit(str(value))
                 widget.setPlaceholderText("Enter value…")
@@ -160,6 +164,8 @@ class SessionDialog(QDialog):
         for name, widget in self._widgets.items():
             if isinstance(widget, QComboBox):
                 result[name] = widget.currentText()
+            elif isinstance(widget, QCheckBox):
+                result[name] = widget.isChecked()
             else:
                 result[name] = widget.text().strip()
         return result
@@ -192,7 +198,7 @@ def show_session_dialog(
     dict
         Populated field values, or None if the user cancelled.
     """
-    QApplication.instance() or QApplication([])
+    app = QApplication.instance() or QApplication([])
 
     # Auto-fill participant with next ID if data_root is given
     if data_root is not None and "participant" in fields:

@@ -145,6 +145,7 @@ def create_stimuli(
     cfg: ExperimentConfig,
     wins_cond: int,
     n_main_blocks: Optional[int] = None,
+    block_duration_min: float = 3.0,
 ) -> Dict[str, Any]:
     """Instantiate every ``visual.*`` component used by the experiment.
 
@@ -186,6 +187,9 @@ def create_stimuli(
         _keyboard_move_blurb if cfg.input_device == "keyboard" else _box_move_blurb
     )
 
+    _dur_val = int(block_duration_min) if block_duration_min.is_integer() else round(block_duration_min, 1)
+    _dur_str = f"{_dur_val} min"
+
     S["instr1"] = visual.TextStim(
         win,
         name="instr1",
@@ -194,7 +198,7 @@ def create_stimuli(
             "where you protect our planet Earth by shielding it from "
             "harmful radiation.\n\n"
             f"This session will have {n_main_blocks if n_main_blocks is not None else cfg.n_blocks} blocks. "
-            "Each block lasts 3 min.\n\n"
+            f"Each block lasts {_dur_str}.\n\n"
             f"{_move_blurb}\n\n"
             "Pay attention to the different sources and "
             "catch as many beams as you can!\n\n"

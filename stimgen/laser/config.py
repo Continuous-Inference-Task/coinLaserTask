@@ -37,7 +37,7 @@ OUTPUT_DIR = f"../../{SEQUENCE_ROOT}"
 # The laser stays in one position (epoch) for a period drawn from a
 # truncated exponential distribution. These are in seconds.
 JUMP_DURATION_MEAN_SEC = 0.3
-JUMP_DURATION_MIN_SEC = 0.1
+JUMP_DURATION_MIN_SEC = 0.075
 JUMP_DURATION_MAX_SEC = 1.0
 
 # Base characteristics of the block conditions:
@@ -70,15 +70,21 @@ JUMP_VALUE_SET = [-40, -30, -20, 20, 30, 40]
 
 # For standard/main EEG infusion sessions and Random Walk online equivalents
 MAIN_SESSION = {
-    "nBlocks": 12,  # Often 4 block types * 3 repetitions
-    "blockDurationMin": 3,  # Duration per block in minutes
+    "nBlocks": 1,
+    "blockDurationMin": 1,
 }
 
 # For online training sessions
-ONLINE_TRAINING_SESSION = {"nBlocks": 4, "blockDurationMin": 0.5}
+ONLINE_TRAINING_SESSION = {
+    "nBlocks": 4,
+    "blockDurationMin": 0.5,
+}
 
 # For short practice sessions (e.g. before the main task)
-PRACTICE_SESSION = {"nBlocks": 4, "blockDurationMin": 1}
+PRACTICE_SESSION = {
+    "nBlocks": 4,
+    "blockDurationMin": 2,
+}
 
 # For general testing and standard "generate_laser_session" function defaults
 DEFAULT_SESSION = {"nBlocks": 12, "blockDurationMin": 3}

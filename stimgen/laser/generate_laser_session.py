@@ -31,7 +31,7 @@ def generate_laser_session(block_sequence=None):
     # Design choices
     session = {}
     session['nBlocks'] = len(block_sequence)
-    session['blockDuration'] = config.DEFAULT_SESSION['blockDurationMin']
+    session['blockDuration'] = config.MAIN_SESSION['blockDurationMin']
     session['design'] = design_vola_stocha()
     session['blockSequence'] = block_sequence
     session['blockTypes'] = session['design']['blockTypes']

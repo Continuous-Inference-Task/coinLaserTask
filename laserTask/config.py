@@ -100,6 +100,7 @@ class ExperimentConfig:
     image_root: str = "images/"
 
     # -- Display --
+    target_os: str = "linux"
     window_size: Tuple[int, int] = (1512, 982)
     fullscreen: bool = True
     screen_index: int = 0
@@ -119,9 +120,7 @@ class ExperimentConfig:
     input_device: str = "keyboard" 
 
     # -- Dialog configuration --
-    dialog_fields: list = field(
-        default_factory=lambda: ["participant", "visit", "session", "order", "framing"]
-    )
+    dialog_fields: list = field(default_factory=lambda: ["participant", "visit", "session", "order", "framing", "practice_only"])
     """Fields shown in the session setup dialog.
 
     Must be a subset of ``["participant", "visit", "session", "order",
@@ -141,15 +140,14 @@ class ExperimentConfig:
     """Dropdown options for the session dialog (if enabled via dialog_fields)."""
 
     # -- Keyboard backend --
-    keyboard_backend: str = "iohub"
+    keyboard_backend: str = ""
     """PsychoPy keyboard backend.
 
-    Options: ``"ptb"`` (Psychtoolbox, best precision, requires elevated
-    privileges on Linux), ``"event"`` (pyglet events, works everywhere),
+    Options: ``"ptb"`` (Psychtoolbox), ``"event"`` (pyglet events),
     ``"iohub"`` (ioHub, cross-platform).
 
-    Leave empty for OS-appropriate auto-selection:
-    Windows → ``"ptb"``,  Linux / macOS → ``"event"``.
+    Default is ``""`` (auto-selects ``"ptb"`` on Windows, ``"iohub"`` on
+    Linux / macOS).
     """
     
 
@@ -165,10 +163,13 @@ class ExperimentConfig:
         default_factory=ShieldSizeConfig.peduks_fixed
     )
 
+    use_legacy_key_tracking: bool = True
+    """Set to True to restore the original/legacy key tracking behavior."""
+
 
     # -- Reward --
     loss_factor: float = 0.003
-    currency_symbol: str = "£"
+    currency_symbol: str = "€"
 
     # -- Trigger settings --
     trigger_mode: str = "dummy"
@@ -214,7 +215,7 @@ class ExperimentConfig:
     reset_reward_after_practice: bool = True
     """Reset session reward to 0 after practice ends."""
 
-    n_blocks: int = 4
+    n_blocks: int = 1
     min_laser_duration_frames: int = 6
     """Hardcoded maximum frames the laser should be visible before disappearing."""
 

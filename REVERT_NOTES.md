@@ -15,16 +15,10 @@ This document keeps track of the main behavioral modifications made to the `coin
 *   **Alternative Compatibility Options:**
     *   **Option A: Hybrid Trigger Sequence ✓ IMPLEMENTED:** When a key is released while another remains held, `key_release` (50) is emitted immediately before the resumed direction trigger. This preserves the `press → release → press` event loop for legacy analysis scripts while maintaining smooth movement. See `experiment.py` — search for `"Hybrid trigger sequence"`.
     *   **Option B: Full-State CSV Logging:** We could add a dedicated CSV column logging the exact set of physically held keys (e.g., `"['k']"`, `"['k', 'd']"`) on every frame, allowing researchers to retrospectively analyze overlapping inputs without relying purely on trigger sequences. *(not yet implemented)*
-*   **Reversion:**
-    *   To revert **both** the multi-key tracker and the hybrid trigger fix (restore original naive-stop behavior):
-        ```bash
-        git revert <hybrid-trigger-commit>
-        git revert 2e287244e53fc6f334f25ea3d76c7f3d9a1b1b79
-        ```
-    *   To revert **only** the hybrid trigger injection (keep smooth multi-key movement but remove injected `key_release` triggers):
-        ```bash
-        git revert <hybrid-trigger-commit>
-        ```
+*   **Reversion & Configuration:**
+    *   This behavior is now fully configurable via the `use_legacy_key_tracking` parameter in `ExperimentConfig` (which can also be toggled under Option 2 in the `setup.py` wizard).
+    *   **`use_legacy_key_tracking = True`**: Restores the original/legacy PsychoPy naive-stop behavior (the shield stops moving immediately when any movement key is released).
+    *   **`use_legacy_key_tracking = False` (Default)**: Keeps the smooth multi-key state tracker active (movement automatically resumes in the direction of any remaining held key upon release).
 
 ---
 

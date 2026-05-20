@@ -38,10 +38,24 @@ class TriggerManager:
 
         elif self.mode == "parallel":
             from psychopy import parallel
-            self._port = parallel.ParallelPort(address=config.parallel_address)
-            logging.exp(
-                f"Opened parallel trigger port {config.parallel_address:#x}"
-            )
+            addr = config.parallel_address
+            if isinstance(addr, str):
+                addr_str = addr.strip()
+                if addr_str.lower().startswith("0x"):
+                    try:
+                        addr = int(addr_str, 16)
+                    except ValueError:
+                        pass
+                else:
+                    try:
+                        addr = int(addr_str)
+                    except ValueError:
+                        pass
+            self._port = parallel.ParallelPort(address=addr)
+            if isinstance(addr, int):
+                logging.exp(f"Opened parallel trigger port {addr:#x}")
+            else:
+                logging.exp(f"Opened parallel trigger port {addr}")
 
         elif self.mode == "lsl":
             import pylsl

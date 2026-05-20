@@ -3,11 +3,9 @@ Comprehensive test script to validate every Python translation against
 expected MATLAB behavior. Checks edge cases, array shapes, value ranges,
 and internal consistency.
 """
-import sys
 import os
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def test_design_vola_stocha():
     import config
@@ -207,7 +205,7 @@ def test_generate_laser_session():
     np.random.seed(42)
     session = generate_laser_session([1, 2, 3, 4])
     assert session['nBlocks'] == 4
-    assert session['blockDuration'] == config.DEFAULT_SESSION['blockDurationMin']
+    assert session['blockDuration'] == config.MAIN_SESSION['blockDurationMin']
     assert session['sampleRate'] == config.SAMPLE_RATE
     assert len(session['blocks']) == 4
     # Check block types match
@@ -215,7 +213,7 @@ def test_generate_laser_session():
     for i, blk in enumerate(session['blocks']):
         assert blk['blockID'] == i + 1
         assert blk['blockType'] == expected_types[i]
-        assert blk['duration'] == config.DEFAULT_SESSION['blockDurationMin'] * 60
+        assert blk['duration'] == config.MAIN_SESSION['blockDurationMin'] * 60
         # Stim should have all required keys
         stim = blk['stim']
         for key in ['meanValues', 'meanDurations', 'meanValueVector', 'meanValueVectorDeg',

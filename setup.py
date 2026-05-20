@@ -111,31 +111,153 @@ def prompt(
     choices: Optional[List[str]] = None,
     hint_text: str = "",
 ) -> str:
-    """Ask the user for input.  Shows default and optional hint below."""
+    """Ask the user for input. Shows default and optional hint below."""
     if choices:
         for i, choice in enumerate(choices, 1):
             marker = _c(C["green"], "→") if choice == default else " "
             print(f"     {marker} {i}. {choice}")
         print()
 
-    default_display = _c(C["dim"], f" [default: {default}]") if default else ""
-    if hint_text:
-        print(f"  {text}{default_display}:")
-        print(_c(C["dim"], f"     {hint_text}"))
-        raw = input("  > ").strip()
-    else:
-        raw = input(f"  {text}{default_display}: ").strip()
-    return raw if raw else default
+    while True:
+        default_display = _c(C["dim"], f" ({default})") if default else ""
+        print(f"  {_c(C['bold'], text)}{default_display}")
+        if hint_text:
+            print(_c(C["dim"], f"     {hint_text}"))
+        raw = input(_c(C["magenta"], "  ❯ ")).strip()
+        val = raw if raw else default
+
+        if choices:
+            if val in choices:
+                return val
+            if val.isdigit() and 1 <= int(val) <= len(choices):
+                return choices[int(val) - 1]
+            warn(f"Invalid option. Please enter a number (1-{len(choices)}) or type the choice exactly.")
+            print()
+            continue
+
+        return val
 
 
 def prompt_yn(text: str, default: bool = True, *, hint_text: str = "") -> bool:
     hint_label = "Y/n" if default else "y/N"
-    raw = prompt(f"{text} [{hint_label}]", "", hint_text=hint_text).strip().lower()
+    raw = prompt(text, hint_label, hint_text=hint_text).strip().lower()
+    if not raw or raw == hint_label.lower():
+        return default
     if raw in ("y", "yes"):
         return True
     if raw in ("n", "no"):
         return False
     return default
+
+
+def prompt_live(
+    text: str,
+    default: str = "",
+    *,
+    hint_text: str = "",
+    live_formatter = None,
+) -> str:
+    """Ask the user for input. Shows default, optional hint below, and live previews if possible."""
+    use_live = sys.stdin.isatty()
+    
+    if use_live:
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+                def get_char():
+                    ch = msvcrt.getch()
+                    if ch in (b'\x00', b'\xe0'):
+                        msvcrt.getch()
+                        return ""
+                    return ch.decode("utf-8", errors="ignore")
+            else:
+                import termios
+                import tty
+                def get_char():
+                    fd = sys.stdin.fileno()
+                    old = termios.tcgetattr(fd)
+                    try:
+                        tty.setraw(fd)
+                        ch = sys.stdin.read(1)
+                    finally:
+                        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+                    return ch
+        except Exception:
+            use_live = False
+
+    if not use_live:
+        res = prompt(text, default, hint_text=hint_text)
+        if live_formatter:
+            try:
+                formatted = live_formatter(res)
+                if formatted:
+                    print(f"     → {formatted}")
+            except Exception:
+                pass
+        return res
+
+    default_display = _c(C["dim"], f" ({default})") if default else ""
+    print(f"  {_c(C['bold'], text)}{default_display}")
+    if hint_text:
+        print(_c(C["dim"], f"     {hint_text}"))
+        
+    input_str = ""
+    sys.stdout.write(_c(C["magenta"], "  ❯ ") + _c(C["dim"], default))
+    sys.stdout.flush()
+    
+    is_default = True
+    
+    while True:
+        try:
+            ch = get_char()
+        except KeyboardInterrupt:
+            print()
+            raise KeyboardInterrupt
+            
+        if not ch:
+            continue
+            
+        if ch == "\x03":
+            print()
+            raise KeyboardInterrupt
+            
+        if ch in ("\r", "\n"):
+            break
+            
+        if ch in ("\x7f", "\x08"):
+            if is_default:
+                input_str = ""
+                is_default = False
+            elif len(input_str) > 0:
+                input_str = input_str[:-1]
+        elif ch.isprintable():
+            if is_default:
+                input_str = ""
+                is_default = False
+            input_str += ch
+            
+        sys.stdout.write("\r\x1b[K")
+        sys.stdout.flush()
+        
+        live_hint = ""
+        if live_formatter:
+            try:
+                val_to_format = input_str if input_str else default
+                live_hint = live_formatter(val_to_format)
+            except Exception:
+                pass
+                
+        hint_display = f"   {_c(C['green'], '→ ' + live_hint)}" if live_hint else ""
+        
+        if is_default:
+            sys.stdout.write(_c(C["magenta"], "  ❯ ") + _c(C["dim"], default) + hint_display)
+        else:
+            sys.stdout.write(_c(C["magenta"], "  ❯ ") + input_str + hint_display)
+        sys.stdout.flush()
+        
+    print()
+    val = input_str if input_str else default
+    return val
 
 
 def prompt_int(
@@ -145,9 +267,10 @@ def prompt_int(
     min_val: Optional[int] = None,
     max_val: Optional[int] = None,
     hint_text: str = "",
+    live_formatter = None,
 ) -> int:
     while True:
-        raw = prompt(text, str(default), hint_text=hint_text)
+        raw = prompt_live(text, str(default), hint_text=hint_text, live_formatter=live_formatter)
         try:
             val = int(raw)
             if min_val is not None and val < min_val:
@@ -161,9 +284,15 @@ def prompt_int(
             warn("Please enter a number.")
 
 
-def prompt_float(text: str, default: float, *, hint_text: str = "") -> float:
+def prompt_float(
+    text: str,
+    default: float,
+    *,
+    hint_text: str = "",
+    live_formatter = None,
+) -> float:
     while True:
-        raw = prompt(text, str(default), hint_text=hint_text)
+        raw = prompt_live(text, str(default), hint_text=hint_text, live_formatter=live_formatter)
         try:
             return float(raw)
         except ValueError:
@@ -268,6 +397,12 @@ def prompt_multiselect(
             _redraw()
             while True:
                 ch = sys.stdin.read(1)
+
+                # ── Ctrl+C / Ctrl+D ──
+                if ch == "\x03":
+                    raise KeyboardInterrupt
+                elif ch == "\x04":
+                    raise EOFError
 
                 # ── escape sequences (arrows) ──
                 if ch == "\x1b":
@@ -380,6 +515,7 @@ def _read_laser_task_config() -> Dict[str, Any]:
     from laserTask.config import ExperimentConfig
     c = ExperimentConfig()
     return {
+        "target_os": c.target_os,
         "window_size_w": c.window_size[0],
         "window_size_h": c.window_size[1],
         "fullscreen": c.fullscreen,
@@ -413,6 +549,7 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "framings": list(c.framings),
         "dialog_fields": list(c.dialog_fields),
         "keyboard_backend": c.keyboard_backend,
+        "use_legacy_key_tracking": c.use_legacy_key_tracking,
     }
 
 
@@ -461,7 +598,7 @@ def _save_stimgen_from_cfg(cfg: Dict[str, Any]) -> bool:
             ot_dict["blockDurationMin"] = v
         elif k == "_online_n_blocks":
             ot_dict["nBlocks"] = v
-        elif not k.startswith("_"):
+        elif not k.startswith("_") and k not in ("MAIN_SESSION", "PRACTICE_SESSION", "ONLINE_TRAINING_SESSION", "DEFAULT_SESSION"):
             flat[k] = v
 
     if ms_dict:
@@ -482,7 +619,7 @@ def _save_stimgen_from_cfg(cfg: Dict[str, Any]) -> bool:
 
 def _write_stimgen_config(updates: Dict[str, Any]) -> None:
     cfg_path = PROJECT_ROOT / "stimgen" / "laser" / "config.py"
-    source = cfg_path.read_text()
+    source = cfg_path.read_text(encoding="utf-8")
     for name, value in updates.items():
         if isinstance(value, dict):
             # Multi-line dict — replace entire block from KEY = { … }
@@ -495,7 +632,7 @@ def _write_stimgen_config(updates: Dict[str, Any]) -> None:
             lines.append("}")
             replacement = "\n".join(lines)
             source = re.sub(
-                rf'^{name}\s*=\s*\{{.*?^\}}',
+                rf'^{name}\s*=\s*\{{.*?\}}',
                 replacement,
                 source,
                 flags=re.MULTILINE | re.DOTALL,
@@ -508,14 +645,15 @@ def _write_stimgen_config(updates: Dict[str, Any]) -> None:
                 source,
                 flags=re.MULTILINE,
             )
-    cfg_path.write_text(source)
+    cfg_path.write_text(source, encoding="utf-8")
 
 
 def _write_laser_task_config(updates: Dict[str, Any]) -> None:
     cfg_path = PROJECT_ROOT / "laserTask" / "config.py"
-    source = cfg_path.read_text()
+    source = cfg_path.read_text(encoding="utf-8")
 
     field_map = {
+        "target_os": "target_os",
         "fullscreen": "fullscreen",
         "screen_index": "screen_index",
         "monitor_name": "monitor_name",
@@ -546,18 +684,18 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
         "orders": "orders",
         "framings": "framings",
         "dialog_fields": "dialog_fields",
-        "keyboard_backend": "keyboard_backend",
+        "use_legacy_key_tracking": "use_legacy_key_tracking",
     }
 
     # Handle window_size specially
     if "window_size_w" in updates and "window_size_h" in updates:
         new_val = f"({updates['window_size_w']}, {updates['window_size_h']})"
         source = re.sub(
-            r'(window_size:\s*\S+\s*=\s*).+?(?=\s*(?:#.*)?$)',
+            r'^([ \t]*window_size:\s*[^=\n]+\s*=\s*)(.*?)(?=\n[ \t]*(?:[a-zA-Z_]\w*\s*:|#|"""|\'\'\'|@|class\s|def\s|$))',
             rf'\g<1>{new_val}',
             source,
             count=1,
-            flags=re.MULTILINE,
+            flags=re.MULTILINE | re.DOTALL,
         )
 
     for key, value in updates.items():
@@ -578,13 +716,13 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
             new_val = str(value)
 
         source = re.sub(
-            rf'({field_name}:\s*\S+\s*=\s*).+?(?=\s*(?:#.*)?$)',
+            rf'^([ \t]*{field_name}:\s*[^=\n]+\s*=\s*)(.*?)(?=\n[ \t]*(?:[a-zA-Z_]\w*\s*:|#|"""|\'\'\'|@|class\s|def\s|$))',
             rf'\g<1>{new_val}',
             source,
             count=1,
-            flags=re.MULTILINE,
+            flags=re.MULTILINE | re.DOTALL,
         )
-    cfg_path.write_text(source)
+    cfg_path.write_text(source, encoding="utf-8")
 
 
 def detect_os() -> str:
@@ -633,7 +771,7 @@ def configure_machine(cfg: Dict[str, Any]) -> Dict[str, Any]:
         choices=["linux", "windows", "macos"],
         hint_text=f"Detected: {current_os} — change if the experiment runs on a different machine",
     )
-    cfg["_target_os"] = target_os
+    cfg["target_os"] = target_os
     print()
 
     cfg["monitor_name"] = prompt(
@@ -675,14 +813,7 @@ def configure_machine(cfg: Dict[str, Any]) -> Dict[str, Any]:
         hint_text="60 Hz is standard; use 120 or 144 for high-refresh monitors",
     )
 
-    current_os = cfg.get("_target_os", detect_os())
-    _kb_os_default = "ptb" if current_os == "windows" else "event"
-    cfg["keyboard_backend"] = prompt(
-        "Keyboard backend",
-        cfg.get("keyboard_backend") or _kb_os_default,
-        choices=["event", "ptb", "iohub"],
-        hint_text="'event' works everywhere; 'ptb' gives best timing but requires elevated privileges on Linux/macOS",
-    )
+    current_os = cfg.get("target_os", detect_os())
     return cfg
 
 
@@ -702,14 +833,19 @@ def configure_input(cfg: Dict[str, Any]) -> Dict[str, Any]:
         hint("Common: Current Design FOS response box → '1' / '2'")
 
     cfg["key_left"] = prompt(
-        "Left / CCW key",
+        "Left / Counter-clockwise rotation key",
         cfg.get("key_left", "f"),
-        hint_text="Rotates shield counter-clockwise",
+        hint_text="Keyboard key or response box button to rotate the shield counter-clockwise (left/CCW)",
     )
     cfg["key_right"] = prompt(
-        "Right / CW key",
+        "Right / Clockwise rotation key",
         cfg.get("key_right", "j"),
-        hint_text="Rotates shield clockwise",
+        hint_text="Keyboard key or response box button to rotate the shield clockwise (right/CW)",
+    )
+    cfg["use_legacy_key_tracking"] = prompt_yn(
+        "Use legacy key tracking",
+        cfg.get("use_legacy_key_tracking", False),
+        hint_text="Yes = original Psychopy behavior (releases stop shield immediately); No = multi-key tracking (smooth)",
     )
     return cfg
 
@@ -726,10 +862,15 @@ def configure_triggers(cfg: Dict[str, Any]) -> Dict[str, Any]:
     cfg["trigger_mode"] = mode
 
     if mode == "serial":
-        osdef = OS_DEFAULTS.get(cfg.get("_target_os", "linux"), OS_DEFAULTS["linux"])
+        osdef = OS_DEFAULTS.get(cfg.get("target_os", "linux"), OS_DEFAULTS["linux"])
+        curr_os_default = OS_DEFAULTS.get(detect_os(), {}).get("serial_port")
+        offered_default = cfg.get("serial_port")
+        if offered_default == curr_os_default and detect_os() != cfg.get("target_os"):
+            offered_default = osdef["serial_port"]
+
         cfg["serial_port"] = prompt(
             "Serial port",
-            cfg.get("serial_port", osdef["serial_port"]),
+            offered_default or osdef["serial_port"],
             hint_text=osdef["serial_hint"],
         )
         cfg["serial_baud_rate"] = prompt_int(
@@ -738,15 +879,20 @@ def configure_triggers(cfg: Dict[str, Any]) -> Dict[str, Any]:
             hint_text="115200 for BrainVision TriggerBox",
         )
     elif mode == "parallel":
-        osdef = OS_DEFAULTS.get(cfg.get("_target_os", "linux"), OS_DEFAULTS["linux"])
+        osdef = OS_DEFAULTS.get(cfg.get("target_os", "linux"), OS_DEFAULTS["linux"])
         if osdef["parallel_addr"] is None:
-            warn(f"Parallel ports are not supported on {cfg.get('_target_os', 'linux')}.")
+            warn(f"Parallel ports are not supported on {cfg.get('target_os', 'linux')}.")
             cfg["trigger_mode"] = "dummy"
             info("Falling back to dummy trigger mode.")
         else:
+            curr_os_default = OS_DEFAULTS.get(detect_os(), {}).get("parallel_addr")
+            offered_default = cfg.get("parallel_address")
+            if offered_default == curr_os_default and detect_os() != cfg.get("target_os"):
+                offered_default = osdef["parallel_addr"]
+
             cfg["parallel_address"] = prompt(
                 "Parallel port address",
-                cfg.get("parallel_address", osdef["parallel_addr"]),
+                offered_default or osdef["parallel_addr"],
                 hint_text=osdef["parallel_hint"],
             )
     elif mode == "lsl":
@@ -779,7 +925,7 @@ def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Startup Dialog Options")
 
     # ── which fields appear (interactive multiselect) ──
-    available_fields = ["participant", "visit", "session", "order", "framing"]
+    available_fields = ["participant", "visit", "session", "order", "framing", "practice_only"]
     current_fields = cfg.get("dialog_fields", ["participant", "visit", "session", "order", "framing"])
 
     cfg["dialog_fields"], _ = prompt_multiselect(
@@ -923,50 +1069,71 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     info("Press Enter at any prompt to keep the current value.")
 
     stimgen = _read_stimgen_config()
+    sr = stimgen.get("SAMPLE_RATE", 60)
+
+    def frames_live_formatter(val_str: str) -> str:
+        try:
+            val = float(val_str)
+            frames = val * sr
+            if frames.is_integer():
+                return f"{int(frames)} frames at {sr} Hz"
+            return f"{frames:.1f} frames at {sr} Hz"
+        except Exception:
+            return ""
+
+    def total_time_formatter(n_blocks=None, block_dur=None):
+        def _fmt(val_str: str) -> str:
+            try:
+                val = float(val_str)
+                if n_blocks is not None:
+                    total = n_blocks * val
+                    return f"Total time: {total:g} min (with {n_blocks} blocks)"
+                elif block_dur is not None:
+                    total = int(val) * block_dur
+                    return f"Total time: {total:g} min (at {block_dur} min/block)"
+                return ""
+            except Exception:
+                return ""
+        return _fmt
 
     # ── practice ──
     ps = stimgen.get("PRACTICE_SESSION", {})
     print()
-    info(_c(C["bold"], "Practice session"))
+    info(_c(C["bold"], "Practice session (Jump design)"))
+    curr_n = ps.get("nBlocks", 4)
+    curr_dur = ps.get("blockDurationMin", 1)
     stimgen["_practice_block_dur"] = prompt_int(
         "  Block duration (min)",
-        ps.get("blockDurationMin", 1), min_val=1,
-        hint_text="1 minute is standard for a short practice",
+        curr_dur, min_val=1,
+        hint_text="Minutes per block",
+        live_formatter=total_time_formatter(n_blocks=curr_n),
     )
+    updated_dur = stimgen.get("_practice_block_dur", curr_dur)
     stimgen["_practice_n_blocks"] = prompt_int(
         "  Number of blocks",
-        ps.get("nBlocks", 4), min_val=1, max_val=20,
-        hint_text="Usually 4 blocks covering all condition types",
-    )
-
-    # ── online training ──
-    ot = stimgen.get("ONLINE_TRAINING_SESSION", {})
-    print()
-    info(_c(C["bold"], "Online training session"))
-    stimgen["_online_block_dur"] = prompt_float(
-        "  Block duration (min)",
-        ot.get("blockDurationMin", 0.5),
-        hint_text="Shorter blocks for online training (default: 0.5 min = 30 s)",
-    )
-    stimgen["_online_n_blocks"] = prompt_int(
-        "  Number of blocks",
-        ot.get("nBlocks", 4), min_val=1, max_val=20,
-        hint_text="Usually a short subset of condition types",
+        curr_n, min_val=1, max_val=20,
+        hint_text="How many blocks for this session",
+        live_formatter=total_time_formatter(block_dur=updated_dur),
     )
 
     # ── main / baseline ──
     ms = stimgen.get("MAIN_SESSION", {})
     print()
-    info(_c(C["bold"], "Main & baseline sessions"))
+    info(_c(C["bold"], "Main & baseline sessions (Jump design)"))
+    curr_n = ms.get("nBlocks", 12)
+    curr_dur = ms.get("blockDurationMin", 3)
     stimgen["_main_block_dur"] = prompt_int(
         "  Block duration (min)",
-        ms.get("blockDurationMin", 3), min_val=1,
-        hint_text="3 minutes is standard for MEG/EEG blocks",
+        curr_dur, min_val=1,
+        hint_text="Minutes per block",
+        live_formatter=total_time_formatter(n_blocks=curr_n),
     )
+    updated_dur = stimgen.get("_main_block_dur", curr_dur)
     stimgen["_main_n_blocks"] = prompt_int(
         "  Number of blocks (main)",
-        ms.get("nBlocks", 12), min_val=1, max_val=30,
-        hint_text="12 blocks = 4 condition types × 3 repetitions",
+        curr_n, min_val=1, max_val=30,
+        hint_text="How many blocks for this session",
+        live_formatter=total_time_formatter(block_dur=updated_dur),
     )
 
     # ── common ──
@@ -975,17 +1142,28 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     stimgen["NOISE_STD_LOW"] = prompt_int(
         "  Observation noise — low (°)",
         stimgen.get("NOISE_STD_LOW", 10), min_val=1,
-        hint_text="Standard deviation in low-noise blocks (default: 10°)",
     )
     stimgen["NOISE_STD_HIGH"] = prompt_int(
         "  Observation noise — high (°)",
         stimgen.get("NOISE_STD_HIGH", 20), min_val=1,
-        hint_text="Standard deviation in high-noise blocks (default: 20°)",
+    )
+    stimgen["JUMP_DURATION_MIN_SEC"] = prompt_float(
+        "  Min jump duration (s)",
+        stimgen.get("JUMP_DURATION_MIN_SEC", 0.1),
+        hint_text="Minimum time the true mean stays in one position (default: 0.1 s)",
+        live_formatter=frames_live_formatter,
     )
     stimgen["JUMP_DURATION_MEAN_SEC"] = prompt_float(
         "  Mean jump duration (s)",
         stimgen.get("JUMP_DURATION_MEAN_SEC", 0.3),
-        hint_text="How long the true mean stays in one position (default: 0.3 s)",
+        hint_text="Average time the true mean stays in one position (default: 0.3 s)",
+        live_formatter=frames_live_formatter,
+    )
+    stimgen["JUMP_DURATION_MAX_SEC"] = prompt_float(
+        "  Max jump duration (s)",
+        stimgen.get("JUMP_DURATION_MAX_SEC", 1.0),
+        hint_text="Maximum time the true mean stays in one position (default: 1.0 s)",
+        live_formatter=frames_live_formatter,
     )
 
     cfg["_stimgen_updates"] = stimgen
@@ -996,58 +1174,90 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 def _kv(label: str, value: Any, suffix: str = "") -> str:
     s = str(value)
-    return f"  {_c(C['dim'], label + ':').ljust(28)} {_c(C['bold'], s)}{suffix}"
+    label_text = f"{label}:"
+    padded_label = label_text.ljust(20)
+    return f"  {_c(C['dim'], padded_label)} {_c(C['bold'], s)}{suffix}"
 
 
-def show_summary(cfg: Dict[str, Any]) -> None:
-    section("Configuration Summary")
+def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
+    if section_id is not None:
+        section(f"Section {section_id} Summary")
+    else:
+        section("Configuration Summary")
 
     width = 59
     print(_c(C["cyan"], f"  ┌{'─' * (width - 4)}┐"))
 
     fullscr = "fullscreen" if cfg.get("fullscreen") else f"{cfg.get('window_size_w', '?')}×{cfg.get('window_size_h', '?')}"
     items = [
-        ("Target OS", cfg.get("_target_os", detect_os())),
-        ("Keyboard backend", cfg.get("keyboard_backend", "?")),
-        ("Monitor", f"{cfg.get('monitor_name', '?')} ({fullscr})"),
-        ("Screen index", cfg.get("screen_index", "?")),
-        ("Refresh rate", f"{cfg.get('target_refresh_rate', '?')} Hz"),
-        ("Input", f"{cfg.get('input_device', '?')}  ({cfg.get('key_left', '?')} / {cfg.get('key_right', '?')})"),
-        ("Triggers", cfg.get("trigger_mode", "?")),
+        # (label, value, section_id)
+        ("Target OS", cfg.get("target_os", detect_os()), "1"),
+        ("Monitor", f"{cfg.get('monitor_name', '?')} ({fullscr})", "1"),
+        ("Screen index", cfg.get("screen_index", "?"), "1"),
+        ("Refresh rate", f"{cfg.get('target_refresh_rate', '?')} Hz", "1"),
+        ("Input", f"{cfg.get('input_device', '?')}  ({cfg.get('key_left', '?')} / {cfg.get('key_right', '?')})", "2"),
+        ("  Legacy tracking", "Yes" if cfg.get("use_legacy_key_tracking") else "No", "2"),
+        ("Triggers", cfg.get("trigger_mode", "?"), "3"),
     ]
     if cfg.get("trigger_mode") == "serial":
-        items.append(("  Serial port", cfg.get("serial_port", "?")))
-        items.append(("  Baud rate", cfg.get("serial_baud_rate", "?")))
+        items.append(("  Serial port", cfg.get("serial_port", "?"), "3"))
+        items.append(("  Baud rate", cfg.get("serial_baud_rate", "?"), "3"))
     elif cfg.get("trigger_mode") == "parallel":
-        items.append(("  Parallel addr", cfg.get("parallel_address", "?")))
+        items.append(("  Parallel addr", cfg.get("parallel_address", "?"), "3"))
+
+    # Read current stimgen configuration values
+    stimgen = _read_stimgen_config()
+    # Merge in any pending/unsaved updates in memory
+    stimgen_updates = cfg.get("_stimgen_updates") or {}
+
+    # Resolve values
+    main_n = stimgen_updates.get("_main_n_blocks", stimgen.get("MAIN_SESSION", {}).get("nBlocks", "?"))
+    main_dur = stimgen_updates.get("_main_block_dur", stimgen.get("MAIN_SESSION", {}).get("blockDurationMin", "?"))
+    prac_n = stimgen_updates.get("_practice_n_blocks", stimgen.get("PRACTICE_SESSION", {}).get("nBlocks", "?"))
+    prac_dur = stimgen_updates.get("_practice_block_dur", stimgen.get("PRACTICE_SESSION", {}).get("blockDurationMin", "?"))
+    noise_low = stimgen_updates.get("NOISE_STD_LOW", stimgen.get("NOISE_STD_LOW", "?"))
+    noise_high = stimgen_updates.get("NOISE_STD_HIGH", stimgen.get("NOISE_STD_HIGH", "?"))
+    jump_min = stimgen_updates.get("JUMP_DURATION_MIN_SEC", stimgen.get("JUMP_DURATION_MIN_SEC", "?"))
+    jump_mean = stimgen_updates.get("JUMP_DURATION_MEAN_SEC", stimgen.get("JUMP_DURATION_MEAN_SEC", "?"))
+    jump_max = stimgen_updates.get("JUMP_DURATION_MAX_SEC", stimgen.get("JUMP_DURATION_MAX_SEC", "?"))
 
     items += [
-        ("Blocks", f"{cfg.get('n_blocks', '?')} main" + (" + 1 practice" if cfg.get("enable_practice") else "")),
-        ("Shield", f"{'adjustable' if cfg.get('allow_shield_adjustment') else 'fixed'}  ({cfg.get('rotation_speed', '?')}°/frame, r={cfg.get('circle_radius', '?')})"),
-        ("Loss factor", f"{cfg.get('loss_factor', '?')}  ({cfg.get('currency_symbol', '?')})"),
-        ("Min laser dur", f"{cfg.get('min_laser_duration_frames', '?')} frames"),
+        ("Run blocks", f"{cfg.get('n_blocks', '?')} main" + (" + practice" if cfg.get("enable_practice") else ""), "4"),
+        ("Gen practice", f"{prac_n} blocks @ {prac_dur} min", "7"),
+        ("Gen main", f"{main_n} blocks @ {main_dur} min", "7"),
+        ("Gen noise (L/H)", f"{noise_low}° / {noise_high}°", "7"),
+        ("Gen jump range", f"{jump_min}s - {jump_max}s (mean: {jump_mean}s)", "7"),
+        ("Shield", f"{'adjustable' if cfg.get('allow_shield_adjustment') else 'fixed'}  ({cfg.get('rotation_speed', '?')}°/frame, r={cfg.get('circle_radius', '?')})", "5"),
+        ("Loss factor", f"{cfg.get('loss_factor', '?')}  ({cfg.get('currency_symbol', '?')})", "5"),
+        ("Min laser dur", f"{cfg.get('min_laser_duration_frames', '?')} frames", "5"),
     ]
 
     if cfg.get("enable_audio"):
         items += [
-            ("Tones", f"{cfg.get('tone_freq_standard', '?')} / {cfg.get('tone_freq_deviant', '?')} Hz"),
-            ("Tone dur / ISI", f"{cfg.get('tone_duration', '?')*1000:.0f} ms / {cfg.get('tone_isi_frames', '?')} frames"),
-            ("Tone volume", cfg.get("tone_volume", "?")),
+            ("Tones", f"{cfg.get('tone_freq_standard', '?')} / {cfg.get('tone_freq_deviant', '?')} Hz", "6"),
+            ("Tone dur / ISI", f"{cfg.get('tone_duration', '?')*1000:.0f} ms / {cfg.get('tone_isi_frames', '?')} frames", "6"),
+            ("Tone volume", cfg.get("tone_volume", "?"), "6"),
         ]
     else:
-        items.append(("Tones", _c(C["dim"], "disabled")))
+        items.append(("Tones", _c(C["dim"], "disabled"), "6"))
 
     items += [
-        ("Seq version", f"main={SEQUENCE_VERSION}, practice={PRACTICE_SEQUENCE_VERSION}"),
-        ("Visits", f"{', '.join(cfg.get('visits', ['?']))}"),
-        ("Sessions", f"{', '.join(cfg.get('sessions', ['?']))}"),
-        ("Orders", f"{', '.join(cfg.get('orders', ['?']))}"),
-        ("Framings", f"{', '.join(cfg.get('framings', ['?']))}"),
+        ("Seq version", f"main={SEQUENCE_VERSION}, practice={PRACTICE_SEQUENCE_VERSION}", "8"),
+        ("Visits", f"{', '.join(cfg.get('visits', ['?']))}", "8"),
+        ("Sessions", f"{', '.join(cfg.get('sessions', ['?']))}", "8"),
+        ("Orders", f"{', '.join(cfg.get('orders', ['?']))}", "8"),
+        ("Framings", f"{', '.join(cfg.get('framings', ['?']))}", "8"),
     ]
 
-    for label, value in items:
+    # Filter by section_id if provided
+    if section_id is not None:
+        items = [x for x in items if x[2] == section_id]
+
+    for label, value, _ in items:
         line = _kv(label, value)
-        print(_c(C["cyan"], "  │") + line.ljust(width - 2) + _c(C["cyan"], "│"))
+        visible_len = len(re.sub(r'\033\[[0-9;]*m', '', line))
+        padding = max(0, (width - 4) - visible_len)
+        print(_c(C["cyan"], "  │") + line + " " * padding + _c(C["cyan"], "│"))
 
     print(_c(C["cyan"], f"  └{'─' * (width - 4)}┘"))
     print()
@@ -1057,6 +1267,21 @@ def show_summary(cfg: Dict[str, Any]) -> None:
 
 def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
     section("Generating Sequences")
+
+    if prompt_yn("Delete existing sequence files before generating new ones?", default=False):
+        import shutil
+        seq_dir = PROJECT_ROOT / "sequences"
+        if seq_dir.is_dir():
+            info(f"Deleting old generated files in {seq_dir} …")
+            deleted_count = 0
+            for ext in ["*.csv", "*.png", "*.pkl"]:
+                for file_path in seq_dir.rglob(ext):
+                    try:
+                        file_path.unlink()
+                        deleted_count += 1
+                    except Exception as e:
+                        fail(f"Could not delete {file_path}: {e}")
+            success(f"Deleted {deleted_count} old generated files")
 
     _save_stimgen_from_cfg(cfg)
 
@@ -1068,6 +1293,7 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
         cwd=str(laser_dir),
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=300,
     )
     if result.returncode != 0:
@@ -1081,7 +1307,7 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
 
     # MMN sequences
     info("Generating MMN tone sequences …")
-    mmn_out = str(PROJECT_ROOT / "sequences" / "mmn")
+    mmn_out = (PROJECT_ROOT / "sequences" / "mmn").as_posix()
     result = subprocess.run(
         [
             sys.executable, "-c",
@@ -1091,6 +1317,7 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
         cwd=str(PROJECT_ROOT),
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
     )
     if result.returncode != 0:
@@ -1184,7 +1411,7 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
         print(f"  {_c(C['dim'], 'q')})  Quit & save")
 
         print()
-        choice = input(f"  {_c(C['bold'], '>')} ").strip().lower()
+        choice = input(_c(C["magenta"], "  ❯ ")).strip().lower()
 
         if choice == "q":
             break
@@ -1218,9 +1445,10 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
             desc, fn = SECTION_MAP[choice]
             cfg = fn(cfg)
             dirty = True
-            show_summary(cfg)
+            show_summary(cfg, choice)
             if prompt_yn("Save this section?", True):
                 _write_laser_task_config(cfg)
+                _save_stimgen_from_cfg(cfg.copy())
                 dirty = False
                 success(f"Section {choice} saved.")
             else:
@@ -1236,6 +1464,7 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
         print()
         if prompt_yn("Save unsaved changes before exiting?", True):
             _write_laser_task_config(cfg)
+            _save_stimgen_from_cfg(cfg.copy())
             success("Configuration saved.")
 
     print()
