@@ -493,7 +493,8 @@ def run_experiment(
 
         reward_tracker.reset_block()
         S["source"].setImage(src_path)
-        S["earth_background"].setImage(earth_path)
+        if cfg.show_earth_background:
+            S["earth_background"].setImage(earth_path)
 
         block_audio_enabled = bool(
             cfg.enable_audio and phase_n == PHASE_MAIN and tone_seq_file
@@ -507,7 +508,6 @@ def run_experiment(
 
         # --- show trial stimuli ---------------------------------------- #
         trial_stims = [
-            S["earth_background"],
             S["harmless"],
             S["shield"],
             S["shield_centre"],
@@ -524,6 +524,8 @@ def run_experiment(
             S["start_lbl"],
             S["end_lbl"],
         ]
+        if cfg.show_earth_background:
+            trial_stims.insert(0, S["earth_background"])
         for stim in trial_stims:
             stim.setAutoDraw(True)
 

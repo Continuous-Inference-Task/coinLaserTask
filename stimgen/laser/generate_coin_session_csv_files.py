@@ -7,7 +7,8 @@ from write_exp_csv_file import write_exp_csv_file
 from write_exp_csv_file_with_tones import write_exp_csv_file_with_tones
 
 
-def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_root):
+def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_root,
+                                     n_blocks=None, blocks_per_session=4):
     """
     Generate CoIn session CSV files with counterbalanced orders and colour
     assignments.
@@ -22,6 +23,12 @@ def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_
         One of 'practice', 'onlineTrain', 'baseline', 'infusion'.
     output_root : str
         Root output directory.
+    n_blocks : int or None
+        Total number of blocks to generate. If None, uses the legacy
+        default (12 for onlineTrain/infusion, 8 for baseline, 4 for
+        practice).
+    blocks_per_session : int
+        Maximum blocks per session CSV file (default 4).
     """
     # Transforming the order index (1-based)
     stab_orders = [1, 2, 1, 2]
@@ -69,6 +76,9 @@ def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_
     ioi = img_order_index - 1    # 0-based index for image assignment
 
     if task_flag == 'practice':
+        # 1 session, n_blocks total (default 4)
+        n_total = n_blocks if n_blocks is not None else 4
+        n_sessions = max(1, (n_total + blocks_per_session - 1) // blocks_per_session)
         cond_list = cond_orders[soi]
         block_list = block_orders[soi]
         image_list = img_lists[ioi]
@@ -76,9 +86,9 @@ def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_
         session_name = f'practice_{seq_version}'
         root2file = os.path.join(output_root, f'coin_{session_name}_order{order_index}')
 
-        for i_sess in range(1):
-            block_idx_start = i_sess * 4
-            block_idx_end = block_idx_start + 4
+        for i_sess in range(n_sessions):
+            block_idx_start = i_sess * blocks_per_session
+            block_idx_end = min(block_idx_start + blocks_per_session, n_total)
             sess_cond_list = cond_list[block_idx_start:block_idx_end]
             sess_block_list = block_list[block_idx_start:block_idx_end]
 
@@ -87,6 +97,9 @@ def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_
                                image_list, add_file_string, root2file)
 
     elif task_flag == 'onlineTrain':
+        # 3 sessions by default, n_blocks total
+        n_total = n_blocks if n_blocks is not None else 12
+        n_sessions = max(1, (n_total + blocks_per_session - 1) // blocks_per_session)
         cond_list = cond_orders[soi]
         block_list = block_orders[soi]
         image_list = img_lists[ioi]
@@ -94,9 +107,9 @@ def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_
         session_name = f'onlineTrain_{seq_version}'
         root2file = os.path.join(output_root, f'coin_{session_name}_order{order_index}')
 
-        for i_sess in range(3):
-            block_idx_start = i_sess * 4
-            block_idx_end = block_idx_start + 4
+        for i_sess in range(n_sessions):
+            block_idx_start = i_sess * blocks_per_session
+            block_idx_end = min(block_idx_start + blocks_per_session, n_total)
             sess_cond_list = cond_list[block_idx_start:block_idx_end]
             sess_block_list = block_list[block_idx_start:block_idx_end]
 
@@ -105,6 +118,9 @@ def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_
                                image_list, add_file_string, root2file)
 
     elif task_flag == 'baseline':
+        # 2 sessions by default, n_blocks total
+        n_total = n_blocks if n_blocks is not None else 8
+        n_sessions = max(1, (n_total + blocks_per_session - 1) // blocks_per_session)
         cond_list = bl_cond_orders[soi]
         block_list = bl_block_orders[soi]
         image_list = img_lists[ioi]
@@ -112,9 +128,9 @@ def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_
         session_name = f'baseline_{seq_version}'
         root2file = os.path.join(output_root, f'coin_{session_name}_order{order_index}')
 
-        for i_sess in range(2):
-            block_idx_start = i_sess * 4
-            block_idx_end = block_idx_start + 4
+        for i_sess in range(n_sessions):
+            block_idx_start = i_sess * blocks_per_session
+            block_idx_end = min(block_idx_start + blocks_per_session, n_total)
             sess_cond_list = cond_list[block_idx_start:block_idx_end]
             sess_block_list = block_list[block_idx_start:block_idx_end]
 
@@ -130,6 +146,9 @@ def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_
                                           add_file_string, root2file)
 
     elif task_flag == 'infusion':
+        # 3 sessions by default, n_blocks total
+        n_total = n_blocks if n_blocks is not None else 12
+        n_sessions = max(1, (n_total + blocks_per_session - 1) // blocks_per_session)
         cond_list = cond_orders[soi]
         block_list = block_orders[soi]
         image_list = img_lists[ioi]
@@ -137,9 +156,9 @@ def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_
         session_name = f'main_{seq_version}'
         root2file = os.path.join(output_root, f'coin_{session_name}_order{order_index}')
 
-        for i_sess in range(3):
-            block_idx_start = i_sess * 4
-            block_idx_end = block_idx_start + 4
+        for i_sess in range(n_sessions):
+            block_idx_start = i_sess * blocks_per_session
+            block_idx_end = min(block_idx_start + blocks_per_session, n_total)
             sess_cond_list = cond_list[block_idx_start:block_idx_end]
             sess_block_list = block_list[block_idx_start:block_idx_end]
 

@@ -35,8 +35,11 @@ def main():
     # =========================================================================
     # Task intro & practice
     # =========================================================================
-    # Create a short practice/training sequence with 4 blocks
-    block_sequence = list(range(1, 5))  # [1, 2, 3, 4]
+    # Create a practice/training sequence with nBlocks from config
+    n_practice_blocks = config.PRACTICE_SESSION["nBlocks"]
+    # Clamp to 4 block types max (only 4 block designs exist)
+    n_practice_types = min(n_practice_blocks, 4)
+    block_sequence = list(range(1, n_practice_types + 1))
     session = generate_laser_session_practice(block_sequence)
 
     # Analyse the session
@@ -57,7 +60,14 @@ def main():
     # =========================================================================
     # Online training
     # =========================================================================
-    block_sequence = list(range(1, 5)) * 3  # [1,2,3,4, 1,2,3,4, 1,2,3,4]
+    # Read nBlocks from config (default: 12 → 3 repetitions of the 4 block types)
+    n_main_blocks = config.MAIN_SESSION.get("nBlocks", 12)
+    n_types = 4  # stablePrecise, stableNoisy, volatilePrecise, volatileNoisy
+    n_full_repeats = n_main_blocks // n_types
+    n_remainder = n_main_blocks % n_types
+    block_sequence = list(range(1, n_types + 1)) * n_full_repeats
+    if n_remainder > 0:
+        block_sequence.extend(list(range(1, n_remainder + 1)))
     session = generate_laser_session(block_sequence)
 
     fh1, fh2 = analyse_session(session)
@@ -76,7 +86,12 @@ def main():
     # =========================================================================
     # EEG baseline
     # =========================================================================
-    block_sequence = list(range(1, 5)) * 2  # [1,2,3,4, 1,2,3,4]
+    n_base_blocks = min(n_main_blocks, 8)  # baseline uses up to 8 blocks total
+    n_full_repeats = n_base_blocks // n_types
+    n_remainder = n_base_blocks % n_types
+    block_sequence = list(range(1, n_types + 1)) * n_full_repeats
+    if n_remainder > 0:
+        block_sequence.extend(list(range(1, n_remainder + 1)))
     session = generate_laser_session(block_sequence)
     fh1, fh2 = analyse_session(session)
 
@@ -94,7 +109,11 @@ def main():
     # =========================================================================
     # EEG infusion (main)
     # =========================================================================
-    block_sequence = list(range(1, 5)) * 3
+    n_full_repeats = n_main_blocks // n_types
+    n_remainder = n_main_blocks % n_types
+    block_sequence = list(range(1, n_types + 1)) * n_full_repeats
+    if n_remainder > 0:
+        block_sequence.extend(list(range(1, n_remainder + 1)))
     session = generate_laser_session(block_sequence)
     fh1, fh2 = analyse_session(session)
 
@@ -117,26 +136,30 @@ def main():
     # Online training
     task_flag = 'onlineTrain'
     for order_index in range(1, 5):
-        generate_coin_session_csv_files(seq_version, order_index, task_flag, output_root)
+        generate_coin_session_csv_files(seq_version, order_index, task_flag,
+                                         output_root, n_blocks=n_main_blocks)
     print(f'Session CSV files generated for {task_flag}')
 
     # Baseline EEG
     task_flag = 'baseline'
     for order_index in range(1, 5):
-        generate_coin_session_csv_files(seq_version, order_index, task_flag, output_root)
+        generate_coin_session_csv_files(seq_version, order_index, task_flag,
+                                         output_root, n_blocks=n_base_blocks)
     print(f'Session CSV files generated for {task_flag}')
 
     # Infusion EEG
     task_flag = 'infusion'
     for order_index in range(1, 5):
-        generate_coin_session_csv_files(seq_version, order_index, task_flag, output_root)
+        generate_coin_session_csv_files(seq_version, order_index, task_flag,
+                                         output_root, n_blocks=n_main_blocks)
     print(f'Session CSV files generated for {task_flag}')
 
     # Practice (note: v3 in original script)
     task_flag = 'practice'
     seq_version_practice = config.VERSION_PRACTICE
     for order_index in range(1, 5):
-        generate_coin_session_csv_files(seq_version_practice, order_index, task_flag, output_root)
+        generate_coin_session_csv_files(seq_version_practice, order_index, task_flag,
+                                         output_root, n_blocks=n_practice_blocks)
     print(f'Session CSV files generated for {task_flag}')
 
     print('\nAll sequences generated successfully!')

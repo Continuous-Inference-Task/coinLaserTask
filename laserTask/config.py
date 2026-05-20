@@ -206,6 +206,8 @@ class ExperimentConfig:
     """
 
     # -- Visual style --
+    show_earth_background: bool = True
+    """Whether to show the earth/world picture as the background during trials."""
     style: StimulusStyle = field(default_factory=StimulusStyle)
 
     # -- Session structure --
