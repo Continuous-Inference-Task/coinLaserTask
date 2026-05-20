@@ -28,15 +28,19 @@ def analyse_session(session):
                    col['volatilePrecise'], col['volatileNoisy']]
     cond_labels = session['blockTypes']
 
-    n_ses = session['nBlocks'] // 4
+    n_blocks = session['nBlocks']
+    n_cols = 4  # blocks per "session" group
+    n_ses = max(1, (n_blocks + n_cols - 1) // n_cols)  # ceil division
+    blocks_per_ses = [min(n_cols, n_blocks - i * n_cols) for i in range(n_ses)]
 
     # Figure 1: Sum of overall mean movement
     fig1, ax1 = plt.subplots()
     offset = [-0.1, -0.05, 0.05, 0.1]
-    ph = [None] * 4
+    ph = [None] * n_cols
     for i_ses in range(n_ses):
-        for i_block in range(4):
-            i_block_total = i_ses * 4 + i_block
+        n_this_ses = blocks_per_ses[i_ses]
+        for i_block in range(n_this_ses):
+            i_block_total = i_ses * n_cols + i_block
             condition = session['blocks'][i_block_total]['blockID']
             mean_vals = session['blocks'][i_block_total]['stim']['meanValues']
             move = np.sum(np.abs(np.diff(mean_vals)))
@@ -47,7 +51,7 @@ def analyse_session(session):
                 markerfacecolor=cond_colors[condition - 1]
             )[0]
 
-    ax1.legend(ph, cond_labels, loc='right', frameon=False)
+    ax1.legend([p for p in ph if p is not None], cond_labels[:n_this_ses], loc='right', frameon=False)
     ax1.set_xticks(range(1, n_ses + 1))
     ax1.set_xlim(0.5, n_ses + 0.5)
     ax1.set_xlabel('session')
@@ -60,12 +64,13 @@ def analyse_session(session):
     fig2, axes2 = plt.subplots(1, n_ses, figsize=(4 * n_ses, 4))
     if n_ses == 1:
         axes2 = [axes2]
-    n_steps = np.zeros((n_ses, 4, 3))
+    n_steps = np.zeros((n_ses, n_cols, 3))
     for i_ses in range(n_ses):
+        n_this_ses = blocks_per_ses[i_ses]
         ax = axes2[i_ses]
-        ph2 = [None] * 4
-        for i_block in range(4):
-            i_block_total = i_ses * 4 + i_block
+        ph2 = [None] * n_cols
+        for i_block in range(n_this_ses):
+            i_block_total = i_ses * n_cols + i_block
             mean_vals = session['blocks'][i_block_total]['stim']['meanValues']
             steps = np.abs(np.diff(mean_vals))
             n_steps[i_ses, i_block, 0] = np.sum(steps == 20)
@@ -81,7 +86,7 @@ def analyse_session(session):
         ax.set_title(f'session {i_ses + 1}')
         if i_ses == 0:
             ax.set_ylabel('number of steps')
-            ax.legend(ph2, cond_labels, frameon=False)
+            ax.legend([p for p in ph2 if p is not None], cond_labels[:n_this_ses], frameon=False)
         ax.set_xticks([1, 2, 3])
         ax.set_xticklabels(['small', 'medium', 'large'])
         ax.set_xlabel('step size')

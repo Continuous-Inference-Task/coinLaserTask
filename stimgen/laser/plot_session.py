@@ -29,14 +29,16 @@ def plot_session(session, flag_degrees):
         val = 'valueVector'
         avg = 'meanValueVector'
 
-    n_lines = session['nBlocks'] // len(session['design']['blocks'])
-    fig, axes = plt.subplots(n_lines, 4, figsize=(16, 3 * n_lines))
+    n_blocks = session['nBlocks']
+    n_cols = min(n_blocks, 4)  # max 4 columns
+    n_lines = (n_blocks + n_cols - 1) // n_cols  # ceil division
+    fig, axes = plt.subplots(n_lines, n_cols, figsize=(4 * n_cols, 3 * n_lines))
     if n_lines == 1:
         axes = axes.reshape(1, -1)
 
-    for i_block in range(session['nBlocks']):
-        row = i_block // 4
-        col = i_block % 4
+    for i_block in range(n_blocks):
+        row = i_block // n_cols
+        col = i_block % n_cols
         ax = axes[row, col]
 
         stim = session['blocks'][i_block]['stim']
