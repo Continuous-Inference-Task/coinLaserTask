@@ -4,11 +4,7 @@ data/
 !data/.gitkeep
 
 # --- Sequence generation artifacts ---
-# Large pickle files are regenerated, not committed
-sequences/*.pkl
-sequences/*.mat
-sequences/**/*.pkl
-sequences/**/*.mat
+sequences/*
 
 # --- Python ---
 __pycache__/

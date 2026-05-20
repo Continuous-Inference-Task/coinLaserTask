@@ -223,6 +223,7 @@ def run_experiment(
 
     # Calculate block duration from the first loaded block file if possible
     block_duration_min = 3.0
+    practice_block_duration_min = 1.0
     try:
         if practice_only and len(practice_conditions) > 0:
             first_bf = practice_conditions[0]["blockFileName"]
@@ -232,6 +233,11 @@ def run_experiment(
             first_bf = main_conditions[0]["blockFileName"]
             first_stream = load_stimulus_stream(cfg.sequence_root + first_bf)
             block_duration_min = len(first_stream) / 3600.0
+
+        if len(practice_conditions) > 0:
+            prac_bf = practice_conditions[0]["blockFileName"]
+            prac_stream = load_stimulus_stream(cfg.sequence_root + prac_bf)
+            practice_block_duration_min = len(prac_stream) / 3600.0
     except Exception:
         pass
 
@@ -241,6 +247,7 @@ def run_experiment(
         wins_cond=wins_condition,
         n_main_blocks=n_display_blocks,
         block_duration_min=block_duration_min,
+        practice_block_duration_min=practice_block_duration_min,
     )
     # Reward tracker passed as argument, allowing for easier custom implementations
     if reward_tracker is None:
@@ -439,22 +446,28 @@ def run_experiment(
         # ============================================================== #
         trig.send(TRIGGER_CODES["block_start"])
 
-        label = (
-            f"Training block {phase_block_idx} out of {phase_block_total}"
-            if phase_n == PHASE_PRACTICE
-            else f"Block {phase_block_idx} out of {phase_block_total}"
-        )
-        S["blk_id"].setText(label)
-        S["blk_source_img"].setImage(src_path)
+        if phase_n == PHASE_PRACTICE:
+            wait_for_key(
+                win,
+                trig,
+                [S["practice_start_txt"]],
+                default_kb,
+                the_exp,
+                label="practice_start",
+            )
+        else:
+            label = f"Block {phase_block_idx} out of {phase_block_total}"
+            S["blk_id"].setText(label)
+            S["blk_source_img"].setImage(src_path)
 
-        wait_for_key(
-            win,
-            trig,
-            [S["blk_id"], S["blk_start_txt"], S["blk_source_img"]],
-            default_kb,
-            the_exp,
-            label="blk_start",
-        )
+            wait_for_key(
+                win,
+                trig,
+                [S["blk_id"], S["blk_start_txt"], S["blk_source_img"]],
+                default_kb,
+                the_exp,
+                label="blk_start",
+            )
 
         # ============================================================== #
         #  TRIAL  (frame-by-frame)                                        #
@@ -845,23 +858,27 @@ def run_experiment(
         trig.send(TRIGGER_CODES["block_end"])
 
         if phase_n == PHASE_PRACTICE:
-            S["blk_end_label"].setText(
-                "Well done, you have finished this practice block!"
+            wait_for_key(
+                win,
+                trig,
+                [S["practice_end_txt"]],
+                default_kb,
+                the_exp,
+                label="practice_end",
             )
-            S["blk_end_reward"].setText("")
         else:
             S["blk_end_label"].setText("Well done. In this block, you earned:")
             S["blk_end_reward"].setText(reward_tracker.reward_text)
 
-        wait_for_key(
-            win,
-            trig,
-            [S["blk_end_label"], S["blk_end_reward"], S["pause"], S["continue"]],
-            default_kb,
-            the_exp,
-            min_wait=5.0,
-            label="blk_end",
-        )
+            wait_for_key(
+                win,
+                trig,
+                [S["blk_end_label"], S["blk_end_reward"], S["pause"], S["continue"]],
+                default_kb,
+                the_exp,
+                min_wait=5.0,
+                label="blk_end",
+            )
         the_exp.nextEntry()
 
     # ================================================================== #

@@ -146,6 +146,7 @@ def create_stimuli(
     wins_cond: int,
     n_main_blocks: Optional[int] = None,
     block_duration_min: float = 3.0,
+    practice_block_duration_min: float = 1.0,
 ) -> Dict[str, Any]:
     """Instantiate every ``visual.*`` component used by the experiment.
 
@@ -243,6 +244,56 @@ def create_stimuli(
         font=s.font,
         pos=(0, 0),
         height=s.text_size,
+        wrapWidth=1.5,
+        color=s.text_color,
+    # Dynamic practice instructions
+    _practice_keys = (
+        f"'{cfg.key_left.upper()}' and '{cfg.key_right.upper()}' keys"
+        if cfg.input_device == "keyboard"
+        else "left and right buttons of the response box"
+    )
+    _prac_dur_val = int(practice_block_duration_min) if practice_block_duration_min.is_integer() else round(practice_block_duration_min, 1)
+    _prac_dur_str = f"{_prac_dur_val} min"
+
+    S["practice_start_txt"] = visual.TextStim(
+        win,
+        name="practice_start_text",
+        text=(
+            "You will now do a short practice block of the task. "
+            f"This block will last {_prac_dur_str}.\n\n"
+            "As in the real game, the source will emit radiation, but the main angle "
+            "of attack might change over time, so that you have to keep monitoring "
+            "the beams and decide when to re-position your shield.\n\n"
+            "You will see a reward bar on the right of the screen, which shows you how "
+            "you lose money whenever a beam remains uncaught, but you will not actually "
+            f"earn any money during this practice. Remember to use the {_practice_keys} "
+            "to navigate your shield.\n\n"
+            "Press any key to start the practice block."
+        ),
+        font=s.font,
+        pos=(0, 0),
+        height=s.small_text_size,
+        wrapWidth=1.5,
+        color=s.text_color,
+    )
+
+    S["practice_end_txt"] = visual.TextStim(
+        win,
+        name="practice_end_text",
+        text=(
+            "Well done - this was the practice block!\n\n"
+            "As you have seen, the direction of the beams can jump around quickly, "
+            "and you cannot catch all beams with your shield. That's ok - just try to "
+            "catch as many as possible. The source will have a main direction of attack "
+            "at any point - if you place your shield in that direction, you will catch most beams.\n\n"
+            "Moving your shield also costs energy, which will be subtracted from your reward. "
+            "It is thus important that you only move your shield when you think that the main "
+            "direction of attack has changed.\n\n"
+            "Press any key to continue."
+        ),
+        font=s.font,
+        pos=(0, 0),
+        height=s.small_text_size,
         wrapWidth=1.5,
         color=s.text_color,
     )
