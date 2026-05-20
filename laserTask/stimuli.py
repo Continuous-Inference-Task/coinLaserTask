@@ -246,6 +246,7 @@ def create_stimuli(
         height=s.text_size,
         wrapWidth=1.5,
         color=s.text_color,
+    )
     # Dynamic practice instructions
     _practice_keys = (
         f"'{cfg.key_left.upper()}' and '{cfg.key_right.upper()}' keys"
