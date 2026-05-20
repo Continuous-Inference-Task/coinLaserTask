@@ -535,13 +535,14 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "serial_baud_rate": c.serial_baud_rate,
         "parallel_address": c.parallel_address,
         "enable_audio": c.enable_audio,
+        "show_earth_background": c.show_earth_background,
         "tone_freq_standard": c.tone_freq_standard,
         "tone_freq_deviant": c.tone_freq_deviant,
         "tone_duration": c.tone_duration,
         "tone_volume": c.tone_volume,
         "tone_isi_frames": c.tone_isi_frames,
         "enable_practice": c.enable_practice,
-        "n_blocks": c.n_blocks,
+        "reset_reward_after_practice": c.reset_reward_after_practice,
         "min_laser_duration_frames": c.min_laser_duration_frames,
         "visits": list(c.visits),
         "sessions": list(c.sessions),
@@ -669,7 +670,8 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
         "tone_volume": "tone_volume",
         "tone_isi_frames": "tone_isi_frames",
         "enable_practice": "enable_practice",
-        "n_blocks": "n_blocks",
+        "reset_reward_after_practice": "reset_reward_after_practice",
+        "show_earth_background": "show_earth_background",
         "min_laser_duration_frames": "min_laser_duration_frames",
         "visits": "visits",
         "sessions": "sessions",
@@ -898,17 +900,22 @@ def configure_triggers(cfg: Dict[str, Any]) -> Dict[str, Any]:
 def configure_design(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Experiment Design")
 
-    cfg["n_blocks"] = prompt_int(
-        "Blocks per session",
-        cfg.get("n_blocks", 4),
-        min_val=1,
-        max_val=20,
-        hint_text="How many main blocks the participant plays (default: 4)",
-    )
     cfg["enable_practice"] = prompt_yn(
         "Include practice block?",
         cfg.get("enable_practice", True),
         hint_text="Shown before the main blocks; good for first-time participants",
+    )
+
+    cfg["show_earth_background"] = prompt_yn(
+        "Show earth/world background behind the game?",
+        cfg.get("show_earth_background", True),
+        hint_text="If disabled, a plain black background is shown instead",
+    )
+
+    cfg["reset_reward_after_practice"] = prompt_yn(
+        "Reset reward counter after practice?",
+        cfg.get("reset_reward_after_practice", True),
+        hint_text="If yes, the reward bar resets to zero when the main session starts",
     )
     return cfg
 
