@@ -568,6 +568,7 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "rotation_speed": c.rotation_speed,
         "circle_radius": c.circle_radius,
         "allow_shield_adjustment": c.allow_shield_adjustment,
+        "fixed_shield_degrees": c.fixed_shield_degrees,
         "loss_factor": c.loss_factor,
         "currency_symbol": c.currency_symbol,
         "trigger_mode": c.trigger_mode,
@@ -579,6 +580,8 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "tone_freq_standard": c.tone_freq_standard,
         "tone_freq_deviant": c.tone_freq_deviant,
         "tone_duration": c.tone_duration,
+        "tone_duration_standard": c.tone_duration_standard,
+        "tone_duration_deviant": c.tone_duration_deviant,
         "tone_volume": c.tone_volume,
         "tone_isi_frames": c.tone_isi_frames,
         "enable_practice": c.enable_practice,
@@ -695,6 +698,7 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
         "rotation_speed": "rotation_speed",
         "circle_radius": "circle_radius",
         "allow_shield_adjustment": "allow_shield_adjustment",
+        "fixed_shield_degrees": "fixed_shield_degrees",
         "loss_factor": "loss_factor",
         "currency_symbol": "currency_symbol",
         "trigger_mode": "trigger_mode",
@@ -705,6 +709,8 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
         "tone_freq_standard": "tone_freq_standard",
         "tone_freq_deviant": "tone_freq_deviant",
         "tone_duration": "tone_duration",
+        "tone_duration_standard": "tone_duration_standard",
+        "tone_duration_deviant": "tone_duration_deviant",
         "tone_volume": "tone_volume",
         "tone_isi_frames": "tone_isi_frames",
         "enable_practice": "enable_practice",
@@ -1036,6 +1042,13 @@ def configure_shield_reward(cfg: Dict[str, Any]) -> Dict[str, Any]:
         hint_text="If yes, they can press grow/shrink keys during the task",
     )
 
+    if not cfg.get("allow_shield_adjustment", False):
+        cfg["fixed_shield_degrees"] = prompt_float(
+            "Fixed shield size (half-width in degrees)",
+            cfg.get("fixed_shield_degrees", 20.0),
+            hint_text="Degrees — angular half-width of the shield (Peduks/MMN: 20.0, CogPsy: 40.0)",
+        )
+
     cfg["rotation_speed"] = prompt_float(
         "Shield rotation speed",
         cfg.get("rotation_speed", 1.0),
@@ -1093,14 +1106,43 @@ def configure_audio(cfg: Dict[str, Any]) -> Dict[str, Any]:
     duration_ms = int(cfg.get("tone_duration", 0.07) * 1000)
     cfg["tone_duration"] = (
         prompt_int(
-            "Tone duration (ms)",
+            "Base tone duration (ms)",
             duration_ms,
             min_val=10,
             max_val=500,
-            hint_text="How long each tone plays (Peduks Study: 70 ms)",
+            hint_text="How long each tone plays by default (Peduks Study: 70 ms)",
         )
         / 1000.0
     )
+    if prompt_yn("Customize standard vs. deviant durations separately?", False):
+        std_dur_ms = int(cfg.get("tone_duration_standard", -1.0) * 1000)
+        if std_dur_ms < 0:
+            std_dur_ms = int(cfg["tone_duration"] * 1000)
+        cfg["tone_duration_standard"] = (
+            prompt_int(
+                "Standard tone duration (ms)",
+                std_dur_ms,
+                min_val=10,
+                max_val=500,
+            )
+            / 1000.0
+        )
+        dev_dur_ms = int(cfg.get("tone_duration_deviant", -1.0) * 1000)
+        if dev_dur_ms < 0:
+            dev_dur_ms = int(cfg["tone_duration"] * 1000)
+        cfg["tone_duration_deviant"] = (
+            prompt_int(
+                "Deviant tone duration (ms)",
+                dev_dur_ms,
+                min_val=10,
+                max_val=500,
+            )
+            / 1000.0
+        )
+    else:
+        cfg["tone_duration_standard"] = -1.0
+        cfg["tone_duration_deviant"] = -1.0
+
     cfg["tone_isi_frames"] = prompt_int(
         "Inter-stimulus interval (frames)",
         cfg.get("tone_isi_frames", 26),
@@ -1141,31 +1183,40 @@ def _pick_presets(
     dimension_hint: str,
     allow_custom: bool = True,
 ) -> List[str]:
-    """Interactive preset picker — select items from a preset library."""
+    """Interactive preset picker — pick items one at a time to build a list."""
     info(_c(C["bold"], f"{title}"))
     hint(dimension_hint)
     print()
 
     preset_names = list(presets.keys())
-    selected = list(current)
+    selected: List[str] = []
 
     while True:
+        # Show available presets
         for i, name in enumerate(preset_names, 1):
-            mark = _c(C["green"], "[x]") if name in selected else _c(C["dim"], "[ ]")
+            already = _c(C["green"], " (already selected)") if name in selected else ""
             val = presets[name]
             if isinstance(val, list):
                 disp = _c(C["dim"], f"[{', '.join(str(v) for v in val)}]")
             else:
                 disp = _c(C["dim"], str(val))
-            print(f"    {mark} {i}. {name:12s} {disp}")
+            print(f"    {_c(C['green'], str(i))}. {name:12s} {disp}{already}")
         print()
 
-        actions = "numbers to toggle, ↵ done"
-        if allow_custom:
-            actions += f", c=create new {dimension_name}"
-        print(_c(C["dim"], f"  {actions}"))
+        if not selected:
+            prompt_text = f"Pick a {dimension_name} level (number"
+        else:
+            prompt_text = f"Pick another {dimension_name} level (number"
+            info(f"  Currently selected: {', '.join(selected)}")
+            print()
 
-        raw = input(_c(C["magenta"], "  ❯ ")).strip().lower()
+        if allow_custom:
+            prompt_text += f", c=create new, ↵ done"
+        else:
+            prompt_text += f", ↵ done"
+        prompt_text += ")"
+
+        raw = input(_c(C["magenta"], f"  ❯ ")).strip().lower()
 
         if not raw:
             if not selected:
@@ -1200,20 +1251,20 @@ def _pick_presets(
             success(f"Added '{new_name}' to {dimension_name} presets")
             continue
 
-        for part in raw.replace(" ", ",").split(","):
-            part = part.strip()
-            if not part:
-                continue
-            try:
-                idx = int(part) - 1
-                if 0 <= idx < len(preset_names):
-                    name = preset_names[idx]
-                    if name in selected:
-                        selected.remove(name)
-                    else:
-                        selected.append(name)
-            except ValueError:
-                pass
+        try:
+            idx = int(raw) - 1
+            if 0 <= idx < len(preset_names):
+                name = preset_names[idx]
+                if name in selected:
+                    selected.remove(name)
+                    info(f"Removed '{name}'")
+                else:
+                    selected.append(name)
+                    info(f"Added '{name}'")
+            else:
+                warn(f"Invalid number (1-{len(preset_names)})")
+        except ValueError:
+            warn(f"Enter a number (1-{len(preset_names)}), 'c' to create, or ↵ to finish")
 
     print()
     return selected
@@ -1251,7 +1302,6 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     practice_vol = _pick_presets(
         "Volatility levels — how fast the mean jumps",
         v_presets,
-        stimgen.get("PRACTICE_VOLATILITY", ["volatile"]),
         "volatility",
         "[mean, std, min, max] of epoch duration in seconds. Smaller = faster jumps.",
     )
@@ -1262,7 +1312,6 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     practice_noise = _pick_presets(
         "Noise levels — observation noise std dev",
         n_presets,
-        stimgen.get("PRACTICE_NOISE", ["precise"]),
         "noise",
         "Standard deviation of observation noise in degrees. Higher = more scattered.",
     )
@@ -1323,7 +1372,6 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     main_vol = _pick_presets(
         "Volatility levels — how fast the mean jumps",
         v_presets,
-        stimgen.get("MAIN_VOLATILITY", ["stable", "volatile"]),
         "volatility",
         "[mean, std, min, max] of epoch duration in seconds. Smaller = faster jumps.",
     )
@@ -1334,7 +1382,6 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     main_noise = _pick_presets(
         "Noise levels — observation noise std dev",
         n_presets,
-        stimgen.get("MAIN_NOISE", ["precise", "noisy"]),
         "noise",
         "Standard deviation of observation noise in degrees. Higher = more scattered.",
     )
@@ -1597,14 +1644,43 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
         duration_ms = int(cfg.get("tone_duration", 0.07) * 1000)
         cfg["tone_duration"] = (
             prompt_int(
-                "Tone duration (ms)",
+                "Base tone duration (ms)",
                 duration_ms,
                 min_val=10,
                 max_val=500,
-                hint_text="How long each tone plays (Peduks Study: 70 ms)",
+                hint_text="How long each tone plays by default (Peduks Study: 70 ms)",
             )
             / 1000.0
         )
+        if prompt_yn("Customize standard vs. deviant durations separately?", False):
+            std_dur_ms = int(cfg.get("tone_duration_standard", -1.0) * 1000)
+            if std_dur_ms < 0:
+                std_dur_ms = int(cfg["tone_duration"] * 1000)
+            cfg["tone_duration_standard"] = (
+                prompt_int(
+                    "Standard tone duration (ms)",
+                    std_dur_ms,
+                    min_val=10,
+                    max_val=500,
+                )
+                / 1000.0
+            )
+            dev_dur_ms = int(cfg.get("tone_duration_deviant", -1.0) * 1000)
+            if dev_dur_ms < 0:
+                dev_dur_ms = int(cfg["tone_duration"] * 1000)
+            cfg["tone_duration_deviant"] = (
+                prompt_int(
+                    "Deviant tone duration (ms)",
+                    dev_dur_ms,
+                    min_val=10,
+                    max_val=500,
+                )
+                / 1000.0
+            )
+        else:
+            cfg["tone_duration_standard"] = -1.0
+            cfg["tone_duration_deviant"] = -1.0
+
         cfg["tone_isi_frames"] = prompt_int(
             "Inter-stimulus interval (frames)",
             cfg.get("tone_isi_frames", 26),
@@ -1692,6 +1768,8 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
         main_blocks = "?"
         total_time = "?"
 
+    shield_mode_str = "adjustable" if cfg.get("allow_shield_adjustment") else f"fixed ({cfg.get('fixed_shield_degrees', 20.0)}°)"
+
     items += [
         ("Practice", f"{', '.join(prac_vol)} × {', '.join(prac_noise)} = {prac_types} type{'s' if prac_types != 1 else ''}", "7"),
         ("  Practice blocks", f"{prac_blocks} blocks ({prac_sessions} session{'s' if prac_sessions != 1 else ''} × {prac_types} types @ {prac_dur} min/block)", "7"),
@@ -1699,15 +1777,22 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
         ("  Main blocks", f"{main_blocks} blocks ({main_sessions} session{'s' if main_sessions != 1 else ''} × {main_types} types @ {main_dur} min/block)", "7"),
         ("Total time", f"{total_time} min" if total_time != "?" else "?", "7"),
         ("Jump range", f"{jump_min}s - {jump_max}s (mean: {jump_mean}s)", "7"),
-        ("Shield", f"{'adjustable' if cfg.get('allow_shield_adjustment') else 'fixed'}  ({cfg.get('rotation_speed', '?')}°/frame, r={cfg.get('circle_radius', '?')})", "5"),
+        ("Shield", f"{shield_mode_str}  ({cfg.get('rotation_speed', '?')}°/frame, r={cfg.get('circle_radius', '?')})", "5"),
         ("Loss factor", f"{cfg.get('loss_factor', '?')}  ({cfg.get('currency_symbol', '?')})", "5"),
         ("Min laser dur", f"{cfg.get('min_laser_duration_frames', '?')} frames", "5"),
     ]
 
     if cfg.get("enable_audio"):
+        t_dur = cfg.get('tone_duration', 0.07)
+        t_std = cfg.get('tone_duration_standard', -1.0)
+        t_dev = cfg.get('tone_duration_deviant', -1.0)
+        if t_std > 0 and t_dev > 0 and t_std != t_dev:
+            dur_str = f"{t_std*1000:.0f}s/{t_dev*1000:.0f}d ms"
+        else:
+            dur_str = f"{t_dur*1000:.0f} ms"
         items += [
             ("Tones", f"{cfg.get('tone_freq_standard', '?')} / {cfg.get('tone_freq_deviant', '?')} Hz", "6"),
-            ("Tone dur / ISI", f"{cfg.get('tone_duration', '?')*1000:.0f} ms / {cfg.get('tone_isi_frames', '?')} frames", "6"),
+            ("Tone dur / ISI", f"{dur_str} / {cfg.get('tone_isi_frames', '?')} frames", "6"),
             ("Tone volume", cfg.get("tone_volume", "?"), "6"),
         ]
     else:
@@ -1803,11 +1888,19 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
             trigger = "dummy (console)"
 
         if cfg.get("enable_audio"):
-            audio = f"{cfg.get('tone_freq_standard', '?')}/{cfg.get('tone_freq_deviant', '?')} Hz, {cfg.get('tone_duration', 0.07)*1000:.0f} ms, vol {cfg.get('tone_volume', '?')}"
+            t_dur = cfg.get('tone_duration', 0.07)
+            t_std = cfg.get('tone_duration_standard', -1.0)
+            t_dev = cfg.get('tone_duration_deviant', -1.0)
+            if t_std > 0 and t_dev > 0 and t_std != t_dev:
+                dur_str = f"{t_std*1000:.0f}s/{t_dev*1000:.0f}d ms"
+            else:
+                dur_str = f"{t_dur*1000:.0f} ms"
+            audio = f"{cfg.get('tone_freq_standard', '?')}/{cfg.get('tone_freq_deviant', '?')} Hz, {dur_str}, vol {cfg.get('tone_volume', '?')}"
         else:
             audio = _c(C["dim"], "disabled")
 
-        shield = f"{'adjustable' if cfg.get('allow_shield_adjustment') else 'fixed'}, {cfg.get('rotation_speed', '?')}°/frame, r={cfg.get('circle_radius', '?')}"
+        shield_mode_str = "adjustable" if cfg.get("allow_shield_adjustment") else f"fixed ({cfg.get('fixed_shield_degrees', 20.0)}°)"
+        shield = f"{shield_mode_str}, {cfg.get('rotation_speed', '?')}°/frame, r={cfg.get('circle_radius', '?')}"
 
         items = [
             ("Display", display),
