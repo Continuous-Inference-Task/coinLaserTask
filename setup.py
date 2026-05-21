@@ -1316,9 +1316,13 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     # 1. Volatility
     v_presets = stimgen.get("VOLATILITY_PRESETS", {})
     practice_vol = _pick_presets(
-        "Add a volatility level to practice",
+        "Add a block to practice",
         v_presets,
-        "[mean, std, min, max] of epoch duration in seconds. Smaller = faster jumps.",
+        "[mean, std, min, max] = epoch duration distribution (seconds)\n"
+        "  mean  — average time before the laser jumps to a new position\n"
+        "  std   — spread of the distribution\n"
+        "  min   — shortest possible epoch\n"
+        "  max   — longest possible epoch. Smaller values = faster jumps = more volatile.",
     )
     stimgen["PRACTICE_VOLATILITY"] = practice_vol
 
@@ -1327,7 +1331,8 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     practice_noise = _pick_presets(
         "Add a noise level to practice",
         n_presets,
-        "Standard deviation of observation noise in degrees. Higher = more scattered.",
+        "Standard deviation (degrees) of observation noise added at each frame.\n"
+        "Higher values = laser dot scatters more = harder to track.",
     )
     stimgen["PRACTICE_NOISE"] = practice_noise
 
@@ -1384,9 +1389,13 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     # 1. Volatility
     main_vol = _pick_presets(
-        "Add a volatility level to main experiment",
+        "Add a block to main experiment",
         v_presets,
-        "[mean, std, min, max] of epoch duration in seconds. Smaller = faster jumps.",
+        "[mean, std, min, max] = epoch duration distribution (seconds)\n"
+        "  mean  — average time before the laser jumps to a new position\n"
+        "  std   — spread of the distribution\n"
+        "  min   — shortest possible epoch\n"
+        "  max   — longest possible epoch. Smaller values = faster jumps = more volatile.",
     )
     stimgen["MAIN_VOLATILITY"] = main_vol
 
@@ -1395,7 +1404,8 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     main_noise = _pick_presets(
         "Add a noise level to main experiment",
         n_presets,
-        "Standard deviation of observation noise in degrees. Higher = more scattered.",
+        "Standard deviation (degrees) of observation noise added at each frame.\n"
+        "Higher values = laser dot scatters more = harder to track.",
     )
     stimgen["MAIN_NOISE"] = main_noise
 
