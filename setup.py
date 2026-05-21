@@ -1332,7 +1332,7 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "Add a noise level to practice",
         n_presets,
         "Standard deviation (degrees) of observation noise added at each frame.\n"
-        "Higher values = laser dot scatters more = harder to track.",
+        "Each noise × each volatility = one block type. Higher = more scattered.",
     )
     stimgen["PRACTICE_NOISE"] = practice_noise
 
