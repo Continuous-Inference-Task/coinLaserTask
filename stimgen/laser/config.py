@@ -45,26 +45,17 @@ OUTPUT_DIR = f"../../{SEQUENCE_ROOT}"
 # distribution that controls how long the true mean stays in one position
 # before jumping.  Smaller values = faster jumps = more volatile.
 VOLATILITY_PRESETS = {
-    # CoIn / PEDUKS standard levels
-    "stable":   [10, 1.5, 8, 15],
-    # ^ slow changes — epochs last ~10 s on average
+    "stable": [10, 1.5, 8, 15],
     "volatile": [3, 1.5, 2, 6],
-    # ^ fast changes — epochs last ~3 s on average
-
-    # CogPsy intermediate level (also available)
-    "medium":   [5, 1.5, 3, 12],
-    # ^ between stable and volatile
+    "medium": [5, 1.5, 3, 12],
 }
 
 # ── Noise presets ──────────────────────────────────────────────────────────
 # Standard deviation (in degrees) of the observation noise added at each frame.
 # Higher noise = laser dot scatters more around the true position.
 NOISE_PRESETS = {
-    # CoIn / PEDUKS standard levels
     "precise": 15,
-    # ^ observations cluster tightly around the true mean (±15°)
-    "noisy":   20,
-    # ^ observations scatter more (±20°)
+    "noisy": 20,
 }
 
 
@@ -74,21 +65,21 @@ NOISE_PRESETS = {
 
 # ── Practice session ───────────────────────────────────────────────────────
 # Usually just one block type (e.g. volatile + precise).
-PRACTICE_VOLATILITY = ["volatile"]
-PRACTICE_NOISE = ["precise"]
+PRACTICE_VOLATILITY = ['volatile']
+PRACTICE_NOISE = ['noisy']
 # Noise mode: "counterbalanced" = Cartesian product (volatility × noise)
 #             "per_block"        = choose a specific noise level for each
 #                                  volatility level (list must match in length)
-PRACTICE_NOISE_MODE = "counterbalanced"
+PRACTICE_NOISE_MODE = 'counterbalanced'
 PRACTICE_N_SESSIONS = 1
 PRACTICE_BLOCK_DURATION_MIN = 1  # minutes per block
 
 # ── Main experiment session ────────────────────────────────────────────────
-MAIN_VOLATILITY = ["stable", "volatile"]
-MAIN_NOISE = ["precise", "noisy"]
-MAIN_NOISE_MODE = "counterbalanced"
+MAIN_VOLATILITY = ['stable']
+MAIN_NOISE = ['precise']
+MAIN_NOISE_MODE = 'counterbalanced'
 MAIN_N_SESSIONS = 3
-MAIN_BLOCK_DURATION_MIN = 3  # minutes per block
+MAIN_BLOCK_DURATION_MIN = 4  # minutes per block
 
 
 # =============================================================================
@@ -97,12 +88,6 @@ MAIN_BLOCK_DURATION_MIN = 3  # minutes per block
 # Each entry is a dict with "volatility", "noise", and optional "noise_mode".
 # These appear in the preset picker during setup.
 SAVED_DESIGNS = {
-    # Example:
-    # "cogpsy_style": {
-    #     "volatility": ["stable", "volatile"],
-    #     "noise": ["precise"],
-    #     "noise_mode": "counterbalanced",
-    # },
 }
 
 

@@ -28,6 +28,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 # ── project root detection ──────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "stimgen" / "laser"))
 
 try:
     from config_shared import (
@@ -154,6 +155,50 @@ def prompt(
             continue
 
         return val
+
+
+def prompt_options(
+    text: str,
+    choices: List[str],
+    default: str = "",
+    labels: Optional[Dict[str, str]] = None,
+    hint_text: str = "",
+) -> str:
+    """Ask the user to choose from a list of options with optional custom labels."""
+    labels = labels or {}
+    for i, choice in enumerate(choices, 1):
+        desc = labels.get(choice, choice)
+        marker = _c(C["green"], "→") if choice == default else " "
+        print(f"     {marker} {i}. {desc}")
+    print()
+
+    while True:
+        default_display = _c(C["dim"], f" ({default})") if default else ""
+        print(f"  {_c(C['bold'], text)}{default_display}")
+        if hint_text:
+            print(_c(C["dim"], f"     {hint_text}"))
+        print(_c(C["dim"], "     (type 'back' to return to menu)"))
+        raw = input(_c(C["magenta"], "  ❯ ")).strip()
+
+        if raw.lower() in ("back", "cancel"):
+            print()
+            confirm = input(
+                _c(C["yellow"], "  Go back to menu? Current section inputs will be lost. [Y/n] ")
+            ).strip().lower()
+            if confirm in ("", "y", "yes"):
+                raise GoBack()
+            print()
+            continue
+
+        val = raw if raw else default
+
+        if val in choices:
+            return val
+        if val.isdigit() and 1 <= int(val) <= len(choices):
+            return choices[int(val) - 1]
+            
+        warn(f"Invalid option. Please enter a number (1-{len(choices)}) or type the choice exactly.")
+        print()
 
 
 def prompt_yn(text: str, default: bool = True, *, hint_text: str = "") -> bool:
@@ -598,8 +643,36 @@ def _read_laser_task_config() -> Dict[str, Any]:
 
 
 def _read_stimgen_config() -> Dict[str, Any]:
-    """Read stimgen/laser/config.py via direct import."""
+    """Read stimgen/laser/config.py via direct import, reloading all potential caches."""
+    import sys
     import importlib
+
+    # 1. Reload the config modules
+    for name in ["config", "stimgen.laser.config"]:
+        if name in sys.modules:
+            try:
+                importlib.reload(sys.modules[name])
+            except Exception:
+                pass
+        else:
+            try:
+                importlib.import_module(name)
+            except Exception:
+                pass
+
+    # 2. Reload the design modules that depend on config
+    for name in [
+        "design_vola_stocha",
+        "stimgen.laser.design_vola_stocha",
+        "design_vola_stocha_random_walk",
+        "stimgen.laser.design_vola_stocha_random_walk"
+    ]:
+        if name in sys.modules:
+            try:
+                importlib.reload(sys.modules[name])
+            except Exception:
+                pass
+
     from stimgen.laser import config as _cfg
     importlib.reload(_cfg)
     return {
@@ -657,7 +730,7 @@ def _write_stimgen_config(updates: Dict[str, Any]) -> None:
             lines.append("}")
             replacement = "\n".join(lines)
             source = re.sub(
-                rf'^{name}\s*=\s*\{{.*?\}}',
+                rf'^{name}\s*=\s*\{{.*?^\s*\}}',
                 replacement,
                 source,
                 flags=re.MULTILINE | re.DOTALL,
@@ -979,7 +1052,7 @@ def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Startup Dialog Options")
 
     # ── which fields appear (interactive multiselect) ──
-    available_fields = ["participant", "visit", "session", "order", "framing", "practice_only"]
+    available_fields = ["participant", "visit", "session", "order", "framing", "practice_mode"]
     current_fields = cfg.get("dialog_fields", ["participant", "visit", "session", "order", "framing"])
 
     cfg["dialog_fields"], action = prompt_multiselect(
@@ -1011,21 +1084,8 @@ def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
     info(f"  Sessions:  {', '.join(derived_sessions):20s} " + _c(C["dim"], f"({main_n_sessions} session{'s' if main_n_sessions != 1 else ''}, {main_types} block types/session)"))
     info(f"  Orders:    {', '.join(derived_orders):20s} " + _c(C["dim"], "(all 4 counterbalancing orders always generated)"))
 
-    # ── visits & framings: remain configurable (study design choices) ──
-    print()
-    visits = cfg.get("visits", ["1", "2"])
-    framings = cfg.get("framings", ["loss", "win"])
-
-    cfg["visits"] = prompt_list(
-        "Visit options",
-        visits,
-        hint_text="Comma-separated values shown in the visit dropdown (e.g. 1,2,3)",
-    )
-    cfg["framings"] = prompt_list(
-        "Framing options",
-        framings,
-        hint_text="Comma-separated; e.g. 'loss,win' or just 'loss' to fix the framing",
-    )
+    cfg["visits"] = cfg.get("visits", ["1", "2"])
+    cfg["framings"] = cfg.get("framings", ["loss", "win"])
 
     visible = [f for f in cfg["dialog_fields"] if f in ("visit", "session", "order", "framing")]
     if visible:
@@ -1180,7 +1240,43 @@ def _pick_presets(
     presets: Dict[str, Any],
     dimension_hint: str,
     allow_custom: bool = True,
+    multiply_by: List[str] = None,
+    noise_mode_holder: List[str] = None,
 ) -> List[str]:
+    def _prompt_noise_mode():
+        if not (multiply_by and len(set(multiply_by)) > 1 and noise_mode_holder):
+            return
+        options = ["counterbalanced"]
+        labels = {
+            "counterbalanced": "Counterbalanced (all noise levels × all volatility blocks)",
+        }
+        seen = set()
+        unique_vols = []
+        for v in multiply_by:
+            if v not in seen:
+                seen.add(v)
+                unique_vols.append(v)
+        for v in unique_vols:
+            mode_name = f"{v}_only"
+            options.append(mode_name)
+            labels[mode_name] = f"Only apply noise levels to '{v}' blocks (others stay at base level)"
+            
+        current_mode = noise_mode_holder[0]
+        if current_mode not in options:
+            current_mode = "counterbalanced"
+            
+        is_practice = "practice" in action_label.lower()
+        session_name = "Practice" if is_practice else "Main experiment"
+        print()
+        info(f"{session_name}: You have configured multiple volatility blocks and noise levels.")
+        print()
+        new_mode = prompt_options(
+            f"{session_name} noise distribution mode",
+            options,
+            default=current_mode,
+            labels=labels,
+        )
+        noise_mode_holder[0] = new_mode
     """Interactive preset picker — pick items one at a time to build a list."""
     print()
     hint(dimension_hint)
@@ -1201,9 +1297,11 @@ def _pick_presets(
     }
 
     while True:
+        noise_mode = noise_mode_holder[0] if noise_mode_holder else "counterbalanced"
         # Show available presets
         for i, name in enumerate(preset_names, 1):
-            already = _c(C["green"], " (already selected)") if name in selected else ""
+            count = selected.count(name)
+            already = _c(C["green"], f" (selected {count}x)") if count > 0 else ""
             val = presets[name]
             if isinstance(val, list):
                 disp = _c(C["dim"], f"[{', '.join(str(v) for v in val)}]")
@@ -1217,14 +1315,119 @@ def _pick_presets(
             print(f"    {_c(C['green'], str(custom_num))}. Custom — create a new preset")
         print()
 
+        # Display selected sequence as beautiful ANSI blocks
         if selected:
-            info(f"  Selected: {', '.join(selected)}")
+            box_height = 3 if multiply_by else 1
+            
+            line_top = ""
+            lines_mid = [""] * box_height
+            line_bot = ""
+            line_idx = ""
+            
+            # We separate noise level groups by 3 spaces
+            group_sep = "   "
+            
+            for idx, name in enumerate(selected, 1):
+                # Choose color based on the selected name
+                color = C["green"]
+                if name == "stable":
+                    color = C["blue"]
+                elif name == "volatile":
+                    color = C["red"]
+                elif name == "medium":
+                    color = C["yellow"]
+                elif name == "precise":
+                    color = C["blue"]
+                elif name == "noisy":
+                    color = C["red"]
+                
+                if multiply_by:
+                    group_boxes_top = []
+                    group_boxes_mid = [[] for _ in range(box_height)]
+                    group_boxes_bot = []
+                    group_box_widths = []
+                    
+                    active_v = multiply_by
+                    if noise_mode and noise_mode.endswith("_only") and idx > 1:
+                        vola_only = noise_mode[:-5]
+                        active_v = [v for v in multiply_by if v == vola_only]
+                        
+                    for v in active_v:
+                        block_lines = [v, "x", name]
+                        w = max(max(len(l) for l in block_lines), 6)
+                        group_box_widths.append(w + 4)
+                        
+                        b_top = color + "┌" + "─" * (w + 2) + "┐" + C["reset"]
+                        
+                        b_m = []
+                        for h_idx in range(box_height):
+                            line_text = block_lines[h_idx]
+                            padding = w - len(line_text)
+                            pad_l = padding // 2
+                            pad_r = padding - pad_l
+                            b_m.append(color + "│ " + C["bold"] + " " * pad_l + line_text + " " * pad_r + C["reset"] + color + " │" + C["reset"])
+                        
+                        b_bot = color + "└" + "─" * (w + 2) + "┘" + C["reset"]
+                        
+                        group_boxes_top.append(b_top)
+                        for h_idx in range(box_height):
+                            group_boxes_mid[h_idx].append(b_m[h_idx])
+                        group_boxes_bot.append(b_bot)
+                    
+                    g_top = " ".join(group_boxes_top)
+                    g_mid = [" ".join(group_boxes_mid[h]) for h in range(box_height)]
+                    g_bot = " ".join(group_boxes_bot)
+                    
+                    g_width = sum(group_box_widths) + (len(multiply_by) - 1)
+                    
+                    idx_str = f"({idx})"
+                    idx_pad = g_width - len(idx_str)
+                    idx_l = idx_pad // 2
+                    idx_r = idx_pad - idx_l
+                    g_idx = " " * idx_l + _c(C["dim"], idx_str) + " " * idx_r
+                    
+                else:
+                    w = max(len(name), 6)
+                    g_top = color + "┌" + "─" * (w + 2) + "┐" + C["reset"]
+                    
+                    g_mid = []
+                    line_text = name
+                    padding = w - len(line_text)
+                    pad_l = padding // 2
+                    pad_r = padding - pad_l
+                    g_mid.append(color + "│ " + C["bold"] + " " * pad_l + line_text + " " * pad_r + C["reset"] + color + " │" + C["reset"])
+                    
+                    g_bot = color + "└" + "─" * (w + 2) + "┘" + C["reset"]
+                    
+                    g_width = w + 4
+                    idx_str = f"({idx})"
+                    idx_pad = g_width - len(idx_str)
+                    idx_l = idx_pad // 2
+                    idx_r = idx_pad - idx_l
+                    g_idx = " " * idx_l + _c(C["dim"], idx_str) + " " * idx_r
+                
+                sep = "" if idx == 1 else group_sep
+                line_top += sep + g_top
+                for h_idx in range(box_height):
+                    lines_mid[h_idx] += sep + g_mid[h_idx]
+                line_bot += sep + g_bot
+                line_idx += sep + g_idx
+            
+            if multiply_by:
+                print("  Selected noise levels (multiplied with volatility blocks):")
+            else:
+                print("  Selected blocks sequence:")
+            print("  " + line_top)
+            for m_line in lines_mid:
+                print("  " + m_line)
+            print("  " + line_bot)
+            print("  " + line_idx)
             print()
 
         if not selected:
-            prompt_text = "Pick one (number"
+            prompt_text = "Pick preset to add (number"
         else:
-            prompt_text = "Pick another (number"
+            prompt_text = "Pick preset to add (number, -position=remove"
 
         if allow_custom:
             prompt_text += ", c=create new, ↵ done"
@@ -1232,6 +1435,8 @@ def _pick_presets(
             prompt_text += ", ↵ done"
         prompt_text += ")"
 
+        # Print the prompt instruction before the input
+        print(_c(C["dim"], f"  {prompt_text}"))
         raw = input(_c(C["magenta"], f"  ❯ ")).strip().lower()
 
         if not raw:
@@ -1240,7 +1445,21 @@ def _pick_presets(
                 continue
             break
 
-        if allow_custom and raw == "c":
+        # Handle removals starting with '-'
+        if raw.startswith("-"):
+            try:
+                remove_idx = int(raw[1:]) - 1
+                if 0 <= remove_idx < len(selected):
+                    removed_name = selected.pop(remove_idx)
+                    info(f"Removed '{removed_name}' at position {remove_idx + 1}")
+                else:
+                    warn(f"Invalid position to remove (1-{len(selected)})")
+            except ValueError:
+                warn("To remove a block, type '-' followed by its position number (e.g., -1)")
+            continue
+
+        custom_num = len(preset_names) + 1
+        if allow_custom and (raw == "c" or raw == str(custom_num)):
             new_name = prompt("  Name for new preset", "").strip()
             if not new_name:
                 continue
@@ -1265,25 +1484,125 @@ def _pick_presets(
             preset_names.append(new_name)
             selected.append(new_name)
             success(f"Added '{new_name}'")
+            _prompt_noise_mode()
             continue
 
         try:
             idx = int(raw) - 1
             if 0 <= idx < len(preset_names):
                 name = preset_names[idx]
-                if name in selected:
-                    selected.remove(name)
-                    info(f"Removed '{name}'")
-                else:
-                    selected.append(name)
-                    info(f"Added '{name}'")
+                selected.append(name)
+                info(f"Added '{name}'")
+                _prompt_noise_mode()
             else:
-                warn(f"Invalid number (1-{len(preset_names)})")
+                max_num = len(preset_names) + 1 if allow_custom else len(preset_names)
+                warn(f"Invalid number (1-{max_num})")
         except ValueError:
-            warn(f"Enter a number (1-{len(preset_names)}), 'c' to create, or ↵ to finish")
+            max_num = len(preset_names) + 1 if allow_custom else len(preset_names)
+            warn(f"Enter a number (1-{max_num}), '-' followed by position to remove, or ↵ to finish")
 
     print()
     return selected
+
+
+def _print_combinations_summary(
+    vol_list: List[str],
+    noise_list: List[str],
+    v_presets: Dict[str, Any],
+    n_presets: Dict[str, Any],
+    noise_mode: str = "counterbalanced",
+) -> None:
+    from design_vola_stocha import design_vola_stocha
+    
+    try:
+        design = design_vola_stocha(vol_list, noise_list, noise_mode)
+        block_types = design['blockTypes']
+    except Exception:
+        block_types = [f"{v}+{n}" for v in vol_list for n in noise_list]
+        
+    n_types = len(block_types)
+    info(_c(C["bold"], f"→ {len(vol_list)} volatility × {len(noise_list)} noise ({noise_mode}) = {n_types} block type{'s' if n_types != 1 else ''}"))
+    print(_c(C["dim"], "  ─────────────────────────────────────────────"))
+    
+    box_height = 3
+    line_top = ""
+    lines_mid = [""] * box_height
+    line_bot = ""
+    line_dur = ""
+    line_noise = ""
+    
+    for box_idx, b_type in enumerate(block_types, 1):
+        if "+" in b_type:
+            v, n = b_type.split("+")
+        else:
+            v, n = b_type, ""
+            
+        color = C["green"]
+        if v == "stable" and n == "precise":
+            color = C["blue"]
+        elif v == "stable" and n == "noisy":
+            color = C["cyan"]
+        elif v == "volatile" and n == "precise":
+            color = C["yellow"]
+        elif v == "volatile" and n == "noisy":
+            color = C["red"]
+        elif v == "stable":
+            color = C["blue"]
+        elif v == "volatile":
+            color = C["red"]
+            
+        block_lines = [v, "x", n] if n else [v]
+        w = max(max(len(l) for l in block_lines), 11)
+        
+        b_top = color + "┌" + "─" * (w + 2) + "┐" + C["reset"]
+        
+        b_m = []
+        for h_idx in range(box_height):
+            if h_idx < len(block_lines):
+                line_text = block_lines[h_idx]
+            else:
+                line_text = ""
+            padding = w - len(line_text)
+            pad_l = padding // 2
+            pad_r = padding - pad_l
+            b_m.append(color + "│ " + C["bold"] + " " * pad_l + line_text + " " * pad_r + C["reset"] + color + " │" + C["reset"])
+        
+        b_bot = color + "└" + "─" * (w + 2) + "┘" + C["reset"]
+        
+        v_val = v_presets.get(v, [0])
+        v_mean = v_val[0] if isinstance(v_val, list) else v_val
+        n_val = n_presets.get(n, 0) if n else 0
+        
+        dur_str = f"epoch: ~{v_mean}s"
+        noise_str = f"noise: ±{n_val}°"
+        
+        box_w_total = w + 4
+        
+        d_pad = box_w_total - len(dur_str)
+        d_pad_l = max(0, d_pad // 2)
+        d_pad_r = max(0, d_pad - d_pad_l)
+        d_line = " " * d_pad_l + _c(C["dim"], dur_str) + " " * d_pad_r
+        
+        n_pad = box_w_total - len(noise_str)
+        n_pad_l = max(0, n_pad // 2)
+        n_pad_r = max(0, n_pad - n_pad_l)
+        n_line = " " * n_pad_l + _c(C["dim"], noise_str) + " " * n_pad_r
+        
+        sep = "" if box_idx == 1 else "  "
+        line_top += sep + b_top
+        for h_idx in range(box_height):
+            lines_mid[h_idx] += sep + b_m[h_idx]
+        line_bot += sep + b_bot
+        line_dur += sep + d_line
+        line_noise += sep + n_line
+        
+    print("  " + line_top)
+    for m_line in lines_mid:
+        print("  " + m_line)
+    print("  " + line_bot)
+    print("  " + line_dur)
+    print("  " + line_noise)
+    print()
 
 
 def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -1328,33 +1647,42 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     # 2. Noise
     n_presets = stimgen.get("NOISE_PRESETS", {})
+    practice_noise_mode = stimgen.get("PRACTICE_NOISE_MODE", "counterbalanced")
+    practice_noise_mode_holder = [practice_noise_mode]
     practice_noise = _pick_presets(
         "Add a noise level to practice",
         n_presets,
         "Standard deviation (degrees) of observation noise added at each frame.\n"
         "Each noise × each volatility = one block type. Higher = more scattered.",
+        multiply_by=practice_vol,
+        noise_mode_holder=practice_noise_mode_holder,
     )
+    practice_noise_mode = practice_noise_mode_holder[0]
     stimgen["PRACTICE_NOISE"] = practice_noise
+    stimgen["PRACTICE_NOISE_MODE"] = practice_noise_mode
 
-    n_practice_types = len(practice_vol) * len(practice_noise)
+    from stimgen.laser.design_vola_stocha import get_block_count
+    n_practice_types = get_block_count(practice_vol, practice_noise, practice_noise_mode)
 
     # Show block type summary
     print()
-    info(_c(C["bold"], f"→ {len(practice_vol)} volatility × {len(practice_noise)} noise = {n_practice_types} block type{'s' if n_practice_types != 1 else ''}"))
-    print(_c(C["dim"], "  ─────────────────────────────────────────────"))
-    for v in practice_vol:
-        for n in practice_noise:
-            v_val = v_presets[v]
-            n_val = n_presets[n]
-            print(_c(C["dim"], f"  {v}+{n:12s}  dur={v_val}  noise={n_val}°"))
-    print()
+    _print_combinations_summary(practice_vol, practice_noise, v_presets, n_presets, practice_noise_mode)
 
     # 3. Block duration
+    def _practice_dur_fmt(val_str: str) -> str:
+        try:
+            d = int(val_str)
+            session_dur = n_practice_types * d
+            return f"1 session = {n_practice_types} blocks × {d} min = {session_dur} min"
+        except Exception:
+            return ""
+
     stimgen["PRACTICE_BLOCK_DURATION_MIN"] = prompt_int(
         "Practice block duration (minutes per block)",
         stimgen.get("PRACTICE_BLOCK_DURATION_MIN", 1),
         min_val=1,
         hint_text="How long each block runs",
+        live_formatter=_practice_dur_fmt,
     )
 
     # 4. Number of sessions
@@ -1363,9 +1691,7 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     def _practice_time_fmt(val_str: str) -> str:
         try:
             n = int(val_str)
-            blocks = n * n_practice_types
-            total = blocks * pract_dur
-            return f"{blocks} blocks ({n} sessions × {n_practice_types} types) → {total} min total"
+            return f"generates {n} session file{'s' if n != 1 else ''}"
         except Exception:
             return ""
 
@@ -1400,34 +1726,42 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     stimgen["MAIN_VOLATILITY"] = main_vol
 
     # 2. Noise
-    stimgen["MAIN_NOISE_MODE"] = "counterbalanced"  # default for now
+    main_noise_mode = stimgen.get("MAIN_NOISE_MODE", "counterbalanced")
+    main_noise_mode_holder = [main_noise_mode]
     main_noise = _pick_presets(
         "Add a noise level to main experiment",
         n_presets,
         "Standard deviation (degrees) of observation noise added at each frame.\n"
         "Higher values = laser dot scatters more = harder to track.",
+        multiply_by=main_vol,
+        noise_mode_holder=main_noise_mode_holder,
     )
+    main_noise_mode = main_noise_mode_holder[0]
     stimgen["MAIN_NOISE"] = main_noise
+    stimgen["MAIN_NOISE_MODE"] = main_noise_mode
 
-    n_main_types = len(main_vol) * len(main_noise)
+    from stimgen.laser.design_vola_stocha import get_block_count
+    n_main_types = get_block_count(main_vol, main_noise, main_noise_mode)
 
     # Show block type summary
     print()
-    info(_c(C["bold"], f"→ {len(main_vol)} volatility × {len(main_noise)} noise = {n_main_types} block type{'s' if n_main_types != 1 else ''}"))
-    print(_c(C["dim"], "  ─────────────────────────────────────────────"))
-    for v in main_vol:
-        for n in main_noise:
-            v_val = v_presets[v]
-            n_val = n_presets[n]
-            print(_c(C["dim"], f"  {v}+{n:12s}  dur={v_val}  noise={n_val}°"))
-    print()
+    _print_combinations_summary(main_vol, main_noise, v_presets, n_presets, main_noise_mode)
 
     # 3. Block duration
+    def _main_dur_fmt(val_str: str) -> str:
+        try:
+            d = int(val_str)
+            session_dur = n_main_types * d
+            return f"1 session = {n_main_types} blocks × {d} min = {session_dur} min"
+        except Exception:
+            return ""
+
     stimgen["MAIN_BLOCK_DURATION_MIN"] = prompt_int(
         "Main block duration (minutes per block)",
         stimgen.get("MAIN_BLOCK_DURATION_MIN", 3),
         min_val=1,
         hint_text="How long each block runs",
+        live_formatter=_main_dur_fmt,
     )
 
     # 4. Number of sessions
@@ -1436,9 +1770,7 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     def _main_time_fmt(val_str: str) -> str:
         try:
             n = int(val_str)
-            blocks = n * n_main_types
-            total = blocks * main_dur
-            return f"{blocks} blocks ({n} sessions × {n_main_types} types) → {total} min total"
+            return f"generates {n} session file{'s' if n != 1 else ''}"
         except Exception:
             return ""
 
@@ -1586,7 +1918,7 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
     print()
     info(_c(C["bold"], "Startup Dialog Options"))
 
-    available_fields = ["participant", "visit", "session", "order", "framing", "practice_only"]
+    available_fields = ["participant", "visit", "session", "order", "framing", "practice_mode"]
     current_fields = cfg.get("dialog_fields", ["participant", "visit", "session", "order", "framing"])
 
     cfg["dialog_fields"], action = prompt_multiselect(
@@ -1617,19 +1949,8 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
     info(f"  Sessions:  {', '.join(derived_sessions):20s} " + _c(C["dim"], f"({main_n_sessions_quick} session{'s' if main_n_sessions_quick != 1 else ''}, {main_types_quick} block types/session)"))
     info(f"  Orders:    {', '.join(derived_orders):20s} " + _c(C["dim"], "(all 4 counterbalancing orders always generated)"))
 
-    # ── visits & framings: remain configurable ──
-    print()
-    visits = cfg.get("visits", ["1", "2"])
-    framings = cfg.get("framings", ["loss", "win"])
-
-    cfg["visits"] = prompt_list(
-        "Visit options", visits,
-        hint_text="Comma-separated values shown in the visit dropdown (e.g. 1,2,3)",
-    )
-    cfg["framings"] = prompt_list(
-        "Framing options", framings,
-        hint_text="Comma-separated; e.g. 'loss,win' or just 'loss' to fix the framing",
-    )
+    cfg["visits"] = cfg.get("visits", ["1", "2"])
+    cfg["framings"] = cfg.get("framings", ["loss", "win"])
 
     visible = [f for f in cfg["dialog_fields"] if f in ("visit", "session", "order", "framing")]
     if visible:
@@ -1735,14 +2056,37 @@ def _kv(label: str, value: Any, suffix: str = "") -> str:
     return f"  {_c(C['dim'], padded_label)} {_c(C['bold'], s)}{suffix}"
 
 
+def _format_volatility(v_list: List[str]) -> str:
+    parts = []
+    for v in v_list:
+        if v == "stable":
+            parts.append(_c(C["blue"], v))
+        elif v == "volatile":
+            parts.append(_c(C["red"], v))
+        elif v == "medium":
+            parts.append(_c(C["yellow"], v))
+        else:
+            parts.append(_c(C["green"], v))
+    return ", ".join(parts)
+
+
+def _format_noise(n_list: List[str]) -> str:
+    parts = []
+    for n in n_list:
+        if n == "precise":
+            parts.append(_c(C["blue"], n))
+        elif n == "noisy":
+            parts.append(_c(C["red"], n))
+        else:
+            parts.append(_c(C["green"], n))
+    return ", ".join(parts)
+
+
 def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
     if section_id is not None:
         section(f"Section {section_id} Summary")
     else:
         section("Configuration Summary")
-
-    width = 59
-    print(_c(C["cyan"], f"  ┌{'─' * (width - 4)}┐"))
 
     fullscr = "fullscreen" if cfg.get("fullscreen") else f"{cfg.get('window_size_w', '?')}×{cfg.get('window_size_h', '?')}"
     items = [
@@ -1769,12 +2113,26 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
     # Resolve values from new config structure
     prac_vol = stimgen_updates.get("PRACTICE_VOLATILITY", stimgen.get("PRACTICE_VOLATILITY", ["?"]))
     prac_noise = stimgen_updates.get("PRACTICE_NOISE", stimgen.get("PRACTICE_NOISE", ["?"]))
-    prac_types = len(prac_vol) * len(prac_noise)
+    prac_noise_mode = stimgen_updates.get("PRACTICE_NOISE_MODE", stimgen.get("PRACTICE_NOISE_MODE", "counterbalanced"))
+    
+    from stimgen.laser.design_vola_stocha import get_block_count
+    try:
+        prac_types = get_block_count(prac_vol, prac_noise, prac_noise_mode)
+    except Exception:
+        prac_types = len(prac_vol) * len(prac_noise)
+
     prac_sessions = stimgen_updates.get("PRACTICE_N_SESSIONS", stimgen.get("PRACTICE_N_SESSIONS", "?"))
     prac_dur = stimgen_updates.get("PRACTICE_BLOCK_DURATION_MIN", stimgen.get("PRACTICE_BLOCK_DURATION_MIN", "?"))
+    
     main_vol = stimgen_updates.get("MAIN_VOLATILITY", stimgen.get("MAIN_VOLATILITY", ["?"]))
     main_noise = stimgen_updates.get("MAIN_NOISE", stimgen.get("MAIN_NOISE", ["?"]))
-    main_types = len(main_vol) * len(main_noise)
+    main_noise_mode = stimgen_updates.get("MAIN_NOISE_MODE", stimgen.get("MAIN_NOISE_MODE", "counterbalanced"))
+    
+    try:
+        main_types = get_block_count(main_vol, main_noise, main_noise_mode)
+    except Exception:
+        main_types = len(main_vol) * len(main_noise)
+
     main_sessions = stimgen_updates.get("MAIN_N_SESSIONS", stimgen.get("MAIN_N_SESSIONS", "?"))
     main_dur = stimgen_updates.get("MAIN_BLOCK_DURATION_MIN", stimgen.get("MAIN_BLOCK_DURATION_MIN", "?"))
     jump_min = stimgen_updates.get("JUMP_DURATION_MIN_SEC", stimgen.get("JUMP_DURATION_MIN_SEC", "?"))
@@ -1784,20 +2142,27 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
     try:
         prac_blocks = prac_types * int(prac_sessions)
         main_blocks = main_types * int(main_sessions)
-        total_time = prac_blocks * int(prac_dur) + main_blocks * int(main_dur)
+        
+        # Single session run duration (1 main session + practice if enabled)
+        run_time = main_types * int(main_dur)
+        if cfg.get("enable_practice", True):
+            run_time += prac_types * int(prac_dur)
     except (ValueError, TypeError):
         prac_blocks = "?"
         main_blocks = "?"
-        total_time = "?"
+        run_time = "?"
 
     shield_mode_str = "adjustable" if cfg.get("allow_shield_adjustment") else f"fixed ({cfg.get('fixed_shield_degrees', 20.0)}°)"
 
+    prac_mode_hint = f" ({prac_noise_mode})" if len(prac_noise) >= 1 and len(set(prac_vol)) > 1 else ""
+    main_mode_hint = f" ({main_noise_mode})" if len(main_noise) >= 1 and len(set(main_vol)) > 1 else ""
+
     items += [
-        ("Practice", f"{', '.join(prac_vol)} × {', '.join(prac_noise)} = {prac_types} type{'s' if prac_types != 1 else ''}", "7"),
-        ("  Practice blocks", f"{prac_blocks} blocks ({prac_sessions} session{'s' if prac_sessions != 1 else ''} × {prac_types} types @ {prac_dur} min/block)", "7"),
-        ("Main", f"{', '.join(main_vol)} × {', '.join(main_noise)} = {main_types} type{'s' if main_types != 1 else ''}", "7"),
-        ("  Main blocks", f"{main_blocks} blocks ({main_sessions} session{'s' if main_sessions != 1 else ''} × {main_types} types @ {main_dur} min/block)", "7"),
-        ("Total time", f"{total_time} min" if total_time != "?" else "?", "7"),
+        ("Practice", f"{_format_volatility(prac_vol)} × {_format_noise(prac_noise)}{prac_mode_hint} = {_c(C['bold'], str(prac_types))} type{'s' if prac_types != 1 else ''}", "7"),
+        ("  Practice blocks", f"{_c(C['bold'], str(prac_blocks))} blocks ({prac_sessions} session{'s' if prac_sessions != 1 else ''} × {prac_types} types @ {prac_dur} min/block)", "7"),
+        ("Main", f"{_format_volatility(main_vol)} × {_format_noise(main_noise)}{main_mode_hint} = {_c(C['bold'], str(main_types))} type{'s' if main_types != 1 else ''}", "7"),
+        ("  Main blocks", f"{_c(C['bold'], str(main_blocks))} blocks ({main_sessions} session{'s' if main_sessions != 1 else ''} × {main_types} types @ {main_dur} min/block)", "7"),
+        ("Run duration", f"{_c(C['bold'], str(run_time))} min" + (" (incl. practice)" if cfg.get("enable_practice", True) else "") if run_time != "?" else "?", "7"),
         ("Jump range", f"{jump_min}s - {jump_max}s (mean: {jump_mean}s)", "7"),
         ("Shield", f"{shield_mode_str}  ({cfg.get('rotation_speed', '?')}°/frame, r={cfg.get('circle_radius', '?')})", "5"),
         ("Loss factor", f"{cfg.get('loss_factor', '?')}  ({cfg.get('currency_symbol', '?')})", "5"),
@@ -1832,12 +2197,20 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
     if section_id is not None:
         items = [x for x in items if x[2] == section_id]
 
+    max_visible = 0
+    formatted_lines = []
     for label, value, _ in items:
         line = _kv(label, value)
         visible_len = len(re.sub(r'\033\[[0-9;]*m', '', line))
+        formatted_lines.append((line, visible_len))
+        if visible_len > max_visible:
+            max_visible = visible_len
+
+    width = max(59, max_visible + 4)
+    print(_c(C["cyan"], f"  ┌{'─' * (width - 4)}┐"))
+    for line, visible_len in formatted_lines:
         padding = max(0, (width - 4) - visible_len)
         print(_c(C["cyan"], "  │") + line + " " * padding + _c(C["cyan"], "│"))
-
     print(_c(C["cyan"], f"  └{'─' * (width - 4)}┘"))
     print()
 
@@ -1851,12 +2224,26 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
     # Resolve from new config structure
     prac_vol = stimgen_updates.get("PRACTICE_VOLATILITY", stimgen.get("PRACTICE_VOLATILITY", ["?"]))
     prac_noise = stimgen_updates.get("PRACTICE_NOISE", stimgen.get("PRACTICE_NOISE", ["?"]))
-    prac_types = len(prac_vol) * len(prac_noise)
+    prac_noise_mode = stimgen_updates.get("PRACTICE_NOISE_MODE", stimgen.get("PRACTICE_NOISE_MODE", "counterbalanced"))
+    
+    from stimgen.laser.design_vola_stocha import get_block_count
+    try:
+        prac_types = get_block_count(prac_vol, prac_noise, prac_noise_mode)
+    except Exception:
+        prac_types = len(prac_vol) * len(prac_noise)
+        
     prac_sessions = stimgen_updates.get("PRACTICE_N_SESSIONS", stimgen.get("PRACTICE_N_SESSIONS", "?"))
     prac_dur = stimgen_updates.get("PRACTICE_BLOCK_DURATION_MIN", stimgen.get("PRACTICE_BLOCK_DURATION_MIN", "?"))
+    
     main_vol = stimgen_updates.get("MAIN_VOLATILITY", stimgen.get("MAIN_VOLATILITY", ["?"]))
     main_noise = stimgen_updates.get("MAIN_NOISE", stimgen.get("MAIN_NOISE", ["?"]))
-    main_types = len(main_vol) * len(main_noise)
+    main_noise_mode = stimgen_updates.get("MAIN_NOISE_MODE", stimgen.get("MAIN_NOISE_MODE", "counterbalanced"))
+    
+    try:
+        main_types = get_block_count(main_vol, main_noise, main_noise_mode)
+    except Exception:
+        main_types = len(main_vol) * len(main_noise)
+        
     main_sessions = stimgen_updates.get("MAIN_N_SESSIONS", stimgen.get("MAIN_N_SESSIONS", "?"))
     main_dur = stimgen_updates.get("MAIN_BLOCK_DURATION_MIN", stimgen.get("MAIN_BLOCK_DURATION_MIN", "?"))
     jump_min = stimgen_updates.get("JUMP_DURATION_MIN_SEC", stimgen.get("JUMP_DURATION_MIN_SEC", "?"))
@@ -1880,20 +2267,24 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
 
     if mode == "generate":
         section("Sequence Generation — Key Parameters")
-        print(_c(C["cyan"], f"  ┌{'─' * (width - 4)}┐"))
+
+        prac_mode_hint = f" ({prac_noise_mode})" if len(prac_noise) >= 1 and len(set(prac_vol)) > 1 else ""
+        main_mode_hint = f" ({main_noise_mode})" if len(main_noise) >= 1 and len(set(main_vol)) > 1 else ""
 
         items = [
-            ("Practice", f"{'Yes' if cfg.get('enable_practice') else 'No'} ({prac_blocks} blocks = {prac_sessions} sessions × {prac_types} types @ {prac_dur} min)"),
-            ("Main", f"{main_blocks} blocks = {main_sessions} sessions × {main_types} types @ {main_dur} min"),
-            ("Total time", f"{total_time} min" if total_time != "?" else "?"),
+            ("Practice", f"{_format_volatility(prac_vol)} × {_format_noise(prac_noise)}{prac_mode_hint} = {_c(C['bold'], str(prac_types))} type{'s' if prac_types != 1 else ''}"),
+            ("  Practice blocks", f"{_c(C['bold'], str(prac_blocks))} blocks ({prac_sessions} session{'s' if prac_sessions != 1 else ''} @ {prac_dur} min)"),
+            ("Main", f"{_format_volatility(main_vol)} × {_format_noise(main_noise)}{main_mode_hint} = {_c(C['bold'], str(main_types))} type{'s' if main_types != 1 else ''}"),
+            ("  Main blocks", f"{_c(C['bold'], str(main_blocks))} blocks ({main_sessions} session{'s' if main_sessions != 1 else ''} @ {main_dur} min)"),
+            ("Total time", f"{_c(C['bold'], str(total_time))} min" if total_time != "?" else "?"),
             ("Jump range", f"{jump_min}s – {jump_max}s (mean {jump_mean}s)"),
             ("Seq versions", f"main={SEQUENCE_VERSION}, practice={PRACTICE_SEQUENCE_VERSION}"),
-            ("Combinations", f"{' × '.join(str(len(x)) for x in [visits, sessions, orders, framings])} = {n_combos}"),
+            ("Practice files", f"{prac_sessions} session{'s' if prac_sessions != 1 else ''} × 4 orders = {prac_sessions * 4 if isinstance(prac_sessions, int) else '?'} CSVs"),
+            ("Main files", f"{main_sessions} session{'s' if main_sessions != 1 else ''} × 4 orders = {main_sessions * 4 if isinstance(main_sessions, int) else '?'} CSVs"),
         ]
 
     elif mode == "run":
         section("Experiment Run — Key Parameters")
-        print(_c(C["cyan"], f"  ┌{'─' * (width - 4)}┐"))
 
         fullscr = "fullscreen" if cfg.get("fullscreen") else f"{cfg.get('window_size_w', '?')}×{cfg.get('window_size_h', '?')}"
         display = f"{fullscr} on {cfg.get('monitor_name', '?')} @ {cfg.get('target_refresh_rate', '?')} Hz"
@@ -1937,14 +2328,222 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
     else:
         return
 
+    max_visible = 0
+    formatted_lines = []
     for label, value in items:
         line = _kv(label, value)
         visible_len = len(re.sub(r'\033\[[0-9;]*m', '', line))
+        formatted_lines.append((line, visible_len))
+        if visible_len > max_visible:
+            max_visible = visible_len
+
+    width = max(59, max_visible + 4)
+    print(_c(C["cyan"], f"  ┌{'─' * (width - 4)}┐"))
+    for line, visible_len in formatted_lines:
         padding = max(0, (width - 4) - visible_len)
         print(_c(C["cyan"], "  │") + line + " " * padding + _c(C["cyan"], "│"))
-
     print(_c(C["cyan"], f"  └{'─' * (width - 4)}┘"))
     print()
+
+
+# ── pre-flight check ────────────────────────────────────────────────────────
+
+def _preflight_check(cfg: Dict[str, Any]) -> List[str]:
+    """Compare generated sequences against current config and check for issues.
+
+    Returns a list of warning strings.  Empty list = everything OK.
+    Checks:
+      1. pkl metadata vs. stimgen config (block types, noise, durations, counts)
+      2. min_laser_duration_frames vs. actual shortest laser runs in block CSVs
+    """
+    import csv
+    import pickle
+    from itertools import groupby
+
+    warnings: List[str] = []
+    seq_dir = PROJECT_ROOT / "sequences"
+    stimgen = _read_stimgen_config()
+
+    # ── 1. Check if sequences exist at all ──
+    if not seq_dir.is_dir():
+        warnings.append("No sequences/ directory found — generate sequences first.")
+        return warnings
+
+    practice_pkl = seq_dir / f"session_practice_{PRACTICE_SEQUENCE_VERSION}.pkl"
+    main_pkl = seq_dir / f"session_main_{SEQUENCE_VERSION}.pkl"
+
+    if not practice_pkl.exists() and not main_pkl.exists():
+        warnings.append("No generated sequence .pkl files found — generate sequences first.")
+        return warnings
+
+    # ── 2. Compare pkl metadata against current stimgen config ──
+    from stimgen.laser.design_vola_stocha import design_vola_stocha
+
+    for pkl_path, label, vol_key, noise_key, mode_key, nsess_key, dur_key in [
+        (practice_pkl, "Practice",
+         "PRACTICE_VOLATILITY", "PRACTICE_NOISE", "PRACTICE_NOISE_MODE",
+         "PRACTICE_N_SESSIONS", "PRACTICE_BLOCK_DURATION_MIN"),
+        (main_pkl, "Main",
+         "MAIN_VOLATILITY", "MAIN_NOISE", "MAIN_NOISE_MODE",
+         "MAIN_N_SESSIONS", "MAIN_BLOCK_DURATION_MIN"),
+    ]:
+        if not pkl_path.exists():
+            continue
+        try:
+            with open(pkl_path, "rb") as f:
+                session = pickle.load(f)
+        except Exception:
+            warnings.append(f"{label}: Could not read {pkl_path.name}")
+            continue
+
+        # What the pkl contains
+        pkl_block_types = session.get("blockTypes", [])
+        pkl_n_blocks = session.get("nBlocks", 0)
+        pkl_block_dur = session.get("blockDuration", 0)
+        pkl_design_blocks = session.get("design", {}).get("blocks", [])
+
+        # What the current config says
+        cfg_vol = stimgen.get(vol_key, [])
+        cfg_noise = stimgen.get(noise_key, [])
+        cfg_mode = stimgen.get(mode_key, "counterbalanced")
+        cfg_nsess = stimgen.get(nsess_key, 1)
+        cfg_dur = stimgen.get(dur_key, 1)
+
+        try:
+            expected_design = design_vola_stocha(cfg_vol, cfg_noise, cfg_mode)
+            expected_types = expected_design["blockTypes"]
+            expected_blocks = expected_design["blocks"]
+        except Exception:
+            expected_types = []
+            expected_blocks = []
+
+        expected_n_blocks = len(expected_types) * cfg_nsess
+
+        # Compare block types
+        if sorted(pkl_block_types) != sorted(expected_types):
+            warnings.append(
+                f"{label} block types mismatch:\n"
+                f"        Generated:  {', '.join(pkl_block_types)}\n"
+                f"        Config:     {', '.join(expected_types)}"
+            )
+
+        # Compare block count
+        if pkl_n_blocks != expected_n_blocks:
+            warnings.append(
+                f"{label} block count: generated {pkl_n_blocks}, "
+                f"config expects {expected_n_blocks} "
+                f"({len(expected_types)} types × {cfg_nsess} sessions)"
+            )
+
+        # Compare block duration
+        if pkl_block_dur != cfg_dur:
+            warnings.append(
+                f"{label} block duration: generated {pkl_block_dur} min, "
+                f"config expects {cfg_dur} min"
+            )
+
+        # Compare noise/volatility parameters per block type
+        for i, (pkl_b, exp_b) in enumerate(zip(pkl_design_blocks, expected_blocks)):
+            bt_name = pkl_block_types[i] if i < len(pkl_block_types) else f"block {i}"
+            pkl_dur_params = pkl_b.get("durMeanStdMinMax", [])
+            exp_dur_params = exp_b.get("durMeanStdMinMax", [])
+            pkl_noise_val = pkl_b.get("noiseStd", None)
+            exp_noise_val = exp_b.get("noiseStd", None)
+
+            if pkl_dur_params != exp_dur_params:
+                warnings.append(
+                    f"{label} '{bt_name}' epoch params: "
+                    f"generated {pkl_dur_params}, config {exp_dur_params}"
+                )
+            if pkl_noise_val != exp_noise_val:
+                warnings.append(
+                    f"{label} '{bt_name}' noise: "
+                    f"generated {pkl_noise_val}°, config {exp_noise_val}°"
+                )
+
+    # ── 3. Check min_laser_duration vs block CSV run lengths ──
+    min_laser_on = cfg.get("min_laser_duration_frames", 6)
+    laser_warn_blocks: List[Tuple[str, int]] = []
+
+    block_csvs = sorted(seq_dir.glob("*_block*.csv"))
+    for csv_path in block_csvs:
+        try:
+            positions = []
+            with open(csv_path, "r") as fh:
+                reader = csv.reader(fh)
+                next(reader)  # skip header
+                for row in reader:
+                    positions.append(float(row[1]))
+
+            # Find shortest run of consecutive identical positions
+            runs = []
+            for _, group in groupby(positions):
+                runs.append(sum(1 for _ in group))
+            if runs:
+                shortest = min(runs)
+                if shortest <= min_laser_on:
+                    name = csv_path.stem  # e.g. "main_v4_block3"
+                    laser_warn_blocks.append((name, shortest))
+        except Exception:
+            pass
+
+    if laser_warn_blocks:
+        block_details = ", ".join(f"{name} ({n}f)" for name, n in laser_warn_blocks[:5])
+        extra = f" (+{len(laser_warn_blocks) - 5} more)" if len(laser_warn_blocks) > 5 else ""
+        warnings.append(
+            f"Laser visibility: {len(laser_warn_blocks)} block(s) have runs ≤ "
+            f"min_laser_duration_frames ({min_laser_on}):\n"
+            f"        {block_details}{extra}\n"
+            f"        The laser won't be hidden during these short runs."
+        )
+
+    return warnings
+
+
+def _show_preflight_warnings(
+    cfg: Dict[str, Any], warnings: List[str]
+) -> bool:
+    """Display preflight warnings and offer to regenerate.
+
+    Returns True if the experiment should proceed, False to abort back to menu.
+    """
+    section("Pre-flight Check")
+
+    if not warnings:
+        print(_c(C["green"], "  ✓ All checks passed — sequences match current config."))
+        print()
+        return True
+
+    # Show warnings
+    print(_c(C["yellow"], f"  ⚠ {len(warnings)} issue{'s' if len(warnings) != 1 else ''} detected:"))
+    print()
+    for i, w in enumerate(warnings, 1):
+        lines = w.split("\n")
+        print(f"    {_c(C['yellow'], str(i) + '.')} {lines[0]}")
+        for extra_line in lines[1:]:
+            print(f"       {_c(C['dim'], extra_line)}")
+    print()
+
+    # Offer choices
+    print(f"    {_c(C['cyan'], 'g')} = Regenerate sequences with current config, then run")
+    print(f"    {_c(C['cyan'], 'r')} = Run anyway (ignore warnings)")
+    print(f"    {_c(C['dim'], 'b')} = Go back to menu")
+    print()
+
+    while True:
+        choice = input(_c(C["magenta"], "  ❯ ")).strip().lower()
+        if choice == "b":
+            return False
+        elif choice == "r":
+            return True
+        elif choice == "g":
+            if run_sequence_generation(cfg.copy()):
+                return True
+            else:
+                fail("Sequence generation failed.")
+                return False
+        else:
+            warn("Choose 'g', 'r', or 'b'.")
 
 
 # ── sequence generation ─────────────────────────────────────────────────────
@@ -2178,6 +2777,10 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
                 warn("Unsaved config changes — run anyway?")
                 if not prompt_yn("Proceed without saving?", True):
                     continue
+            # Pre-flight: compare generated sequences against current config
+            pf_warnings = _preflight_check(cfg)
+            if not _show_preflight_warnings(cfg, pf_warnings):
+                continue
             print()
             info("Launching experiment …")
             print()
@@ -2195,8 +2798,13 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
                 if run_sequence_generation(cfg.copy()):
                     print()
                     if prompt_yn("Start the experiment?", True):
-                        subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-                        return dirty
+                        pf_warnings = _preflight_check(cfg)
+                        if _show_preflight_warnings(cfg, pf_warnings):
+                            print()
+                            info("Launching experiment …")
+                            print()
+                            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                            return dirty
         elif choice in SECTION_MAP:
             desc, fn = SECTION_MAP[choice]
             try:
@@ -2278,6 +2886,10 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
                 warn("Unsaved config changes — run anyway?")
                 if not prompt_yn("Proceed without saving?", True):
                     continue
+            # Pre-flight: compare generated sequences against current config
+            pf_warnings = _preflight_check(cfg)
+            if not _show_preflight_warnings(cfg, pf_warnings):
+                continue
             print()
             info("Launching experiment …")
             print()
@@ -2295,8 +2907,13 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
                 if run_sequence_generation(cfg.copy()):
                     print()
                     if prompt_yn("Start the experiment?", True):
-                        subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-                        return
+                        pf_warnings = _preflight_check(cfg)
+                        if _show_preflight_warnings(cfg, pf_warnings):
+                            print()
+                            info("Launching experiment …")
+                            print()
+                            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                            return
         else:
             warn(f"Unknown option: '{choice}'")
 

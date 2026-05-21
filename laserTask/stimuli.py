@@ -392,16 +392,7 @@ def create_stimuli(
         wrapWidth=1.5,
         color="red",
     )
-    S["laser_warn"] = visual.TextStim(
-        win,
-        name="laser_warn",
-        text="",
-        font=s.font,
-        pos=(0, 0),
-        height=s.text_size,
-        wrapWidth=1.5,
-        color="red",
-    )
+
 
     # --- experiment end ------------------------------------------------- #
     S["exp_end"] = visual.TextStim(

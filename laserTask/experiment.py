@@ -130,7 +130,7 @@ def run_experiment(
         "session":     lambda c: ("session",     ["-- select session --"] + c.sessions),
         "order":       lambda c: ("order",       ["-- select order --"] + c.orders),
         "framing":     lambda c: ("framing",     ["-- select framing --"] + c.framings),
-        "practice_only": lambda c: ("practice_only", False),
+        "practice_mode": lambda c: ("practice_mode", ["Practice + Main", "Practice Only", "Skip Practice (Main Only)"]),
     }
 
     _dialog_fields = {}
@@ -226,12 +226,15 @@ def run_experiment(
 
     wins_condition = 1 if exp_info["framing"] == "win" else 0
 
+    practice_mode = exp_info.get("practice_mode", "Practice + Main")
+    practice_only = (practice_mode == "Practice Only")
+    skip_practice = (practice_mode == "Skip Practice (Main Only)")
+
     practice_conditions = []
-    if cfg.enable_practice:
+    if cfg.enable_practice and not skip_practice:
         practice_session_path = build_practice_session_path(cfg, exp_info)
         practice_conditions = data.importConditions(practice_session_path)
 
-    practice_only = exp_info.get("practice_only", False)
     n_display_blocks = len(practice_conditions) if practice_only else len(main_conditions)
 
     # Calculate block duration from the first loaded block file if possible
@@ -273,7 +276,7 @@ def run_experiment(
 
     block_conditions: list = []
 
-    if cfg.enable_practice:
+    if cfg.enable_practice and not skip_practice:
         n_practice = len(practice_conditions)
         for i, _pc in enumerate(practice_conditions):
             _row = dict(_pc)
@@ -285,7 +288,7 @@ def run_experiment(
             _row["toneStochasticity"] = np.nan
             block_conditions.append(_row)
 
-    if not exp_info.get("practice_only", False):
+    if not practice_only:
         main_block_total = len(main_conditions)
         for _idx, _mc in enumerate(main_conditions, start=1):
             _row = dict(_mc)
@@ -345,26 +348,13 @@ def run_experiment(
             _laser_warn_blocks.append((_warn_name, _actual_min))
 
     if _laser_warn_blocks:
-        _warn_lines = [
-            "WARNING: Laser visibility issue detected",
-            "",
-            f"The laser stays visible for at least {min_laser_on} frames "
-            "after appearing.",
-            "In the following blocks, the shortest laser run is at or "
-            "below this limit,",
-            "so the laser will not be hidden during these runs:",
-            "",
-        ]
-        for _warn_name, _min_run in _laser_warn_blocks:
-            _warn_lines.append(f"   {_warn_name}: {_min_run} frames")
-        _warn_lines += [
-            "",
-            "Press any key to continue.",
-        ]
-        S["laser_warn"].setText("\n".join(_warn_lines))
-        wait_for_key(
-            win, trig, [S["laser_warn"]], default_kb, the_exp, label="laser_warn"
+        _warn_msg = (
+            f"Laser visibility issue: The laser stays visible for at least {min_laser_on} frames "
+            "after appearing. In the following blocks, the shortest laser run is at or below this limit: "
+            + ", ".join(f"{name} ({n}f)" for name, n in _laser_warn_blocks)
         )
+        logging.warning(_warn_msg)
+        print(f"\n  ⚠  WARNING: {_warn_msg}\n")
     else:
         logging.debug(
             f"All blocks: Laser visibility limited to {min_laser_on} frames "

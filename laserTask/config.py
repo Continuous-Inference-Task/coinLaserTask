@@ -120,11 +120,11 @@ class ExperimentConfig:
     input_device: str = "keyboard"
 
     # -- Dialog configuration --
-    dialog_fields: list = field(default_factory=lambda: ["participant", "visit", "session", "order", "framing", "practice_only"])
+    dialog_fields: list = field(default_factory=lambda: ["participant", "visit", "session", "order", "framing", "practice_mode"])
     """Fields shown in the session setup dialog.
 
     Must be a subset of ``["participant", "visit", "session", "order",
-    "framing"]``.  ``"participant"`` is always force-included even if
+    "framing", "practice_mode"]``.  ``"participant"`` is always force-included even if
     omitted (required for data-file naming).
 
     Example — run without framings::
@@ -158,7 +158,9 @@ class ExperimentConfig:
     circle_radius: float = 3.0
     """Radius of the game circle (PsychoPy height units)."""
     allow_shield_adjustment: bool = False
-    """Fixed angular half-width of the shield in degrees."""
+    """Whether to allow growing/shrinking the shield size during the game."""
+    fixed_shield_degrees: float = 20.0
+    """Fixed angular half-width of the shield in degrees (only used if allow_shield_adjustment is False)."""
     shield_sizes: ShieldSizeConfig = field(
         default_factory=ShieldSizeConfig.peduks_fixed
     )
@@ -198,6 +200,10 @@ class ExperimentConfig:
     tone_freq_deviant: float = 528.0
     tone_duration: float = 0.07
     """Duration of each tone (seconds)."""
+    tone_duration_standard: float = 0.07
+    """Duration of standard tones (seconds). If negative, falls back to tone_duration."""
+    tone_duration_deviant: float = 0.07
+    """Duration of deviant tones (seconds). If negative, falls back to tone_duration."""
     tone_volume: float = 1.0
     tone_isi_frames: int = 26
     """Inter-stimulus interval between successive tones (in frames).
@@ -249,7 +255,16 @@ class ExperimentConfig:
 
         # Rebuild shield_sizes with the configured loss_factor so that
         # changing loss_factor actually reaches the shield cost calculations.
-        self.shield_sizes = ShieldSizeConfig.peduks_fixed(loss_factor=self.loss_factor)
+        if self.allow_shield_adjustment:
+            self.shield_sizes = ShieldSizeConfig.adjustable_standard(loss_factor=self.loss_factor)
+        else:
+            self.shield_sizes = ShieldSizeConfig.fixed_custom(degrees=self.fixed_shield_degrees, loss_factor=self.loss_factor)
+
+        # Fall back to tone_duration if specific durations aren't set
+        if self.tone_duration_standard < 0:
+            self.tone_duration_standard = self.tone_duration
+        if self.tone_duration_deviant < 0:
+            self.tone_duration_deviant = self.tone_duration
 
 
 # Trigger event codes — used both for sending and for data logging.

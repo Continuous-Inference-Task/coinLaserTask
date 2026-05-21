@@ -75,6 +75,29 @@ class ShieldSizeConfig:
         return self.size_degrees[self.default_index]
 
     @classmethod
+    def fixed_custom(cls, degrees: float = 20.0, loss_factor: float = 0.003) -> "ShieldSizeConfig":
+        lf = loss_factor
+        return cls(
+            sizes=[
+                ShieldSize(
+                    degrees=degrees,
+                    loss=FramingProfile(
+                        hit=EventReward(total=0.0),
+                        miss=EventReward(total=-lf, colour=[1, -1, -1]),
+                    ),
+                    win=FramingProfile(
+                        hit=EventReward(
+                            total=+lf,
+                            colour=[-1, 1, -1],
+                        ),
+                        miss=EventReward(total=-lf, colour=[1, -1, -1]),
+                    ),
+                )
+            ],
+            default_index=0,
+        )
+
+    @classmethod
     def peduks_fixed(cls, loss_factor: float = 0.003) -> "ShieldSizeConfig":
         lf = loss_factor
         return cls(

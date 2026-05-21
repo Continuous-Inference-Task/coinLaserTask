@@ -52,6 +52,7 @@ def main():
     practice_design = design_vola_stocha(
         volatility=config.PRACTICE_VOLATILITY,
         noise=config.PRACTICE_NOISE,
+        noise_mode=getattr(config, "PRACTICE_NOISE_MODE", "counterbalanced"),
     )
     n_practice_types = len(practice_design['blocks'])
     n_practice_blocks = n_practice_types * config.PRACTICE_N_SESSIONS
@@ -80,6 +81,7 @@ def main():
     main_design = design_vola_stocha(
         volatility=config.MAIN_VOLATILITY,
         noise=config.MAIN_NOISE,
+        noise_mode=getattr(config, "MAIN_NOISE_MODE", "counterbalanced"),
     )
     n_main_types = len(main_design['blocks'])
     n_main_blocks = n_main_types * config.MAIN_N_SESSIONS
