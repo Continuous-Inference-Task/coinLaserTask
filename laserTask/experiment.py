@@ -30,6 +30,7 @@ from laserTask.io import (
     build_save_path,
     build_session_path,
     load_stimulus_stream,
+    validate_dialog_options,
 )
 from laserTask.reward import BaseRewardTracker, RewardTracker
 from laserTask.stimuli import compute_shield_vertices, create_stimuli
@@ -143,6 +144,18 @@ def run_experiment(
     # participant is required for data-file naming — force-include if omitted.
     if "participant" not in _dialog_fields:
         _dialog_fields["participant"] = "000"
+
+    # Validate that dialog options match available sequence files
+    warnings = validate_dialog_options(cfg, project_root=root)
+    if warnings:
+        from psychopy import gui
+        msg = "Dialog options may not match generated sequences:\n\n" + "\n".join(warnings)
+        msg += "\n\nRun 'python setup.py' and re-generate sequences to fix."
+        logging.warning(msg)
+        print("\n  ⚠  WARNING:")
+        for w in warnings:
+            print(f"     • {w}")
+        print("     Continuing anyway …\n")
 
     exp_info = show_session_dialog(
         _dialog_fields,

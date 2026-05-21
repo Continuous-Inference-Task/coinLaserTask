@@ -134,8 +134,8 @@ class ExperimentConfig:
 
     # -- Experiment structure --
     visits: list = field(default_factory=lambda: ["1", "2"])
-    sessions: list = field(default_factory=lambda: ["1", "2"])
-    orders: list = field(default_factory=lambda: ["1", "2"])
+    sessions: list = field(default_factory=lambda: ["1", "2", "3"])
+    orders: list = field(default_factory=lambda: ["1", "2", "3", "4"])
     framings: list = field(default_factory=lambda: ["loss", "win"])
     """Dropdown options for the session dialog (if enabled via dialog_fields)."""
 
