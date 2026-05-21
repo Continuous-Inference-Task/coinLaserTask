@@ -2,7 +2,11 @@
 coinScriptSequenceGeneration - Main script for generating stimulus
 sequences in the Laser task (CoIn / Continuous Inference study).
 
-This is the Python translation of peduksScriptSequenceGeneration.m (renamed to CoIn).
+Generates raw laser time-series blocks for practice and main sessions,
+then assembles them into counterbalanced session CSV files.
+
+Usage:  python coin_script_sequence_generation.py
+(typically called from setup.py, not directly)
 """
 import os
 import pickle
@@ -12,6 +16,7 @@ import matplotlib.pyplot as plt
 
 from generate_laser_session import generate_laser_session
 from generate_laser_session_practice import generate_laser_session_practice
+from design_vola_stocha import design_vola_stocha
 from analyse_session import analyse_session
 from plot_session import plot_session
 from write_session_to_csv_file import write_session_to_csv_file
@@ -19,11 +24,20 @@ from generate_coin_session_csv_files import generate_coin_session_csv_files
 import config
 
 
+def _build_block_sequence(n_types, n_blocks):
+    """Build a 1-based block sequence repeating all types evenly."""
+    n_full = n_blocks // n_types
+    n_rem = n_blocks % n_types
+    seq = list(range(1, n_types + 1)) * n_full
+    if n_rem > 0:
+        seq.extend(list(range(1, n_rem + 1)))
+    return seq
+
+
 def main():
     # Sort out paths and source data
     current_path = os.path.dirname(os.path.abspath(__file__))
     
-    # Resolve output directory
     if os.path.isabs(config.OUTPUT_DIR):
         output_root = config.OUTPUT_DIR
     else:
@@ -33,19 +47,23 @@ def main():
     print(f'Saving sequences to: {output_root}\n')
 
     # =========================================================================
-    # Task intro & practice
+    # Practice session
     # =========================================================================
-    # Create a practice/training sequence with nBlocks from config
-    n_practice_blocks = config.PRACTICE_SESSION["nBlocks"]
-    # Clamp to 4 block types max (only 4 block designs exist)
-    n_practice_types = min(n_practice_blocks, 4)
-    block_sequence = list(range(1, n_practice_types + 1))
-    session = generate_laser_session_practice(block_sequence)
+    practice_design = design_vola_stocha(
+        volatility=config.PRACTICE_VOLATILITY,
+        noise=config.PRACTICE_NOISE,
+        noise_mode=getattr(config, "PRACTICE_NOISE_MODE", "counterbalanced"),
+    )
+    n_practice_types = len(practice_design['blocks'])
+    n_practice_blocks = n_practice_types * config.PRACTICE_N_SESSIONS
+    practice_block_seq = _build_block_sequence(n_practice_types, n_practice_blocks)
 
-    # Analyse the session
+    print(f'Practice: {n_practice_types} block type(s) × {config.PRACTICE_N_SESSIONS} session(s) = {n_practice_blocks} blocks')
+    session = generate_laser_session_practice(
+        practice_block_seq, practice_design, config.PRACTICE_BLOCK_DURATION_MIN
+    )
+
     fh1, fh2 = analyse_session(session)
-
-    # Write to file
     session_file_name = f'practice_{config.VERSION_PRACTICE}'
     write_session_to_csv_file(session, session_file_name, output_root)
     with open(os.path.join(output_root, f'session_{session_file_name}.pkl'), 'wb') as f:
@@ -58,65 +76,23 @@ def main():
     print(f'Practice session saved: {session_file_name}')
 
     # =========================================================================
-    # Online training
+    # Main session
     # =========================================================================
-    # Read nBlocks from config (default: 12 → 3 repetitions of the 4 block types)
-    n_main_blocks = config.MAIN_SESSION.get("nBlocks", 12)
-    n_types = 4  # stablePrecise, stableNoisy, volatilePrecise, volatileNoisy
-    n_full_repeats = n_main_blocks // n_types
-    n_remainder = n_main_blocks % n_types
-    block_sequence = list(range(1, n_types + 1)) * n_full_repeats
-    if n_remainder > 0:
-        block_sequence.extend(list(range(1, n_remainder + 1)))
-    session = generate_laser_session(block_sequence)
+    main_design = design_vola_stocha(
+        volatility=config.MAIN_VOLATILITY,
+        noise=config.MAIN_NOISE,
+        noise_mode=getattr(config, "MAIN_NOISE_MODE", "counterbalanced"),
+    )
+    n_main_types = len(main_design['blocks'])
+    n_main_blocks = n_main_types * config.MAIN_N_SESSIONS
+    main_block_seq = _build_block_sequence(n_main_types, n_main_blocks)
+
+    print(f'\nMain: {n_main_types} block type(s) × {config.MAIN_N_SESSIONS} session(s) = {n_main_blocks} blocks')
+    session = generate_laser_session(
+        main_block_seq, main_design, config.MAIN_BLOCK_DURATION_MIN
+    )
 
     fh1, fh2 = analyse_session(session)
-
-    session_file_name = f'onlineTrain_{config.VERSION}'
-    write_session_to_csv_file(session, session_file_name, output_root)
-    with open(os.path.join(output_root, f'session_{session_file_name}.pkl'), 'wb') as f:
-        pickle.dump(session, f)
-    fh1.savefig(os.path.join(output_root, f'session_{session_file_name}_move.png'), dpi=150)
-    fh2.savefig(os.path.join(output_root, f'session_{session_file_name}_steps.png'), dpi=150)
-    fh = plot_session(session, 0)
-    fh.savefig(os.path.join(output_root, f'session_{session_file_name}_sessionPlot.png'), dpi=150)
-    plt.close('all')
-    print(f'Online training session saved: {session_file_name}')
-
-    # =========================================================================
-    # EEG baseline
-    # =========================================================================
-    n_base_blocks = min(n_main_blocks, 8)  # baseline uses up to 8 blocks total
-    n_full_repeats = n_base_blocks // n_types
-    n_remainder = n_base_blocks % n_types
-    block_sequence = list(range(1, n_types + 1)) * n_full_repeats
-    if n_remainder > 0:
-        block_sequence.extend(list(range(1, n_remainder + 1)))
-    session = generate_laser_session(block_sequence)
-    fh1, fh2 = analyse_session(session)
-
-    session_file_name = f'baseline_{config.VERSION}'
-    write_session_to_csv_file(session, session_file_name, output_root)
-    with open(os.path.join(output_root, f'session_{session_file_name}.pkl'), 'wb') as f:
-        pickle.dump(session, f)
-    fh1.savefig(os.path.join(output_root, f'session_{session_file_name}_move.png'), dpi=150)
-    fh2.savefig(os.path.join(output_root, f'session_{session_file_name}_steps.png'), dpi=150)
-    fh = plot_session(session, 0)
-    fh.savefig(os.path.join(output_root, f'session_{session_file_name}_sessionPlot.png'), dpi=150)
-    plt.close('all')
-    print(f'Baseline session saved: {session_file_name}')
-
-    # =========================================================================
-    # EEG infusion (main)
-    # =========================================================================
-    n_full_repeats = n_main_blocks // n_types
-    n_remainder = n_main_blocks % n_types
-    block_sequence = list(range(1, n_types + 1)) * n_full_repeats
-    if n_remainder > 0:
-        block_sequence.extend(list(range(1, n_remainder + 1)))
-    session = generate_laser_session(block_sequence)
-    fh1, fh2 = analyse_session(session)
-
     session_file_name = f'main_{config.VERSION}'
     write_session_to_csv_file(session, session_file_name, output_root)
     with open(os.path.join(output_root, f'session_{session_file_name}.pkl'), 'wb') as f:
@@ -133,34 +109,28 @@ def main():
     # =========================================================================
     seq_version = config.VERSION
 
-    # Online training
-    task_flag = 'onlineTrain'
+    # Main session CSVs
     for order_index in range(1, 5):
-        generate_coin_session_csv_files(seq_version, order_index, task_flag,
-                                         output_root, n_blocks=n_main_blocks)
-    print(f'Session CSV files generated for {task_flag}')
+        generate_coin_session_csv_files(
+            seq_version, order_index, 'main', output_root,
+            design=main_design,
+            block_sequence=main_block_seq,
+            n_sessions=config.MAIN_N_SESSIONS,
+            blocks_per_session=n_main_types,
+        )
+    print(f'\nSession CSV files generated for main ({n_main_blocks} blocks, {n_main_types}/session)')
 
-    # Baseline EEG
-    task_flag = 'baseline'
-    for order_index in range(1, 5):
-        generate_coin_session_csv_files(seq_version, order_index, task_flag,
-                                         output_root, n_blocks=n_base_blocks)
-    print(f'Session CSV files generated for {task_flag}')
-
-    # Infusion EEG
-    task_flag = 'infusion'
-    for order_index in range(1, 5):
-        generate_coin_session_csv_files(seq_version, order_index, task_flag,
-                                         output_root, n_blocks=n_main_blocks)
-    print(f'Session CSV files generated for {task_flag}')
-
-    # Practice (note: v3 in original script)
-    task_flag = 'practice'
+    # Practice session CSVs
     seq_version_practice = config.VERSION_PRACTICE
     for order_index in range(1, 5):
-        generate_coin_session_csv_files(seq_version_practice, order_index, task_flag,
-                                         output_root, n_blocks=n_practice_blocks)
-    print(f'Session CSV files generated for {task_flag}')
+        generate_coin_session_csv_files(
+            seq_version_practice, order_index, 'practice', output_root,
+            design=practice_design,
+            block_sequence=practice_block_seq,
+            n_sessions=config.PRACTICE_N_SESSIONS,
+            blocks_per_session=n_practice_types,
+        )
+    print(f'Session CSV files generated for practice ({n_practice_blocks} blocks, {n_practice_types}/session)')
 
     print('\nAll sequences generated successfully!')
 

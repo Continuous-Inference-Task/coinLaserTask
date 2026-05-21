@@ -1,84 +1,107 @@
 """
 config.py
 
-Centralized configuration file for the CoIn (Continuous Inference) Laser Stimulus Generator.
-This file contains the high-level parameters for generating the experimental sequences.
+Centralized configuration for the CoIn (Continuous Inference) Laser Stimulus Generator.
+
+Block types are defined by two orthogonal dimensions:
+  • Volatility — how fast the true mean jumps (controlled by epoch duration distribution)
+  • Noise      — how much observation noise there is (std dev of the normal distribution)
+
+The active block design is the Cartesian product of the selected volatility levels
+and noise levels.  One session = one full set of block types (balanced across dimensions).
+
+Usage in setup.py:
+    Choose volatility levels → choose noise levels → set sessions per task type.
+    The setup wizard reads and writes this file directly.
 """
 
 import os
 import sys
 
 # ---- shared values (single source of truth) ----
-# Add project root to path so we can import config_shared
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../.."))
 from config_shared import SEQUENCE_VERSION, PRACTICE_SEQUENCE_VERSION, SEQUENCE_ROOT
+
 
 # =============================================================================
 # Global Settings
 # =============================================================================
-# The sampling rate for all sequences in Hz (e.g. 60 for PsychoPy/monitor refresh rate)
-SAMPLE_RATE = 60
+SAMPLE_RATE = 60  # Hz — matches PsychoPy monitor refresh rate
 
 # Version strings (sourced from config_shared.py — change them there).
 VERSION = SEQUENCE_VERSION
 VERSION_PRACTICE = PRACTICE_SEQUENCE_VERSION
 
-# Output directory for the generated sequences (relative to this file's location, i.e. stimgen/laser/).
-# Default: '../../sequences' writes to the project-root sequences/ folder.
-# You can change this to an absolute path to export elsewhere.
+# Output directory for generated sequences (relative to stimgen/laser/).
 OUTPUT_DIR = f"../../{SEQUENCE_ROOT}"
 
 
 # =============================================================================
-# Experimental Parameters
+# Dimension presets — these define what block types are available
+# =============================================================================
+
+# ── Volatility presets ─────────────────────────────────────────────────────
+# Each preset is [mean, std, min, max] of the truncated-exponential
+# distribution that controls how long the true mean stays in one position
+# before jumping.  Smaller values = faster jumps = more volatile.
+VOLATILITY_PRESETS = {
+    "stable": [10, 1.5, 8, 15],
+    "volatile": [3, 1.5, 2, 6],
+    "medium": [5, 1.5, 3, 12],
+}
+
+# ── Noise presets ──────────────────────────────────────────────────────────
+# Standard deviation (in degrees) of the observation noise added at each frame.
+# Higher noise = laser dot scatters more around the true position.
+NOISE_PRESETS = {
+    "precise": 15,
+    "noisy": 20,
+}
+
+
+# =============================================================================
+# Active block designs — which presets are actually used
+# =============================================================================
+
+# ── Practice session ───────────────────────────────────────────────────────
+# Usually just one block type (e.g. volatile + precise).
+PRACTICE_VOLATILITY = ['volatile']
+PRACTICE_NOISE = ['noisy']
+# Noise mode: "counterbalanced" = Cartesian product (volatility × noise)
+#             "per_block"        = choose a specific noise level for each
+#                                  volatility level (list must match in length)
+PRACTICE_NOISE_MODE = 'counterbalanced'
+PRACTICE_N_SESSIONS = 1
+PRACTICE_BLOCK_DURATION_MIN = 1  # minutes per block
+
+# ── Main experiment session ────────────────────────────────────────────────
+MAIN_VOLATILITY = ['stable']
+MAIN_NOISE = ['precise']
+MAIN_NOISE_MODE = 'counterbalanced'
+MAIN_N_SESSIONS = 3
+MAIN_BLOCK_DURATION_MIN = 4  # minutes per block
+
+
+# =============================================================================
+# Saved custom designs (user-created named presets)
+# =============================================================================
+# Each entry is a dict with "volatility", "noise", and optional "noise_mode".
+# These appear in the preset picker during setup.
+SAVED_DESIGNS = {
+}
+
+
+# =============================================================================
+# Common parameters (shared across all block types)
 # =============================================================================
 
 # Bounds for drawing the "jump" durations per epoch.
-# The laser stays in one position (epoch) for a period drawn from a
-# truncated exponential distribution. These are in seconds.
+# The laser stays in one position for a period drawn from a truncated
+# exponential distribution.
 JUMP_DURATION_MEAN_SEC = 0.3
 JUMP_DURATION_MIN_SEC = 0.075
 JUMP_DURATION_MAX_SEC = 1.0
 
-# Base characteristics of the block conditions:
-DUR_MEAN_STD_MIN_MAX_STABLE = [
-    10,
-    1.5,
-    8,
-    15,
-]  # [Mean, Std, Min, Max] of epochs per block
-DUR_MEAN_STD_MIN_MAX_VOLATILE = [
-    3,
-    1.5,
-    2,
-    6,
-]  # [Mean, Std, Min, Max] of epochs per block
-
-# Noise values for the observations (in degrees)
-NOISE_STD_LOW = 15
-NOISE_STD_HIGH = 20
-
-# Allowed jumps for the mean position in degrees
-# (When the true mean jumps, it jumps by one of these values)
+# Allowed jump sizes for the true mean position (degrees).
+# When the true mean jumps, it changes by one of these values.
 JUMP_VALUE_SET = [-40, -30, -20, 20, 30, 40]
-
-
-# =============================================================================
-# Session Configurations
-# =============================================================================
-# Settings specific to different types of sessions. The durations are in minutes.
-
-# For standard/main EEG infusion sessions and Random Walk online equivalents
-MAIN_SESSION = {
-    "nBlocks": 1,
-    "blockDurationMin": 1,
-}
-
-# For short practice sessions (e.g. before the main task)
-PRACTICE_SESSION = {
-    "nBlocks": 4,
-    "blockDurationMin": 2,
-}
-
-# For general testing and standard "generate_laser_session" function defaults
-DEFAULT_SESSION = {"nBlocks": 12, "blockDurationMin": 3}

@@ -109,7 +109,7 @@ Controlled via `ShieldSizeConfig`. Two presets are available:
 
 | Field | Default | Setup section | Description |
 |---|---|---|---|
-| `dialog_fields` | `["participant", "visit", "session", "order", "framing", "practice_only"]` | 8 | Fields shown in the session startup dialog. |
+| `dialog_fields` | `["participant", "visit", "session", "order", "framing", "practice_mode"]` | 8 | Fields shown in the session startup dialog. |
 | `visits` | `["1", "2"]` | 8 | Dropdown options for Visit. |
 | `sessions` | `["1", "2"]` | 8 | Dropdown options for Session. |
 | `orders` | `["1", "2"]` | 8 | Dropdown options for Counterbalancing Order. |

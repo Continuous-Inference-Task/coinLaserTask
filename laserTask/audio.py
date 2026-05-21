@@ -76,7 +76,7 @@ class AudioStimulationManager:
         if sys.platform == "win32":
             self.tone_standard = sound.Sound(
                 config.tone_freq_standard,
-                secs=config.tone_duration,
+                secs=config.tone_duration_standard,
                 stereo=True, hamming=True,
                 syncToWin=True, name="tone_standard",
             )
@@ -84,7 +84,7 @@ class AudioStimulationManager:
 
             self.tone_deviant = sound.Sound(
                 config.tone_freq_deviant,
-                secs=config.tone_duration,
+                secs=config.tone_duration_deviant,
                 stereo=True, hamming=True,
                 syncToWin=True, name="tone_deviant",
             )
@@ -92,12 +92,12 @@ class AudioStimulationManager:
         else:
             self.tone_standard = SimpleTone(
                 config.tone_freq_standard,
-                secs=config.tone_duration,
+                secs=config.tone_duration_standard,
                 volume=config.tone_volume,
             )
             self.tone_deviant = SimpleTone(
                 config.tone_freq_deviant,
-                secs=config.tone_duration,
+                secs=config.tone_duration_deviant,
                 volume=config.tone_volume,
             )
 

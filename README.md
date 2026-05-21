@@ -1,4 +1,4 @@
-to # CoIn Laser Task — Save the World
+# CoIn Laser Task — Save the World
 
 PsychoPy-based experiment for the Continuous Inference (CoIn) study's laser task.
 This repository contains a unified Python codebase integrating the experiment runner, laser stimulus sequence generator, and auditory MMN tone player.
@@ -9,25 +9,26 @@ This repository contains a unified Python codebase integrating the experiment ru
 
 The repository features a centralized CLI management tool: **`setup.py`**. Instead of manually editing configuration files, you can manage the entire experimental environment interactively.
 
-### Quick Start
+### Quick Start (Cross-Platform)
+
+The project includes a smart cross-platform bootstrap script, **`run.py`**, which automatically creates a virtual environment, installs dependencies from `requirements.txt`, and launches the task setup wizard.
 
 ```bash
-# 1. Setup virtual environment & dependencies
-python3 -m venv stw
-source stw/bin/activate
-pip install -r requirements.txt
-
-# 2. Launch the Configuration Wizard
-python setup.py
+# Clone the repository, navigate into the directory, and run:
+python run.py
 ```
+
+This works out-of-the-box on **Windows, macOS, and Linux** with no manual virtual environment setup or package installation required.
 
 ### CLI Options
 
-- `python setup.py` — Opens the main interactive configuration menu.
-- `python setup.py --full` — Starts the step-by-step onboarding wizard for all sections.
-- `python setup.py --report` — Displays a complete printout of the current configuration.
-- `python setup.py --generate` — Regenerates all experimental sequences using current config parameters.
-- `python setup.py --help` — Shows the helper/usage message.
+Any arguments passed to `run.py` are forwarded directly to the configuration wizard:
+
+- `python run.py` — Opens the interactive configuration menu (and runs the setup GUI if chosen).
+- `python run.py --full` — Starts the step-by-step onboarding wizard for all sections.
+- `python run.py --report` — Displays a complete configuration printout.
+- `python run.py --generate` — Regenerates all experimental sequences.
+- `python run.py --help` — Shows the helper/usage message.
 
 ---
 
@@ -97,14 +98,22 @@ To guarantee scientific accuracy and prevent runtime failures, the runner automa
 
 Validate both sequence generators and task components using the test suite:
 
+**On macOS/Linux:**
 ```bash
 # Run laser sequence generator tests
-cd stimgen/laser && python test_all.py
-cd ../..
+./stw/bin/python stimgen/laser/test_all.py
 
 # Run MMN tone generator tests
-cd stimgen/mmn && python -m pytest tests/
-cd ../..
+./stw/bin/python -m pytest stimgen/mmn
+```
+
+**On Windows:**
+```cmd
+# Run laser sequence generator tests
+stw\Scripts\python stimgen/laser/test_all.py
+
+# Run MMN tone generator tests
+stw\Scripts\python -m pytest stimgen/mmn
 ```
 
 ---

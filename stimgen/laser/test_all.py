@@ -12,14 +12,14 @@ def test_design_vola_stocha():
     from design_vola_stocha import design_vola_stocha
     d = design_vola_stocha()
     assert len(d['blockTypes']) == 4
-    assert d['blockTypes'] == ['stablePrecise', 'stableNoisy', 'volatilePrecise', 'volatileNoisy']
+    assert d['blockTypes'] == ['stable+precise', 'stable+noisy', 'volatile+precise', 'volatile+noisy']
     assert len(d['blocks']) == 4
     # Check block 0 (MATLAB block 1)
-    assert d['blocks'][0]['durMeanStdMinMax'] == config.DUR_MEAN_STD_MIN_MAX_STABLE
-    assert d['blocks'][0]['noiseStd'] == config.NOISE_STD_LOW
-    assert d['blocks'][1]['noiseStd'] == config.NOISE_STD_HIGH
-    assert d['blocks'][2]['durMeanStdMinMax'] == config.DUR_MEAN_STD_MIN_MAX_VOLATILE
-    assert d['blocks'][3]['noiseStd'] == config.NOISE_STD_HIGH
+    assert d['blocks'][0]['durMeanStdMinMax'] == config.VOLATILITY_PRESETS['stable']
+    assert d['blocks'][0]['noiseStd'] == config.NOISE_PRESETS['precise']
+    assert d['blocks'][1]['noiseStd'] == config.NOISE_PRESETS['noisy']
+    assert d['blocks'][2]['durMeanStdMinMax'] == config.VOLATILITY_PRESETS['volatile']
+    assert d['blocks'][3]['noiseStd'] == config.NOISE_PRESETS['noisy']
     # All blocks should have jumpValueSet
     for b in d['blocks']:
         assert b['jumpValueSet'] == config.JUMP_VALUE_SET
@@ -31,9 +31,9 @@ def test_design_vola_stocha_random_walk():
     d = design_vola_stocha_random_walk()
     assert len(d['blocks']) == 4
     assert d['blocks'][0]['sigmaStream'] == 1.5
-    assert d['blocks'][0]['sigmaObs'] == config.NOISE_STD_LOW
+    assert d['blocks'][0]['sigmaObs'] == config.NOISE_PRESETS.get('precise', 10)
     assert d['blocks'][2]['sigmaStream'] == 3
-    assert d['blocks'][3]['sigmaObs'] == config.NOISE_STD_HIGH
+    assert d['blocks'][3]['sigmaObs'] == config.NOISE_PRESETS.get('noisy', 20)
     print("✓ design_vola_stocha_random_walk")
 
 def test_laser_colours():
@@ -202,18 +202,20 @@ def test_generate_block_stimulus_random_walk_poiss_draw():
 def test_generate_laser_session():
     import config
     from generate_laser_session import generate_laser_session
+    from design_vola_stocha import design_vola_stocha
     np.random.seed(42)
-    session = generate_laser_session([1, 2, 3, 4])
+    design = design_vola_stocha()
+    session = generate_laser_session([1, 2, 3, 4], design, config.MAIN_BLOCK_DURATION_MIN)
     assert session['nBlocks'] == 4
-    assert session['blockDuration'] == config.MAIN_SESSION['blockDurationMin']
+    assert session['blockDuration'] == config.MAIN_BLOCK_DURATION_MIN
     assert session['sampleRate'] == config.SAMPLE_RATE
     assert len(session['blocks']) == 4
     # Check block types match
-    expected_types = ['stablePrecise', 'stableNoisy', 'volatilePrecise', 'volatileNoisy']
+    expected_types = ['stable+precise', 'stable+noisy', 'volatile+precise', 'volatile+noisy']
     for i, blk in enumerate(session['blocks']):
         assert blk['blockID'] == i + 1
         assert blk['blockType'] == expected_types[i]
-        assert blk['duration'] == config.MAIN_SESSION['blockDurationMin'] * 60
+        assert blk['duration'] == config.MAIN_BLOCK_DURATION_MIN * 60
         # Stim should have all required keys
         stim = blk['stim']
         for key in ['meanValues', 'meanDurations', 'meanValueVector', 'meanValueVectorDeg',
@@ -230,22 +232,34 @@ def test_generate_laser_session():
 def test_generate_laser_session_practice():
     import config
     from generate_laser_session_practice import generate_laser_session_practice
+    from design_vola_stocha import design_vola_stocha
     np.random.seed(42)
-    session = generate_laser_session_practice()
+    design = design_vola_stocha(
+        volatility=config.PRACTICE_VOLATILITY,
+        noise=config.PRACTICE_NOISE,
+    )
+    block_seq = list(range(1, len(design['blocks']) + 1))
+    session = generate_laser_session_practice(block_seq, design, config.PRACTICE_BLOCK_DURATION_MIN)
     assert session['nBlocks'] == len(session['blockSequence'])
-    assert session['blockDuration'] == config.PRACTICE_SESSION['blockDurationMin']
-    assert len(session['blocks']) == 4
+    assert session['blockDuration'] == config.PRACTICE_BLOCK_DURATION_MIN
+    assert len(session['blocks']) == len(block_seq)
     # Each block should be 60 seconds
     for blk in session['blocks']:
-        assert blk['duration'] == config.PRACTICE_SESSION['blockDurationMin'] * 60
+        assert blk['duration'] == config.PRACTICE_BLOCK_DURATION_MIN * 60
     print("✓ generate_laser_session_practice")
 
 def test_write_session_to_csv_file():
     import tempfile
     from generate_laser_session_practice import generate_laser_session_practice
     from write_session_to_csv_file import write_session_to_csv_file
+    from design_vola_stocha import design_vola_stocha
+    import config
     np.random.seed(42)
-    session = generate_laser_session_practice([1])
+    design = design_vola_stocha(
+        volatility=config.PRACTICE_VOLATILITY,
+        noise=config.PRACTICE_NOISE,
+    )
+    session = generate_laser_session_practice([1], design, config.PRACTICE_BLOCK_DURATION_MIN)
     with tempfile.TemporaryDirectory() as tmpdir:
         write_session_to_csv_file(session, 'test', tmpdir)
         csv_path = os.path.join(tmpdir, 'test_block1.csv')
@@ -268,10 +282,12 @@ def test_write_session_to_csv_file():
 def test_write_exp_csv_file():
     import tempfile
     from write_exp_csv_file import write_exp_csv_file
+    from design_vola_stocha import design_vola_stocha
+    design = design_vola_stocha()
     with tempfile.TemporaryDirectory() as tmpdir:
         write_exp_csv_file('test_sess', [1, 3, 2, 4], [1, 3, 2, 4],
                            ['img1.png', 'img2.png', 'img3.png', 'img4.png'],
-                           's1_', tmpdir)
+                           design, 's1_', tmpdir)
         csv_path = os.path.join(tmpdir, 'session_s1_test_sess.csv')
         assert os.path.exists(csv_path)
         with open(csv_path) as f:
@@ -295,11 +311,13 @@ def test_write_exp_csv_file():
 def test_write_exp_csv_file_with_tones():
     import tempfile
     from write_exp_csv_file_with_tones import write_exp_csv_file_with_tones
+    from design_vola_stocha import design_vola_stocha
+    design = design_vola_stocha()
     with tempfile.TemporaryDirectory() as tmpdir:
         write_exp_csv_file_with_tones(
             'test_sess', [1, 3, 2, 4], [1, 3, 2, 4],
             ['img1.png', 'img2.png', 'img3.png', 'img4.png'],
-            [1, 2, 3, 1], [1, 2, 3, 4],
+            design, [0, 1, 0, 1], [1, 1, 0, 0], [1, 2, 3, 4],
             's1_', tmpdir
         )
         csv_path = os.path.join(tmpdir, 'session_s1_test_sess.csv')
@@ -320,13 +338,25 @@ def test_write_exp_csv_file_with_tones():
 def test_generate_coin_session_csv_files():
     import tempfile
     from generate_coin_session_csv_files import generate_coin_session_csv_files
+    from design_vola_stocha import design_vola_stocha
+    import config
     with tempfile.TemporaryDirectory() as tmpdir:
+        main_design = design_vola_stocha(config.MAIN_VOLATILITY, config.MAIN_NOISE)
+        main_block_seq = [1, 2, 3, 4] * 3
         # Test all task flags and all 4 orders
         for order in range(1, 5):
-            generate_coin_session_csv_files('v4', order, 'practice', tmpdir)
-            generate_coin_session_csv_files('v4', order, 'onlineTrain', tmpdir)
-            generate_coin_session_csv_files('v4', order, 'baseline', tmpdir)
-            generate_coin_session_csv_files('v4', order, 'infusion', tmpdir)
+            generate_coin_session_csv_files('v4', order, 'practice', tmpdir,
+                                            design=main_design, block_sequence=main_block_seq[:4],
+                                            n_sessions=1, blocks_per_session=4)
+            generate_coin_session_csv_files('v4', order, 'onlineTrain', tmpdir,
+                                            design=main_design, block_sequence=main_block_seq[:4],
+                                            n_sessions=1, blocks_per_session=4)
+            generate_coin_session_csv_files('v4', order, 'baseline', tmpdir,
+                                            design=main_design, block_sequence=main_block_seq,
+                                            n_sessions=3, blocks_per_session=4)
+            generate_coin_session_csv_files('v4', order, 'infusion', tmpdir,
+                                            design=main_design, block_sequence=main_block_seq,
+                                            n_sessions=3, blocks_per_session=4)
         # Verify orders 1 & 3 have same stability (stable first) vs orders 2 & 4
         # Order 1: stab_orders[0]=1, img_orders[0]=1
         # Order 2: stab_orders[1]=2, img_orders[1]=1
@@ -366,11 +396,14 @@ def test_generate_mean_stimulus():
 
 def test_analyse_session():
     from generate_laser_session_practice import generate_laser_session_practice
+    from design_vola_stocha import design_vola_stocha
     from analyse_session import analyse_session
+    import config
     import matplotlib
     matplotlib.use('Agg')
     np.random.seed(42)
-    session = generate_laser_session_practice()
+    design = design_vola_stocha(config.PRACTICE_VOLATILITY, config.PRACTICE_NOISE)
+    session = generate_laser_session_practice([1], design, config.PRACTICE_BLOCK_DURATION_MIN)
     fig1, fig2 = analyse_session(session)
     assert fig1 is not None
     assert fig2 is not None
@@ -380,11 +413,14 @@ def test_analyse_session():
 
 def test_plot_session():
     from generate_laser_session_practice import generate_laser_session_practice
+    from design_vola_stocha import design_vola_stocha
     from plot_session import plot_session
+    import config
     import matplotlib
     matplotlib.use('Agg')
     np.random.seed(42)
-    session = generate_laser_session_practice()
+    design = design_vola_stocha(config.PRACTICE_VOLATILITY, config.PRACTICE_NOISE)
+    session = generate_laser_session_practice([1], design, config.PRACTICE_BLOCK_DURATION_MIN)
     fig = plot_session(session, 0)
     assert fig is not None
     fig_deg = plot_session(session, 1)

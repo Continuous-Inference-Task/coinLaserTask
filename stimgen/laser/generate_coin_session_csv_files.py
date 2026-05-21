@@ -1,17 +1,123 @@
 """
-generateCoInSessionCsvFiles - Generates high-level CSV files for the CoIn
+generateCoinSessionCsvFiles - Generates high-level CSV files for the CoIn
 (Continuous Inference) Laser task with colour counterbalancing and stability ordering.
+
+Accepts the block design and raw block sequence so that counterbalancing
+works for any N×M (volatility × noise) configuration, not just the original 2×2.
 """
 import os
 from write_exp_csv_file import write_exp_csv_file
 from write_exp_csv_file_with_tones import write_exp_csv_file_with_tones
 
 
-def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_root,
-                                     n_blocks=None, blocks_per_session=4):
+def _derive_dimensions(design):
+    """Extract ordered volatility and noise labels from a block design.
+
+    Returns (vol_labels, noise_labels, n_vol, n_noise).
     """
-    Generate CoIn session CSV files with counterbalanced orders and colour
-    assignments.
+    block_names = design['blockTypes']
+    vol_labels = []
+    noise_labels = []
+    for name in block_names:
+        if '+' in name:
+            v, n = name.split('+', 1)
+            if v not in vol_labels:
+                vol_labels.append(v)
+            if n not in noise_labels:
+                noise_labels.append(n)
+    if not vol_labels:
+        n_vol = len(design['blocks'])
+        n_noise = 1
+        vol_labels = [f'type{i}' for i in range(n_vol)]
+        noise_labels = ['fixed']
+    return vol_labels, noise_labels, len(vol_labels), len(noise_labels)
+
+
+def _build_counterbalanced_orders(design, block_sequence, n_vol, n_noise):
+    """Build condition and block file orderings for two counterbalance variants.
+
+    Order 0 (stable-first): blocks in generation order.
+    Order 1 (volatile-first): blocks with volatility dimension reversed.
+
+    Returns (cond_orders, block_orders) — each is a list of two lists.
+    """
+    n_types = n_vol * n_noise
+    n_blocks = len(block_sequence)
+
+    # Order 0: blocks as generated (design order)
+    cond_order0 = list(block_sequence)
+
+    # Simple block file numbers: 1, 2, 3, ... (they were generated sequentially)
+    block_order0 = list(range(1, n_blocks + 1))
+
+    # Order 1: reverse the volatility dimension within each group of n_types
+    # For 2×2: [1,2,3,4, 1,2,3,4, ...]  →  [3,4,1,2, 3,4,1,2, ...]
+    cond_order1 = []
+    for group_start in range(0, n_blocks, n_types):
+        group = list(block_sequence[group_start:group_start + n_types])
+        # Reverse volatility: swap first half and second half of the group
+        half = n_types // n_vol
+        # Within each vol level's block group, preserve noise ordering
+        # Just swap vol-level blocks
+        reordered = []
+        for vol_idx in reversed(range(n_vol)):
+            start = vol_idx * n_noise
+            reordered.extend(group[start:start + n_noise])
+        cond_order1.extend(reordered)
+
+    # Block file order 1: reorder the file indices the same way
+    block_order1 = list(range(1, n_blocks + 1))
+    # Reorder block indices to match cond_order1
+    reordered_files = []
+    for group_start in range(0, n_blocks, n_types):
+        group_files = list(range(group_start + 1, group_start + n_types + 1))
+        reordered_group = []
+        for vol_idx in reversed(range(n_vol)):
+            start = vol_idx * n_noise
+            reordered_group.extend(group_files[start:start + n_noise])
+        reordered_files.extend(reordered_group)
+    block_order1 = reordered_files
+
+    cond_orders = [cond_order0, cond_order1]
+    block_orders = [block_order0, block_order1]
+    return cond_orders, block_orders
+
+
+def _build_tone_sequences(n_blocks, blocks_per_session, n_vol, n_noise, soi):
+    """Build tone condition/block lists for MMN sequences.
+
+    Tones follow a simple pattern: 3 tone types cycling through sessions.
+    """
+    n_sessions = max(1, (n_blocks + blocks_per_session - 1) // blocks_per_session)
+
+    # 3 tone condition types: [vol=0,noise=1], [vol=1,noise=1], [vol=0,noise=0]
+    tone_vol_indices = [
+        [0, 1, 0, 1],   # tone type 1
+        [1, 1, 0, 0],   # tone type 2
+        [0, 0, 1, 1],   # tone type 3
+    ]
+    tone_noise_indices = [
+        [1, 1, 0, 0],   # tone type 1
+        [1, 0, 1, 0],   # tone type 2
+        [0, 1, 0, 1],   # tone type 3
+    ]
+
+    # Tone ordering for the 4 counterbalance orders
+    tone_session_orders = [
+        [0, 1, 2],  # order 1
+        [1, 2, 0],  # order 2
+        [2, 0, 1],  # order 3
+        [1, 0, 2],  # order 4
+    ]
+
+    return tone_vol_indices, tone_noise_indices, tone_session_orders
+
+
+def generate_coin_session_csv_files(
+    seq_version, order_index, task_flag, output_root,
+    design, block_sequence, n_sessions, blocks_per_session,
+):
+    """Generate session CSV files with counterbalanced orders and image assignments.
 
     Parameters
     ----------
@@ -20,155 +126,76 @@ def generate_coin_session_csv_files(seq_version, order_index, task_flag, output_
     order_index : int
         1-based index (1..4) for counterbalancing.
     task_flag : str
-        One of 'practice', 'onlineTrain', 'baseline', 'infusion'.
+        'practice' or 'main'.
     output_root : str
         Root output directory.
-    n_blocks : int or None
-        Total number of blocks to generate. If None, uses the legacy
-        default (12 for onlineTrain/infusion, 8 for baseline, 4 for
-        practice).
+    design : dict
+        From design_vola_stocha() — keys 'blockTypes', 'blocks'.
+    block_sequence : list of int
+        1-based block type indices in generation order.
+    n_sessions : int
+        Number of session CSVs to split into (each = blocks_per_session blocks).
     blocks_per_session : int
-        Maximum blocks per session CSV file (default 4).
+        Number of blocks per session CSV.
     """
-    # Transforming the order index (1-based)
-    stab_orders = [1, 2, 1, 2]
-    img_orders = [1, 1, 2, 2]
-    stab_order_index = stab_orders[order_index - 1]  # 1-based result
-    img_order_index = img_orders[order_index - 1]  # 1-based result
+    vol_labels, noise_labels, n_vol, n_noise = _derive_dimensions(design)
+    n_types = n_vol * n_noise
+    n_blocks = len(block_sequence)
 
-    # 4 different colours, in 2 different assignments
-    img_assignment1 = ['radioactive1.png', 'radioactive2.png',
-                       'radioactive3.png', 'radioactive4.png']
-    img_assignment2 = ['radioactive4.png', 'radioactive3.png',
-                       'radioactive2.png', 'radioactive1.png']
-    img_lists = [img_assignment1, img_assignment2]
+    # ── Counterbalance orders ──
+    # order_index 1..4 → stab_order 0 or 1, img_order 0 or 1
+    stab_orders = [0, 1, 0, 1]
+    img_orders = [0, 0, 1, 1]
+    soi = stab_orders[order_index - 1]
+    ioi = img_orders[order_index - 1]
 
-    # Available block files (1-based)
-    # blocks = 1:12
-    # Corresponding conditions
-    stabilities = [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]
+    cond_orders, block_orders = _build_counterbalanced_orders(
+        design, block_sequence, n_vol, n_noise
+    )
 
-    # Possible block orders (1-based block indices)
-    block_order1 = [1, 3, 2, 4, 6, 8, 5, 7, 9, 10, 11, 12]
-    block_order2 = [3, 1, 4, 2, 8, 6, 7, 5, 11, 12, 9, 10]
+    # ── Image assignments (2 variants: forward and reversed) ──
+    all_images = [
+        'radioactive1.png', 'radioactive2.png',
+        'radioactive3.png', 'radioactive4.png',
+    ]
+    img_forward = all_images[:n_types]
+    img_reversed = list(reversed(all_images[:n_types]))
+    img_lists = [img_forward, img_reversed]
 
-    stab_order1 = [stabilities[b - 1] for b in block_order1]
-    stab_order2 = [stabilities[b - 1] for b in block_order2]
+    # ── Tone sequences (main sessions only) ──
+    tone_vol_indices, tone_noise_indices, tone_session_orders = \
+        _build_tone_sequences(n_blocks, blocks_per_session, n_vol, n_noise, soi)
 
-    # Baseline block orders (8 blocks)
-    bl_block_order1 = [1, 3, 2, 4, 5, 6, 7, 8]
-    bl_block_order2 = [3, 1, 4, 2, 7, 8, 5, 6]
-    bl_stab_order1 = [stabilities[b - 1] for b in bl_block_order1]
-    bl_stab_order2 = [stabilities[b - 1] for b in bl_block_order2]
+    cond_list = cond_orders[soi]
+    block_list = block_orders[soi]
+    image_list = img_lists[ioi]
 
-    # Condition and block orders
-    cond_orders = [stab_order1, stab_order2]
-    bl_cond_orders = [bl_stab_order1, bl_stab_order2]
-    block_orders = [block_order1, block_order2]
-    bl_block_orders = [bl_block_order1, bl_block_order2]
+    session_prefix = f'{task_flag}_{seq_version}'
+    root2file = os.path.join(output_root, f'coin_{session_prefix}_order{order_index}')
 
-    # Tone conditions for EEG sessions
-    tone_conditions = [[1, 3, 2, 3], [3, 3, 2, 1], [1, 2, 3, 3]]
-    tone_blocks = [[1, 3, 2, 4], [8, 7, 6, 5], [9, 10, 11, 12]]
-    tone_orders = [[1, 2, 3], [2, 3, 1], [3, 1, 2], [2, 1, 3]]
+    for i_sess in range(n_sessions):
+        start = i_sess * blocks_per_session
+        end = min(start + blocks_per_session, n_blocks)
+        sess_cond = cond_list[start:end]
+        sess_blocks = block_list[start:end]
 
-    soi = stab_order_index - 1  # 0-based index for stability order
-    ioi = img_order_index - 1    # 0-based index for image assignment
+        add_str = f's{i_sess + 1}_'
 
-    if task_flag == 'practice':
-        # 1 session, n_blocks total (default 4)
-        n_total = n_blocks if n_blocks is not None else 4
-        n_sessions = max(1, (n_total + blocks_per_session - 1) // blocks_per_session)
-        cond_list = cond_orders[soi]
-        block_list = block_orders[soi]
-        image_list = img_lists[ioi]
+        if task_flag == 'main':
+            t_order_idx = tone_session_orders[soi][min(i_sess, len(tone_session_orders[soi]) - 1)]
+            # Build per-block tone values — pad to match session length
+            t_vol = tone_vol_indices[t_order_idx]
+            t_noise = tone_noise_indices[t_order_idx]
+            # Simple tone block numbering: cycle through 1..12
+            t_blocks = [(start + j) % 12 + 1 for j in range(len(sess_blocks))]
 
-        session_name = f'practice_{seq_version}'
-        root2file = os.path.join(output_root, f'coin_{session_name}_order{order_index}')
-
-        for i_sess in range(n_sessions):
-            block_idx_start = i_sess * blocks_per_session
-            block_idx_end = min(block_idx_start + blocks_per_session, n_total)
-            sess_cond_list = cond_list[block_idx_start:block_idx_end]
-            sess_block_list = block_list[block_idx_start:block_idx_end]
-
-            add_file_string = f's{i_sess + 1}_'
-            write_exp_csv_file(session_name, sess_cond_list, sess_block_list,
-                               image_list, add_file_string, root2file)
-
-    elif task_flag == 'onlineTrain':
-        # 3 sessions by default, n_blocks total
-        n_total = n_blocks if n_blocks is not None else 12
-        n_sessions = max(1, (n_total + blocks_per_session - 1) // blocks_per_session)
-        cond_list = cond_orders[soi]
-        block_list = block_orders[soi]
-        image_list = img_lists[ioi]
-
-        session_name = f'onlineTrain_{seq_version}'
-        root2file = os.path.join(output_root, f'coin_{session_name}_order{order_index}')
-
-        for i_sess in range(n_sessions):
-            block_idx_start = i_sess * blocks_per_session
-            block_idx_end = min(block_idx_start + blocks_per_session, n_total)
-            sess_cond_list = cond_list[block_idx_start:block_idx_end]
-            sess_block_list = block_list[block_idx_start:block_idx_end]
-
-            add_file_string = f's{i_sess + 1}_'
-            write_exp_csv_file(session_name, sess_cond_list, sess_block_list,
-                               image_list, add_file_string, root2file)
-
-    elif task_flag == 'baseline':
-        # 2 sessions by default, n_blocks total
-        n_total = n_blocks if n_blocks is not None else 8
-        n_sessions = max(1, (n_total + blocks_per_session - 1) // blocks_per_session)
-        cond_list = bl_cond_orders[soi]
-        block_list = bl_block_orders[soi]
-        image_list = img_lists[ioi]
-
-        session_name = f'baseline_{seq_version}'
-        root2file = os.path.join(output_root, f'coin_{session_name}_order{order_index}')
-
-        for i_sess in range(n_sessions):
-            block_idx_start = i_sess * blocks_per_session
-            block_idx_end = min(block_idx_start + blocks_per_session, n_total)
-            sess_cond_list = cond_list[block_idx_start:block_idx_end]
-            sess_block_list = block_list[block_idx_start:block_idx_end]
-
-            add_file_string = f's{i_sess + 1}_'
-
-            # Tone sequences
-            t_order_idx = tone_orders[soi][i_sess] - 1  # 0-based
-            tone_cond_list = tone_conditions[t_order_idx]
-            tone_block_list = tone_blocks[t_order_idx]
-
-            write_exp_csv_file_with_tones(session_name, sess_cond_list, sess_block_list,
-                                          image_list, tone_cond_list, tone_block_list,
-                                          add_file_string, root2file)
-
-    elif task_flag == 'infusion':
-        # 3 sessions by default, n_blocks total
-        n_total = n_blocks if n_blocks is not None else 12
-        n_sessions = max(1, (n_total + blocks_per_session - 1) // blocks_per_session)
-        cond_list = cond_orders[soi]
-        block_list = block_orders[soi]
-        image_list = img_lists[ioi]
-
-        session_name = f'main_{seq_version}'
-        root2file = os.path.join(output_root, f'coin_{session_name}_order{order_index}')
-
-        for i_sess in range(n_sessions):
-            block_idx_start = i_sess * blocks_per_session
-            block_idx_end = min(block_idx_start + blocks_per_session, n_total)
-            sess_cond_list = cond_list[block_idx_start:block_idx_end]
-            sess_block_list = block_list[block_idx_start:block_idx_end]
-
-            add_file_string = f's{i_sess + 1}_'
-
-            # Tone sequences
-            t_order_idx = tone_orders[soi][i_sess] - 1  # 0-based
-            tone_cond_list = tone_conditions[t_order_idx]
-            tone_block_list = tone_blocks[t_order_idx]
-
-            write_exp_csv_file_with_tones(session_name, sess_cond_list, sess_block_list,
-                                          image_list, tone_cond_list, tone_block_list,
-                                          add_file_string, root2file)
+            write_exp_csv_file_with_tones(
+                session_prefix, sess_cond, sess_blocks, image_list,
+                design, t_vol[:len(sess_blocks)], t_noise[:len(sess_blocks)],
+                t_blocks[:len(sess_blocks)], add_str, root2file,
+            )
+        else:
+            write_exp_csv_file(
+                session_prefix, sess_cond, sess_blocks, image_list,
+                design, add_str, root2file,
+            )

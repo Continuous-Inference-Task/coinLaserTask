@@ -1,5 +1,7 @@
 import csv
-from typing import List, Tuple
+import os
+from pathlib import Path
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -24,11 +26,11 @@ def load_stimulus_stream(
 
 
 def build_session_path(cfg: ExperimentConfig, info: dict) -> str:
-    """Construct the path to the session-level conditions CSV."""
+    """Construct the path to the main session-level conditions CSV."""
     return (
         f"{cfg.sequence_root}"
-        f"coin_baseline_{cfg.sequence_version}_order{info['order']}/"
-        f"session_s{info['session']}_baseline_{cfg.sequence_version}.csv"
+        f"coin_main_{cfg.sequence_version}_order{info['order']}/"
+        f"session_s{info['session']}_main_{cfg.sequence_version}.csv"
     )
 
 
@@ -60,3 +62,79 @@ OUTPUT_HEADER = [
     "volatility", "stochasticity", "toneTrigger", "toneVolatility",
     "toneStochasticity",
 ]
+
+
+def validate_dialog_options(
+    cfg: ExperimentConfig, project_root: Optional[Path] = None
+) -> List[str]:
+    """Check that config dialog options match available sequence files.
+
+    Scans ``sequences/`` for actual order directories and session CSVs,
+    then compares against the session/order dropdown options in *cfg*.
+
+    Returns a list of human-readable warnings (empty if everything matches).
+    """
+    if project_root is None:
+        project_root = Path(__file__).resolve().parent.parent
+
+    seq_dir = project_root / cfg.sequence_root
+    warnings: List[str] = []
+
+    if not seq_dir.is_dir():
+        warnings.append(
+            f"Sequence directory not found: {seq_dir}. "
+            "Run 'python setup.py --generate' first."
+        )
+        return warnings
+
+    # ── detect available orders from filesystem ──
+    # Look at main session order dirs as the canonical source
+    main_dirs = sorted([
+        d for d in seq_dir.iterdir()
+        if d.is_dir() and d.name.startswith("coin_main_")
+    ])
+    if not main_dirs:
+        warnings.append(
+            "No main session sequence order directories found. "
+            "Run 'python setup.py --generate' first."
+        )
+        return warnings
+
+    available_orders: List[str] = []
+    for d in main_dirs:
+        # Extract order number from "coin_main_v4_order1"
+        parts = d.name.rsplit("order", 1)
+        if len(parts) == 2:
+            available_orders.append(parts[1])
+
+    # ── detect available sessions from first order dir ──
+    first_dir = main_dirs[0]
+    session_files = sorted(first_dir.glob("session_s*_main_*.csv"))
+    # Extract session number from "session_s1_baseline_v4.csv"
+    available_sessions: List[str] = []
+    for sf in session_files:
+        name = sf.stem  # e.g. "session_s1_main_v4"
+        if name.startswith("session_s"):
+            rest = name[len("session_s"):]
+            sess_num = rest.split("_")[0]
+            available_sessions.append(sess_num)
+
+    # ── compare against config ──
+    config_sessions = [str(s) for s in cfg.sessions]
+    config_orders = [str(o) for o in cfg.orders]
+
+    if available_sessions and config_sessions != available_sessions:
+        warnings.append(
+            f"Config sessions ({', '.join(config_sessions)}) "
+            f"don't match generated files ({', '.join(available_sessions)}). "
+            "Re-run setup to auto-sync."
+        )
+
+    if available_orders and config_orders != available_orders:
+        warnings.append(
+            f"Config orders ({', '.join(config_orders)}) "
+            f"don't match generated files ({', '.join(available_orders)}). "
+            "Re-run setup to auto-sync."
+        )
+
+    return warnings

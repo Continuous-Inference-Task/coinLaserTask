@@ -4,38 +4,34 @@ continuous laser task with block-wise volatility/noise manipulation.
 Task version: CoIn (Continuous Inference) study.
 """
 import numpy as np
-from design_vola_stocha import design_vola_stocha
 from generate_mean_jumps import generate_mean_jumps
 from generate_block_stimulus import generate_block_stimulus
 import config
 
 
-def generate_laser_session(block_sequence=None):
-    """
-    Generate a full laser session with multiple blocks.
+def generate_laser_session(block_sequence, design, block_duration_min):
+    """Generate a full laser session with multiple blocks.
 
     Parameters
     ----------
-    block_sequence : list of int or None
-        Sequence of block type indices (1-based, as in MATLAB).
-        Default: [1,2,3,4, 1,2,3,4, 1,2,3,4].
+    block_sequence : list of int
+        Sequence of block type indices (1-based).
+    design : dict
+        From design_vola_stocha() — keys 'blockTypes', 'blocks'.
+    block_duration_min : int or float
+        Duration of each block in minutes.
 
     Returns
     -------
     session : dict
         Session dict with blocks, design, settings, etc.
     """
-    if block_sequence is None:
-        block_sequence = list(range(1, 5)) * 3  # [1,2,3,4,1,2,3,4,1,2,3,4]
-
-    # Design choices
     session = {}
     session['nBlocks'] = len(block_sequence)
-    session['blockDuration'] = config.MAIN_SESSION['blockDurationMin']
-    session['design'] = design_vola_stocha()
+    session['blockDuration'] = block_duration_min
+    session['design'] = design
     session['blockSequence'] = block_sequence
-    session['blockTypes'] = session['design']['blockTypes']
-    session['nBlocksOfEachType'] = session['nBlocks'] / len(session['design']['blocks'])
+    session['blockTypes'] = design['blockTypes']
 
     # Settings
     session['sampleRate'] = config.SAMPLE_RATE
@@ -47,9 +43,8 @@ def generate_laser_session(block_sequence=None):
 
     session['blocks'] = []
     for i_block in range(session['nBlocks']):
-        # Generate block stimulus with noise
         block_id = session['blockSequence'][i_block]
-        block_design = session['design']['blocks'][block_id - 1]  # 0-based indexing
+        block_design = design['blocks'][block_id - 1]  # 0-based indexing
         stim = generate_mean_jumps(
             session['blockDuration'] * 60,
             block_design,
@@ -57,10 +52,9 @@ def generate_laser_session(block_sequence=None):
         )
         stim = generate_block_stimulus(stim, session, block_design['noiseStd'])
 
-        # Fill the block with stimulus and info
         block = {
             'blockID': block_id,
-            'blockType': session['blockTypes'][block_id - 1],
+            'blockType': design['blockTypes'][block_id - 1],
             'duration': session['blockDuration'] * 60,
             'stim': stim,
         }
