@@ -1,70 +1,33 @@
-# CoIn Laser Task — Save the World
+to # CoIn Laser Task — Save the World
 
-PsychoPy experiment for the Continuous Inference (CoIn) study.  
-Participants rotate a shield to deflect laser beams, earning rewards for hits and losing them for misses.
+PsychoPy-based experiment for the Continuous Inference (CoIn) study's laser task.
+This repository contains a unified Python codebase integrating the experiment runner, laser stimulus sequence generator, and auditory MMN tone player.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Interactive Configuration & Setup Wizard
+
+The repository features a centralized CLI management tool: **`setup.py`**. Instead of manually editing configuration files, you can manage the entire experimental environment interactively.
+
+### Quick Start
 
 ```bash
-# 1. Create virtual environment & install dependencies
+# 1. Setup virtual environment & dependencies
 python3 -m venv stw
-source stw/bin/activate          # Linux/macOS
-# stw\Scripts\activate           # Windows
+source stw/bin/activate
 pip install -r requirements.txt
 
-# 2. Configure the experiment
+# 2. Launch the Configuration Wizard
 python setup.py
-
-# 3. Generate sequences
-#    (setup.py will offer to do this after configuration)
-
-# 4. Run the experiment
-python main.py
 ```
 
-### One-command workflows
+### CLI Options
 
-```bash
-python setup.py --report     # Print current config without prompts
-python setup.py --generate   # Regenerate sequences from current config only
-python setup.py --full       # Full step-by-step wizard (all sections)
-python setup.py --help       # Show all options
-```
-
----
-
-## 📖 How to use this repository
-
-### The two config files (and why there are two)
-
-| File | What it controls | How to edit |
-|---|---|---|
-| `laserTask/config.py` | **Runtime** — display, keys, shield, reward, audio, triggers | `python setup.py` or edit directly |
-| `stimgen/laser/config.py` | **Stimulus generation** — number of blocks, block duration, noise levels | Section 7 of `setup.py` or edit directly |
-| `config_shared.py` | **Shared** — sequence version numbers and output directory | Edit directly |
-
-> **Important**: The number of blocks is configured in **Section 7** (Sequence Generation) of `setup.py`, not in Section 4 (Experiment Design). Section 4's `n_blocks` was removed to avoid confusion — there is now a single source of truth.
-
-### Typical workflow
-
-1. **First time**: `python setup.py` → walk through each numbered section
-2. **Adjust design**: Re-run specific sections (e.g., `7` for block counts)
-3. **Regenerate**: Setup offers to regenerate sequences after changes
-4. **Run**: `python main.py` launches the PsychoPy experiment
-
-### Session dialog
-
-The startup dialog asks for:
-- **Participant ID** — numeric (e.g. `1001`)
-- **Visit** — dropdown (1 or 2)
-- **Session** — dropdown (1 or 2)
-- **Order** — counterbalancing order (1–2)
-- **Framing** — `loss` or `win` (does the participant try to avoid loss or gain reward?)
-- **Practice only** — if checked, only the practice session runs
-
-> The dialog fields shown can be customized in Section 8 of `setup.py`.
+- `python setup.py` — Opens the main interactive configuration menu.
+- `python setup.py --full` — Starts the step-by-step onboarding wizard for all sections.
+- `python setup.py --report` — Displays a complete printout of the current configuration.
+- `python setup.py --generate` — Regenerates all experimental sequences using current config parameters.
+- `python setup.py --help` — Shows the helper/usage message.
 
 ---
 
@@ -72,69 +35,81 @@ The startup dialog asks for:
 
 ```
 coin_laser_task/
-├── setup.py                   # CLI setup & configuration wizard
-├── main.py                    # Experiment entry point
-├── config_shared.py            # Shared version/reference strings
-├── requirements.txt           # Python dependencies
-├── README.md                  # This file
-├── CONFIG.md                  # Complete config reference (all options)
-├── comprehensive_test.py      # Integration & regression tests
+├── setup.py                   # Central CLI onboarding & configuration wizard
+├── main.py                    # Experiment entry point (runs the PsychoPy interface)
+├── requirements.txt           # Python package dependencies
+├── README.md                  # Project documentation
 │
-├── laserTask/                 # Experiment engine (PsychoPy)
-│   ├── config.py              #   ExperimentConfig & StimulusStyle
-│   ├── experiment.py          #   Trial, block, and session logic
-│   ├── stimuli.py             #   Visual components (shield, laser, earth, icons)
-│   ├── audio.py               #   MMN tone scheduler
-│   ├── io.py                  #   File I/O helpers
-│   ├── reward.py              #   Reward tracking & framing
-│   ├── shield.py              #   Shield mechanics
-│   └── triggers.py            #   Hardware trigger interface
+├── laserTask/                 # Experiment Engine (PsychoPy)
+│   ├── config.py              #   Configuration loader (ExperimentConfig & StimulusStyle)
+│   ├── experiment.py          #   Core trial, block, and session execution logic
+│   ├── stimuli.py             #   Visual components (shield, laser, Earth, icons)
+│   ├── audio.py               #   Dynamic MMN auditory tone scheduler
+│   ├── io.py                  #   Input/output file helpers
+│   ├── reward.py              #   Reward tracking, hit/miss calculations, and framing
+│   ├── shield.py              #   Shield mechanics (fixed/adjustable sizes)
+│   └── triggers.py            #   Hardware trigger interface (Serial/Parallel/LSL/Dummy)
 │
-├── stimgen/                   # Offline sequence generation
-│   ├── laser/                 #   Laser stimulus generator
-│   │   ├── config.py          #     Generation parameters
-│   │   ├── coin_script_sequence_generation.py  #  Main entry point
-│   │   └── test_all.py        #     Unit tests
-│   └── mmn/                   #   Auditory MMN generator
+├── stimgen/                   # Offline Sequence Generation Scripts
+│   ├── laser/                 #   Laser stimulus sequence generator
+│   └── mmn/                   #   Auditory MMN design and generation scripts
 │
-├── images/                    # Visual assets
-├── sequences/                 # Generated sequences (gitignored)
-└── data/                      # Participant output (gitignored)
+├── images/                    # Visual assets (e.g., source icons, Earth background)
+├── sequences/                 # Generated experimental sequences (ignored by git)
+└── data/                      # Output directory for participant logs and CSV files
 ```
 
 ---
 
-## 🧪 Testing
+## ⚙️ Configuration Categories
+
+Through `setup.py` (or manual edits in `laserTask/config.py`), you can configure:
+
+1. **Machine & Target OS Setup**: Target OS (Linux/Windows), screen resolution, refresh rate, fullscreen toggle, and input devices (keyboard vs. MEG response box).
+2. **Experiment & Practice Settings**: Number of blocks, block duration, and enabling/disabling the practice block (including detailed instruction/feedback screens).
+3. **Shield & Reward Design**: Fixed or adjustable shield sizes, key mapping (default `f`/`j` on Linux, `1`/`2`/`3` on response boxes), framing profiles, and currency symbol.
+4. **Auditory MMN Settings**: Sound frequencies (standards vs. deviants), volume level, play durations, and Inter-Stimulus Intervals (ISI).
+5. **EEG/MEG Trigger Interface**: Trigger mode (Parallel port, Serial port, LSL, or Dummy/None) along with hardware port addresses.
+
+---
+
+## 🎮 Instructions & Practice Block
+
+The unified task features an integrated **Practice Mode** with screen-by-screen walkthrough instructions:
+
+- **Practice Start Screen**: Explains the task goals, practice duration (dynamically calculated), keys, and reward bar behavior.
+- **Trial & Feedback**: A practice run where participants learn to maneuver the shield.
+- **Post-Practice Explanation**: Summarizes key strategies (energy loss from unnecessary movement, handling volatile attack angles).
+- **Audio Tones**: Warns participants that task-unrelated MMN tones will be played in the background during the main session.
+
+---
+
+## 🛡️ Pre-flight Verification Checks
+
+To guarantee scientific accuracy and prevent runtime failures, the runner automatically performs the following checks before starting:
+
+1. **Refresh Rate Warning**: Warns if the monitor refresh rate deviates from **60 Hz** (to prevent stimulus timing distortion).
+2. **Min Laser Duration Validation**: Analyzes pre-loaded sequences to ensure the configured minimum laser duration does not exceed the shortest run length in the blocks (prevents overlaps/conflicts).
+
+---
+
+## 🧪 Running Tests
+
+Validate both sequence generators and task components using the test suite:
 
 ```bash
-# Comprehensive integration tests
-python comprehensive_test.py
-
-# Laser stimulus generator unit tests
+# Run laser sequence generator tests
 cd stimgen/laser && python test_all.py
+cd ../..
 
-# MMN tone generator tests  
+# Run MMN tone generator tests
 cd stimgen/mmn && python -m pytest tests/
-
-# All together
-python comprehensive_test.py && cd stimgen/laser && python test_all.py
+cd ../..
 ```
-
----
-
-## ⚙️ Configuration
-
-See **[CONFIG.md](CONFIG.md)** for a complete reference of every configurable parameter, including:
-- All `ExperimentConfig` fields with defaults and explanations
-- All `stimgen/laser/config.py` parameters
-- Shield mechanics and framing details
-- Trigger setup for EEG/MEG
-- Advanced: direct config file editing
 
 ---
 
 ## 💳 Credits
 
-Based on the original task design for the PEDUKS study.  
-*Contact: lilian.weber@psych.ox.ac.uk*  
-*Refactored & Unified: Felix.*
+Based on the original task design for the PEDUKS study.
+_Contact: lilian.weber@psych.ox.ac.uk_
