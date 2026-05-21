@@ -1176,20 +1176,29 @@ def _session_count_formatter(block_dur=None):
 
 
 def _pick_presets(
-    title: str,
+    action_label: str,
     presets: Dict[str, Any],
-    current: List[str],
-    dimension_name: str,
     dimension_hint: str,
     allow_custom: bool = True,
 ) -> List[str]:
     """Interactive preset picker — pick items one at a time to build a list."""
-    info(_c(C["bold"], f"{title}"))
+    print()
     hint(dimension_hint)
+    print()
+    info(_c(C["bold"], action_label))
     print()
 
     preset_names = list(presets.keys())
     selected: List[str] = []
+
+    # Origin hints for known presets
+    ORIGIN_HINTS = {
+        "stable":   "CoIn / PEDUKS — slow mean jumps, ~10 s epochs",
+        "volatile": "CoIn / PEDUKS — fast mean jumps, ~3 s epochs",
+        "medium":   "CogPsy — intermediate speed, ~5 s epochs",
+        "precise":  "CoIn / PEDUKS — tight observations, ±15°",
+        "noisy":    "CoIn / PEDUKS — scattered observations, ±20°",
+    }
 
     while True:
         # Show available presets
@@ -1200,32 +1209,39 @@ def _pick_presets(
                 disp = _c(C["dim"], f"[{', '.join(str(v) for v in val)}]")
             else:
                 disp = _c(C["dim"], str(val))
-            print(f"    {_c(C['green'], str(i))}. {name:12s} {disp}{already}")
-        print()
-
-        if not selected:
-            prompt_text = f"Pick a {dimension_name} level (number"
-        else:
-            prompt_text = f"Pick another {dimension_name} level (number"
-            info(f"  Currently selected: {', '.join(selected)}")
-            print()
+            hint_str = _c(C["dim"], f"  — {ORIGIN_HINTS.get(name, '')}") if name in ORIGIN_HINTS else ""
+            print(f"    {_c(C['green'], str(i))}. {name:12s} {disp}{already}{hint_str}")
 
         if allow_custom:
-            prompt_text += f", c=create new, ↵ done"
+            custom_num = len(preset_names) + 1
+            print(f"    {_c(C['green'], str(custom_num))}. Custom — create a new preset")
+        print()
+
+        if selected:
+            info(f"  Selected: {', '.join(selected)}")
+            print()
+
+        if not selected:
+            prompt_text = "Pick one (number"
         else:
-            prompt_text += f", ↵ done"
+            prompt_text = "Pick another (number"
+
+        if allow_custom:
+            prompt_text += ", c=create new, ↵ done"
+        else:
+            prompt_text += ", ↵ done"
         prompt_text += ")"
 
         raw = input(_c(C["magenta"], f"  ❯ ")).strip().lower()
 
         if not raw:
             if not selected:
-                warn(f"Select at least one {dimension_name} level.")
+                warn("Select at least one.")
                 continue
             break
 
         if allow_custom and raw == "c":
-            new_name = prompt(f"  New {dimension_name} name", "").strip()
+            new_name = prompt("  Name for new preset", "").strip()
             if not new_name:
                 continue
             if isinstance(list(presets.values())[0], list):
@@ -1248,7 +1264,7 @@ def _pick_presets(
                 presets[new_name] = raw_val
             preset_names.append(new_name)
             selected.append(new_name)
-            success(f"Added '{new_name}' to {dimension_name} presets")
+            success(f"Added '{new_name}'")
             continue
 
         try:
@@ -1300,9 +1316,8 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     # 1. Volatility
     v_presets = stimgen.get("VOLATILITY_PRESETS", {})
     practice_vol = _pick_presets(
-        "Volatility levels — how fast the mean jumps",
+        "Add a volatility level to practice",
         v_presets,
-        "volatility",
         "[mean, std, min, max] of epoch duration in seconds. Smaller = faster jumps.",
     )
     stimgen["PRACTICE_VOLATILITY"] = practice_vol
@@ -1310,9 +1325,8 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     # 2. Noise
     n_presets = stimgen.get("NOISE_PRESETS", {})
     practice_noise = _pick_presets(
-        "Noise levels — observation noise std dev",
+        "Add a noise level to practice",
         n_presets,
-        "noise",
         "Standard deviation of observation noise in degrees. Higher = more scattered.",
     )
     stimgen["PRACTICE_NOISE"] = practice_noise
@@ -1370,9 +1384,8 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     # 1. Volatility
     main_vol = _pick_presets(
-        "Volatility levels — how fast the mean jumps",
+        "Add a volatility level to main experiment",
         v_presets,
-        "volatility",
         "[mean, std, min, max] of epoch duration in seconds. Smaller = faster jumps.",
     )
     stimgen["MAIN_VOLATILITY"] = main_vol
@@ -1380,9 +1393,8 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     # 2. Noise
     stimgen["MAIN_NOISE_MODE"] = "counterbalanced"  # default for now
     main_noise = _pick_presets(
-        "Noise levels — observation noise std dev",
+        "Add a noise level to main experiment",
         n_presets,
-        "noise",
         "Standard deviation of observation noise in degrees. Higher = more scattered.",
     )
     stimgen["MAIN_NOISE"] = main_noise
