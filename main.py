@@ -1,4 +1,8 @@
 # main.py
+import sys
+from unittest.mock import MagicMock
+sys.modules['wx'] = MagicMock()
+
 from laserTask.config import ExperimentConfig
 from laserTask.experiment import run_experiment
 from laserTask.shield import ShieldSizeConfig
