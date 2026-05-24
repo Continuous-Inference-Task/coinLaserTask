@@ -590,6 +590,7 @@ def run_experiment(
             do_send = False
             key_released = False
             size_trig_val = 0
+            partial_release_trig = 0
 
             # --- (A) check for shield-size keys  ----------------------- #
             if cfg.allow_shield_adjustment and keys_size:
@@ -615,7 +616,7 @@ def run_experiment(
                     shield_verts = compute_shield_vertices(sd, cfg.circle_radius)
 
                     if size_trig_val:
-                        trig.send(size_trig_val)
+                        pass  # trigger deferred to post-flip (frame-synced)
 
             # --- (B) check for movement keys  --------------------------- #
             if cfg.use_legacy_key_tracking:
@@ -705,7 +706,7 @@ def run_experiment(
                     # trigger in the same frame so the stream reads:
                     #   … → key_release(50) → key_<dir>(30/40) → …
                     if new_releases:
-                        trig.send(TRIGGER_CODES["key_release"])
+                        partial_release_trig = TRIGGER_CODES["key_release"]
                         partial_release = True
                     
                     # Trigger gate matching the original behaviour: direction
@@ -811,9 +812,7 @@ def run_experiment(
                 log=False,
             )
 
-            # ---- triggers --------------------------------------------- #
-            if do_send:
-                trig.send(trig_val)
+            # ---- triggers (deferred to post-flip for frame sync) -- #
 
             # ---- audio ------------------------------------------------ #
             tone_trig = audio.update_frame() if block_audio_enabled else 0
@@ -846,6 +845,14 @@ def run_experiment(
 
             cur_frame += 1
             win.flip()
+
+            # ---- triggers (after flip: constant ~1 ms offset) -------- #
+            if partial_release_trig:
+                trig.send(partial_release_trig)
+            if size_trig_val:
+                trig.send(size_trig_val)
+            if do_send:
+                trig.send(trig_val)
 
         # --- end trial ------------------------------------------------- #
         for stim in trial_stims:

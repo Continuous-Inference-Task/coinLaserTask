@@ -10,20 +10,29 @@ session type (practice vs main).
 import config
 
 
-def design_vola_stocha(volatility=None, noise=None, noise_mode=None):
+def design_vola_stocha(volatility=None, noise=None, noise_mode=None,
+                       volatility_presets=None, noise_presets=None):
     """Return a design dict with block types generated from the given dimensions.
 
     Parameters
     ----------
     volatility : list of str or None
-        Volatility preset names (keys into config.VOLATILITY_PRESETS).
+        Volatility preset names (keys into VOLATILITY_PRESETS).
         If None, uses config.MAIN_VOLATILITY.
     noise : list of str or None
-        Noise preset names (keys into config.NOISE_PRESETS).
+        Noise preset names (keys into NOISE_PRESETS).
         If None, uses config.MAIN_NOISE.
     noise_mode : str or None
         How noise is combined with volatility. "counterbalanced" (all cross product)
         or "stable_only" (only stable gets all noise levels, others get only the first).
+    volatility_presets : dict or None
+        Optional override for the volatility presets dict (defaults to
+        config.VOLATILITY_PRESETS). Use when custom presets have been created
+        but not yet saved to the config file.
+    noise_presets : dict or None
+        Optional override for the noise presets dict (defaults to
+        config.NOISE_PRESETS). Use when custom presets have been created
+        but not yet saved to the config file.
 
     Returns
     -------
@@ -41,11 +50,15 @@ def design_vola_stocha(volatility=None, noise=None, noise_mode=None):
         else:
             noise_mode = getattr(config, "MAIN_NOISE_MODE", "counterbalanced")
 
+    # Use provided presets if given, otherwise fall back to config
+    _vol_presets = volatility_presets if volatility_presets is not None else config.VOLATILITY_PRESETS
+    _noise_presets = noise_presets if noise_presets is not None else config.NOISE_PRESETS
+
     block_types = []
     blocks = []
 
     for v_label in volatility:
-        v_params = config.VOLATILITY_PRESETS[v_label]
+        v_params = _vol_presets[v_label]
         
         # If noise_mode is '<vola>_only' and this is not that vola block, only use the first noise level
         active_noise = noise
@@ -55,7 +68,7 @@ def design_vola_stocha(volatility=None, noise=None, noise_mode=None):
                 active_noise = [noise[0]]
             
         for n_label in active_noise:
-            n_val = config.NOISE_PRESETS[n_label]
+            n_val = _noise_presets[n_label]
             block_types.append(f"{v_label}+{n_label}")
             blocks.append({
                 'durMeanStdMinMax': v_params,
@@ -69,7 +82,10 @@ def design_vola_stocha(volatility=None, noise=None, noise_mode=None):
     }
 
 
-def get_block_count(volatility=None, noise=None, noise_mode=None):
+def get_block_count(volatility=None, noise=None, noise_mode=None,
+                    volatility_presets=None, noise_presets=None):
     """Return the total number of block types for the given dimensions."""
-    design = design_vola_stocha(volatility, noise, noise_mode)
+    design = design_vola_stocha(volatility, noise, noise_mode,
+                                volatility_presets=volatility_presets,
+                                noise_presets=noise_presets)
     return len(design['blockTypes'])

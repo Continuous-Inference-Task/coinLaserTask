@@ -1515,7 +1515,9 @@ def _print_combinations_summary(
     from design_vola_stocha import design_vola_stocha
     
     try:
-        design = design_vola_stocha(vol_list, noise_list, noise_mode)
+        design = design_vola_stocha(vol_list, noise_list, noise_mode,
+                                     volatility_presets=v_presets,
+                                     noise_presets=n_presets)
         block_types = design['blockTypes']
     except Exception:
         block_types = [f"{v}+{n}" for v in vol_list for n in noise_list]
@@ -1662,7 +1664,9 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     stimgen["PRACTICE_NOISE_MODE"] = practice_noise_mode
 
     from stimgen.laser.design_vola_stocha import get_block_count
-    n_practice_types = get_block_count(practice_vol, practice_noise, practice_noise_mode)
+    n_practice_types = get_block_count(practice_vol, practice_noise, practice_noise_mode,
+                                        volatility_presets=v_presets,
+                                        noise_presets=n_presets)
 
     # Show block type summary
     print()
@@ -1741,7 +1745,9 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     stimgen["MAIN_NOISE_MODE"] = main_noise_mode
 
     from stimgen.laser.design_vola_stocha import get_block_count
-    n_main_types = get_block_count(main_vol, main_noise, main_noise_mode)
+    n_main_types = get_block_count(main_vol, main_noise, main_noise_mode,
+                                     volatility_presets=v_presets,
+                                     noise_presets=n_presets)
 
     # Show block type summary
     print()
@@ -2110,6 +2116,12 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
     # Merge in any pending/unsaved updates in memory
     stimgen_updates = cfg.get("_stimgen_updates") or {}
 
+    # Resolve presets (file + unsaved, so custom presets are found)
+    _v_presets = dict(stimgen.get("VOLATILITY_PRESETS", {}))
+    _v_presets.update(stimgen_updates.get("VOLATILITY_PRESETS", {}))
+    _n_presets = dict(stimgen.get("NOISE_PRESETS", {}))
+    _n_presets.update(stimgen_updates.get("NOISE_PRESETS", {}))
+
     # Resolve values from new config structure
     prac_vol = stimgen_updates.get("PRACTICE_VOLATILITY", stimgen.get("PRACTICE_VOLATILITY", ["?"]))
     prac_noise = stimgen_updates.get("PRACTICE_NOISE", stimgen.get("PRACTICE_NOISE", ["?"]))
@@ -2117,7 +2129,9 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
     
     from stimgen.laser.design_vola_stocha import get_block_count
     try:
-        prac_types = get_block_count(prac_vol, prac_noise, prac_noise_mode)
+        prac_types = get_block_count(prac_vol, prac_noise, prac_noise_mode,
+                                     volatility_presets=_v_presets,
+                                     noise_presets=_n_presets)
     except Exception:
         prac_types = len(prac_vol) * len(prac_noise)
 
@@ -2129,7 +2143,9 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
     main_noise_mode = stimgen_updates.get("MAIN_NOISE_MODE", stimgen.get("MAIN_NOISE_MODE", "counterbalanced"))
     
     try:
-        main_types = get_block_count(main_vol, main_noise, main_noise_mode)
+        main_types = get_block_count(main_vol, main_noise, main_noise_mode,
+                                     volatility_presets=_v_presets,
+                                     noise_presets=_n_presets)
     except Exception:
         main_types = len(main_vol) * len(main_noise)
 
@@ -2221,6 +2237,12 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
     stimgen = _read_stimgen_config()
     stimgen_updates = cfg.get("_stimgen_updates") or {}
 
+    # Resolve presets (file + unsaved, so custom presets are found)
+    _v_presets = dict(stimgen.get("VOLATILITY_PRESETS", {}))
+    _v_presets.update(stimgen_updates.get("VOLATILITY_PRESETS", {}))
+    _n_presets = dict(stimgen.get("NOISE_PRESETS", {}))
+    _n_presets.update(stimgen_updates.get("NOISE_PRESETS", {}))
+
     # Resolve from new config structure
     prac_vol = stimgen_updates.get("PRACTICE_VOLATILITY", stimgen.get("PRACTICE_VOLATILITY", ["?"]))
     prac_noise = stimgen_updates.get("PRACTICE_NOISE", stimgen.get("PRACTICE_NOISE", ["?"]))
@@ -2228,7 +2250,9 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
     
     from stimgen.laser.design_vola_stocha import get_block_count
     try:
-        prac_types = get_block_count(prac_vol, prac_noise, prac_noise_mode)
+        prac_types = get_block_count(prac_vol, prac_noise, prac_noise_mode,
+                                     volatility_presets=_v_presets,
+                                     noise_presets=_n_presets)
     except Exception:
         prac_types = len(prac_vol) * len(prac_noise)
         
@@ -2240,7 +2264,9 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
     main_noise_mode = stimgen_updates.get("MAIN_NOISE_MODE", stimgen.get("MAIN_NOISE_MODE", "counterbalanced"))
     
     try:
-        main_types = get_block_count(main_vol, main_noise, main_noise_mode)
+        main_types = get_block_count(main_vol, main_noise, main_noise_mode,
+                                     volatility_presets=_v_presets,
+                                     noise_presets=_n_presets)
     except Exception:
         main_types = len(main_vol) * len(main_noise)
         
@@ -2410,7 +2436,10 @@ def _preflight_check(cfg: Dict[str, Any]) -> List[str]:
         cfg_dur = stimgen.get(dur_key, 1)
 
         try:
-            expected_design = design_vola_stocha(cfg_vol, cfg_noise, cfg_mode)
+            expected_design = design_vola_stocha(
+                cfg_vol, cfg_noise, cfg_mode,
+                volatility_presets=stimgen.get("VOLATILITY_PRESETS", {}),
+                noise_presets=stimgen.get("NOISE_PRESETS", {}))
             expected_types = expected_design["blockTypes"]
             expected_blocks = expected_design["blocks"]
         except Exception:
