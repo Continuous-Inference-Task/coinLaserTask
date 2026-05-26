@@ -65,7 +65,7 @@ NOISE_PRESETS = {
 
 # ── Practice session ───────────────────────────────────────────────────────
 # Usually just one block type (e.g. volatile + precise).
-PRACTICE_VOLATILITY = ['volatile']
+PRACTICE_VOLATILITY = ['stable', 'volatile']
 PRACTICE_NOISE = ['noisy']
 # Noise mode: "counterbalanced" = Cartesian product (volatility × noise)
 #             "per_block"        = choose a specific noise level for each
@@ -75,10 +75,10 @@ PRACTICE_N_SESSIONS = 1
 PRACTICE_BLOCK_DURATION_MIN = 1  # minutes per block
 
 # ── Main experiment session ────────────────────────────────────────────────
-MAIN_VOLATILITY = ['stable']
-MAIN_NOISE = ['precise']
+MAIN_VOLATILITY = ['stable', 'volatile']
+MAIN_NOISE = ['noisy']
 MAIN_NOISE_MODE = 'counterbalanced'
-MAIN_N_SESSIONS = 3
+MAIN_N_SESSIONS = 1
 MAIN_BLOCK_DURATION_MIN = 4  # minutes per block
 
 

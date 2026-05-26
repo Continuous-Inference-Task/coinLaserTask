@@ -134,7 +134,7 @@ class ExperimentConfig:
 
     # -- Experiment structure --
     visits: list = field(default_factory=lambda: ["1", "2"])
-    sessions: list = field(default_factory=lambda: ["1", "2", "3"])
+    sessions: list = field(default_factory=lambda: ["1"])
     orders: list = field(default_factory=lambda: ["1", "2", "3", "4"])
     framings: list = field(default_factory=lambda: ["loss", "win"])
     """Dropdown options for the session dialog (if enabled via dialog_fields)."""
@@ -196,16 +196,24 @@ class ExperimentConfig:
     # -- Auditory stimulation --
     enable_audio: bool = True
     """Set to ``False`` to run the task without any background tones."""
+    mmn_type: str = "duration"
+    """Mismatch negativity paradigm type.
+
+    ``"frequency"`` — standard and deviant differ in pitch
+    (e.g. 440 Hz vs 528 Hz).  ``"duration"`` — standard and
+    deviant differ in length (e.g. 50 ms vs 100 ms) but share
+    the same pitch.
+    """
     tone_freq_standard: float = 440.0
-    tone_freq_deviant: float = 528.0
-    tone_duration: float = 0.07
+    tone_freq_deviant: float = 440.0
+    tone_duration: float = 0.05
     """Duration of each tone (seconds)."""
-    tone_duration_standard: float = 0.07
+    tone_duration_standard: float = 0.05
     """Duration of standard tones (seconds). If negative, falls back to tone_duration."""
-    tone_duration_deviant: float = 0.07
+    tone_duration_deviant: float = 0.1
     """Duration of deviant tones (seconds). If negative, falls back to tone_duration."""
     tone_volume: float = 1.0
-    tone_isi_frames: int = 26
+    tone_isi_frames: int = 24
     """Inter-stimulus interval between successive tones (in frames).
     
     PEDUKS MMN default: 26 frames = ~433 ms at 60 Hz (matches MATLAB's 430 ms).

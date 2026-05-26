@@ -79,6 +79,33 @@ class TriggerManager:
     def send(self, code: int) -> None:
         """Send a single trigger *code* (int, typically 1–127)."""
         if self.mode == "serial":
+            # Current implementation sends 4 bytes: "m", "h", chr(code), chr(0).
+            # This may be a protocol for older BrainAmp hardware or a non-TriggerBox
+            # serial device.  The standard BrainVision TriggerBox (rev.02 and Plus)
+            # protocol expects a *single byte* — just the code value.
+            #
+            # TODO: verify with the lab what serial trigger hardware is used.
+            # If it's a standard BrainVision TriggerBox, replace with:
+            #
+            #   self._port.write(bytes([code]))
+            #   self._port.flush()
+            #
+            # HOW TO TEST:
+            #   1. Connect the trigger hardware to the MEG/EEG recording PC.
+            #   2. Run in dummy mode first: `python -c "
+            #      from laserTask.triggers import TriggerManager
+            #      from laserTask.config import ExperimentConfig
+            #      cfg = ExperimentConfig(trigger_mode='dummy')
+            #      trig = TriggerManager(cfg)
+            #      trig.send(30)  # should print '[TRIGGER] 30'
+            #      trig.close()"`
+            #   3. Switch to serial mode with the correct port/baud rate.
+            #   4. Send a known code (e.g., 30) and check BrainVision Recorder:
+            #      - With current 4-byte protocol: look for markers S 109, S 104, S 30
+            #        appearing in sequence.  If it works, the lab's hardware expects this.
+            #      - With single-byte protocol: BrainVision Recorder should show
+            #        exactly one marker "S 30" at the expected baud rate.
+            #   5. Send code 0 to verify the reset/pulse boundary works.
             for ch in ("m", "h", chr(code), chr(0)):
                 self._port.write(ch.encode())
             self._port.flush()
