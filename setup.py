@@ -386,6 +386,166 @@ def prompt_list(text: str, default: List[str], *, hint_text: str = "") -> List[s
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+def prompt_select(
+    text: str,
+    options: List[str],
+    default: str = "",
+    *,
+    descriptions: Optional[Dict[str, str]] = None,
+    hint_text: str = "",
+) -> str:
+    """Interactive single-select menu — arrow keys to navigate, Enter to confirm.
+
+    Each option can have a multi-line *description* shown live below the
+    list as the cursor moves.  Falls back to a numbered prompt on
+    platforms without ``termios``.
+
+    Parameters
+    ----------
+    text :
+        Prompt shown above the list.
+    options :
+        All selectable items.
+    default :
+        Pre-selected item (must be one of *options*).
+    descriptions :
+        Optional mapping from option value to a multi-line description
+        string shown when that option is highlighted.
+    hint_text :
+        Dim explanatory text below the prompt.
+
+    Returns
+    -------
+    str
+        The selected option.
+    """
+    descriptions = descriptions or {}
+    cursor = options.index(default) if default in options else 0
+
+    # ── Unix raw-terminal path ──
+    try:
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+
+        def _redraw() -> None:
+            sys.stdout.write("\033[H\033[2J")
+            sys.stdout.write(f"  {text}:\r\n")
+            if hint_text:
+                sys.stdout.write(_c(C["dim"], f"     {hint_text}") + "\r\n")
+            sys.stdout.write("\r\n")
+            for i, opt in enumerate(options):
+                pointer = _c(C["cyan"], " ›") if i == cursor else "  "
+                sel_marker = _c(C["green"], "●") if i == cursor else _c(C["dim"], "○")
+                sys.stdout.write(f"  {pointer} {sel_marker} {opt}\r\n")
+            # Live description for the highlighted option
+            desc = descriptions.get(options[cursor])
+            if desc:
+                sys.stdout.write("\r\n")
+                for line in desc.split("\n"):
+                    sys.stdout.write(_c(C["dim"], f"     {line}") + "\r\n")
+            sys.stdout.write("\r\n")
+            sys.stdout.write(
+                f"  {_c(C['dim'], '↑↓/jk')} navigate   "
+                f"{_c(C['dim'], 'enter')} select   "
+                f"{_c(C['dim'], 'b')} back\r\n"
+            )
+            sys.stdout.flush()
+
+        try:
+            tty.setraw(fd)
+            _redraw()
+            while True:
+                ch = sys.stdin.read(1)
+
+                # Ctrl+C / Ctrl+D
+                if ch == "\x03":
+                    raise KeyboardInterrupt
+                elif ch == "\x04":
+                    raise EOFError
+
+                # escape sequences (arrows)
+                if ch == "\x1b":
+                    nxt = sys.stdin.read(2)
+                    if nxt == "[A":  # up
+                        cursor = (cursor - 1) % len(options)
+                    elif nxt == "[B":  # down
+                        cursor = (cursor + 1) % len(options)
+
+                # enter
+                elif ch in ("\r", "\n"):
+                    break
+
+                # j / k vim keys
+                elif ch == "j":
+                    cursor = (cursor + 1) % len(options)
+                elif ch == "k":
+                    cursor = (cursor - 1) % len(options)
+
+                # b = back (return default, don't change)
+                elif ch == "b":
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old)
+                    sys.stdout.write("\033[H\033[2J")
+                    sys.stdout.flush()
+                    return default
+
+                _redraw()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+        sys.stdout.write("\033[H\033[2J")
+        sys.stdout.flush()
+        return options[cursor]
+
+    except (ImportError, termios.error, AttributeError):
+        pass
+
+    # ── fallback: simple numbered prompt ──
+    return _prompt_select_fallback(text, options, default, descriptions, hint_text)
+
+
+def _prompt_select_fallback(
+    text: str,
+    options: List[str],
+    default: str,
+    descriptions: Dict[str, str],
+    hint_text: str,
+) -> str:
+    """Fallback when raw terminal mode is unavailable (e.g. Windows)."""
+    while True:
+        print(f"\n  {text}:")
+        if hint_text:
+            print(_c(C["dim"], f"     {hint_text}"))
+        for i, opt in enumerate(options, 1):
+            marker = _c(C["green"], "→") if opt == default else " "
+            desc_line = ""
+            short_desc = descriptions.get(opt, "")
+            if short_desc:
+                # Take only the first line for inline display
+                first_line = short_desc.split("\n")[0].strip()
+                desc_line = _c(C["dim"], f"  — {first_line}")
+            print(f"     {marker} {i}. {opt}{desc_line}")
+        print()
+        print(_c(C["dim"], "  Enter number or name. Press Enter for default. 'b' to go back."))
+        raw = input(f"  {_c(C['bold'], '>')} ").strip().lower()
+
+        if not raw:
+            return default
+        if raw == "b":
+            return default
+        if raw in options:
+            return raw
+        try:
+            idx = int(raw) - 1
+            if 0 <= idx < len(options):
+                return options[idx]
+        except ValueError:
+            pass
+        warn("Invalid option. Enter a number or type the option name.")
+
+
 def prompt_multiselect(
     text: str,
     options: List[str],
@@ -1347,11 +1507,35 @@ def configure_input(cfg: Dict[str, Any]) -> Dict[str, Any]:
 def configure_triggers(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Trigger Setup")
 
-    mode = prompt(
+    _trigger_descriptions = {
+        "dummy": (
+            "No hardware — trigger events are printed to the console log.\n"
+            "Use this for testing, development, or when no EEG/MEG\n"
+            "system is connected. Zero setup required."
+        ),
+        "serial": (
+            "Send triggers via a serial (RS-232 / USB-serial) port.\n"
+            "Used with the BrainVision TriggerBox and similar devices.\n"
+            "You will need the port name and baud rate."
+        ),
+        "parallel": (
+            "Send triggers via a parallel (LPT / printer) port.\n"
+            "Common on Windows with add-in PCI/ISA cards.\n"
+            "Not supported on macOS. Linux uses /dev/parport0."
+        ),
+        "lsl": (
+            "Push triggers via Lab Streaming Layer (LSL).\n"
+            "No port config needed — LSL auto-discovers streams\n"
+            "at runtime. Ideal for synced multi-device setups."
+        ),
+    }
+
+    mode = prompt_select(
         "Trigger mode",
-        cfg.get("trigger_mode", "dummy"),
-        choices=["dummy", "serial", "parallel", "lsl"],
-        hint_text="'dummy' prints to console — use for testing without hardware",
+        ["dummy", "serial", "parallel", "lsl"],
+        default=cfg.get("trigger_mode", "dummy"),
+        descriptions=_trigger_descriptions,
+        hint_text="Navigate with ↑↓, press Enter to select",
     )
     cfg["trigger_mode"] = mode
 
@@ -2308,11 +2492,34 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
     # ── 3.1: Trigger mode (+ serial / parallel settings if applicable) ──
     print()
     info(_c(C["bold"], "Trigger Setup"))
-    mode = prompt(
+    _trigger_descriptions = {
+        "dummy": (
+            "No hardware — trigger events are printed to the console log.\n"
+            "Use this for testing, development, or when no EEG/MEG\n"
+            "system is connected. Zero setup required."
+        ),
+        "serial": (
+            "Send triggers via a serial (RS-232 / USB-serial) port.\n"
+            "Used with the BrainVision TriggerBox and similar devices.\n"
+            "You will need the port name and baud rate."
+        ),
+        "parallel": (
+            "Send triggers via a parallel (LPT / printer) port.\n"
+            "Common on Windows with add-in PCI/ISA cards.\n"
+            "Not supported on macOS. Linux uses /dev/parport0."
+        ),
+        "lsl": (
+            "Push triggers via Lab Streaming Layer (LSL).\n"
+            "No port config needed — LSL auto-discovers streams\n"
+            "at runtime. Ideal for synced multi-device setups."
+        ),
+    }
+    mode = prompt_select(
         "Trigger mode",
-        cfg.get("trigger_mode", "dummy"),
-        choices=["dummy", "serial", "parallel", "lsl"],
-        hint_text="'dummy' prints to console — use for testing without hardware",
+        ["dummy", "serial", "parallel", "lsl"],
+        default=cfg.get("trigger_mode", "dummy"),
+        descriptions=_trigger_descriptions,
+        hint_text="Navigate with ↑↓, press Enter to select",
     )
     cfg["trigger_mode"] = mode
 

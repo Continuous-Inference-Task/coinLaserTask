@@ -208,6 +208,12 @@ def run_experiment(
     #  MANAGERS & STIMULI                                                 #
     # ------------------------------------------------------------------ #
     default_kb = keyboard.Keyboard(backend=cfg.keyboard_backend)
+    actual_backend = default_kb.getBackend()
+    if actual_backend != cfg.keyboard_backend:
+        logging.warning(
+            f"Keyboard backend mismatch: requested '{cfg.keyboard_backend}' "
+            f"but PsychoPy is using '{actual_backend}'. Timing behaviour may differ."
+        )
     keys_move = [cfg.key_left, cfg.key_right]
     # Keys for shield size adjustments
     keys_size = (

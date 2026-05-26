@@ -174,7 +174,7 @@ class ExperimentConfig:
     currency_symbol: str = "€"
 
     # -- Trigger settings --
-    trigger_mode: str = "dummy"
+    trigger_mode: str = "parallel"
     """How event markers are sent to the recording system.
 
     Options
@@ -246,6 +246,38 @@ class ExperimentConfig:
         # Auto-select OS-appropriate defaults if not explicitly set
         if not self.keyboard_backend:
             self.keyboard_backend = "ptb" if sys.platform == "win32" else "iohub"
+
+        # Validate that the selected backend is actually available.
+        # PTB requires the `psychtoolbox` package; if it is missing,
+        # PsychoPy silently falls back to `event` with only a log
+        # message — easy to miss in an experiment context.
+        if self.keyboard_backend == "ptb":
+            try:
+                import psychtoolbox  # noqa: F401
+            except ImportError:
+                import warnings
+                warnings.warn(
+                    "keyboard_backend='ptb' selected but `psychtoolbox` is not "
+                    "installed. Falling back to 'iohub'. Install with: "
+                    "pip install psychtoolbox",
+                    stacklevel=2,
+                )
+                self.keyboard_backend = "iohub"
+
+        # ioHub needs the iohub server, which PsychoPy launches on demand,
+        # but the package must be present. If somehow stripped from a
+        # minimal install, fall back to the always-available `event`.
+        if self.keyboard_backend == "iohub":
+            try:
+                from psychopy.iohub import launchHubServer  # noqa: F401
+            except ImportError:
+                import warnings
+                warnings.warn(
+                    "keyboard_backend='iohub' selected but `psychopy.iohub` is "
+                    "not available. Falling back to 'event'.",
+                    stacklevel=2,
+                )
+                self.keyboard_backend = "event"
         if not self.serial_port:
             if sys.platform == "win32":
                 self.serial_port = "COM6"
