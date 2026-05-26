@@ -130,6 +130,32 @@ class AudioStimulationManager:
         self._cur_id = self.sequence[self.tone_idx]
 
     # --------------------------------------------------------------------- #
+    def _get_isi_frames(self) -> int:
+        """Return ISI in frames for the upcoming tone.
+
+        For frequency MMN the ISI is fixed regardless of tone type.
+        For duration MMN the ISI is shortened for the longer (deviant)
+        tone so that the stimulus-onset asynchrony (SOA) stays constant.
+        """
+        if self.cfg.mmn_type == "duration":
+            base_isi = self.cfg.tone_isi_frames
+            std_dur = (
+                self.cfg.tone_duration_standard
+                if self.cfg.tone_duration_standard > 0
+                else self.cfg.tone_duration
+            )
+            dev_dur = (
+                self.cfg.tone_duration_deviant
+                if self.cfg.tone_duration_deviant > 0
+                else self.cfg.tone_duration
+            )
+            extra_frames = int(round((dev_dur - std_dur) * self.cfg.target_refresh_rate))
+            if self._cur_id == "2":  # deviant
+                return max(1, base_isi - extra_frames)
+            return base_isi
+        return self.cfg.tone_isi_frames
+
+    # --------------------------------------------------------------------- #
     def update_frame(self) -> int:
         """Advance the tone state machine by one frame.
 
@@ -147,7 +173,7 @@ class AudioStimulationManager:
         self.current_trigger = 0
 
         if not self.is_playing and not self.is_waiting:
-            isi = self.cfg.tone_isi_frames
+            isi = self._get_isi_frames()
             self.isis.append(isi)
             self._next_onset = self.frame_ctr + isi
             self.is_waiting = True

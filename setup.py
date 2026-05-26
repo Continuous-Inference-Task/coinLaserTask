@@ -11,6 +11,7 @@ Usage:
     python setup.py --full       # straight into full wizard (all sections)
     python setup.py --report     # print current config without prompts
     python setup.py --generate   # just regenerate sequences from current config
+    python setup.py --generate --verify  # regenerate + verify with plots
     python setup.py --help       # show this message
 
 No dependencies beyond Python stdlib.  Works over SSH, in tmux, anywhere.
@@ -621,6 +622,7 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "serial_baud_rate": c.serial_baud_rate,
         "parallel_address": c.parallel_address,
         "enable_audio": c.enable_audio,
+        "mmn_type": c.mmn_type,
         "show_earth_background": c.show_earth_background,
         "tone_freq_standard": c.tone_freq_standard,
         "tone_freq_deviant": c.tone_freq_deviant,
@@ -779,6 +781,7 @@ def _write_laser_task_config(updates: Dict[str, Any]) -> None:
         "serial_baud_rate": "serial_baud_rate",
         "parallel_address": "parallel_address",
         "enable_audio": "enable_audio",
+        "mmn_type": "mmn_type",
         "tone_freq_standard": "tone_freq_standard",
         "tone_freq_deviant": "tone_freq_deviant",
         "tone_duration": "tone_duration",
@@ -1029,11 +1032,14 @@ def configure_design(cfg: Dict[str, Any]) -> Dict[str, Any]:
         hint_text="If disabled, a plain black background is shown instead",
     )
 
-    cfg["reset_reward_after_practice"] = prompt_yn(
-        "Reset reward counter after practice?",
-        cfg.get("reset_reward_after_practice", True),
-        hint_text="If yes, the reward bar resets to zero when the main session starts",
-    )
+    if cfg["enable_practice"]:
+        cfg["reset_reward_after_practice"] = prompt_yn(
+            "Reset reward counter after practice?",
+            cfg.get("reset_reward_after_practice", True),
+            hint_text="If yes, the reward bar resets to zero when the main session starts",
+        )
+    else:
+        cfg["reset_reward_after_practice"] = False
     return cfg
 
 
@@ -1153,64 +1159,117 @@ def configure_audio(cfg: Dict[str, Any]) -> Dict[str, Any]:
         info("Audio disabled — no tones will play.")
         return cfg
 
-    cfg["tone_freq_standard"] = prompt_float(
-        "Standard tone frequency (Hz)",
-        cfg.get("tone_freq_standard", 440.0),
-        hint_text="Pitch of the frequent tone (Peduks Study: 440 Hz)",
+    cfg["mmn_type"] = prompt_options(
+        "MMN type",
+        ["frequency", "duration"],
+        cfg.get("mmn_type", "frequency"),
+        labels={
+            "frequency": "Frequency MMN — standard and deviant differ in pitch",
+            "duration": "Duration MMN — standard and deviant differ in length (same pitch)",
+        },
+        hint_text="Frequency = pitch oddball (e.g. 440 Hz vs 528 Hz); Duration = length oddball (e.g. 50 ms vs 100 ms)",
     )
-    cfg["tone_freq_deviant"] = prompt_float(
-        "Deviant tone frequency (Hz)",
-        cfg.get("tone_freq_deviant", 528.0),
-        hint_text="Pitch of the rare tone (Peduks Study: 528 Hz)",
-    )
-    duration_ms = int(cfg.get("tone_duration", 0.07) * 1000)
-    cfg["tone_duration"] = (
-        prompt_int(
-            "Base tone duration (ms)",
-            duration_ms,
-            min_val=10,
-            max_val=500,
-            hint_text="How long each tone plays by default (Peduks Study: 70 ms)",
+    print()
+
+    is_duration = cfg["mmn_type"] == "duration"
+
+    if is_duration:
+        # Reset stored durations to Duration MMN defaults if they were equal
+        # (indicating they came from Frequency MMN where both tones share one duration)
+        stored_std = cfg.get("tone_duration_standard", 0.07)
+        stored_dev = cfg.get("tone_duration_deviant", 0.07)
+        if abs(stored_std - stored_dev) < 0.0001:
+            cfg["tone_duration_standard"] = 0.05
+            cfg["tone_duration_deviant"] = 0.10
+        # Reset ISI to Duration MMN default if it matches Frequency MMN default
+        stored_isi = cfg.get("tone_isi_frames", 26)
+        if stored_isi == 26:
+            cfg["tone_isi_frames"] = 24
+
+        shared_freq = prompt_float(
+            "Tone frequency for both standard and deviant (Hz)",
+            cfg.get("tone_freq_standard", 440.0),
+            hint_text="Both tones share the same pitch; only their length differs",
         )
-        / 1000.0
-    )
-    if prompt_yn("Customize standard vs. deviant durations separately?", False):
-        std_dur_ms = int(cfg.get("tone_duration_standard", -1.0) * 1000)
+        cfg["tone_freq_standard"] = shared_freq
+        cfg["tone_freq_deviant"] = shared_freq
+
+        std_dur_ms = int(cfg.get("tone_duration_standard", 50.0) * 1000)
         if std_dur_ms < 0:
-            std_dur_ms = int(cfg["tone_duration"] * 1000)
+            std_dur_ms = 50
+        dev_dur_ms = int(cfg.get("tone_duration_deviant", 100.0) * 1000)
+        if dev_dur_ms < 0:
+            dev_dur_ms = 100
+
         cfg["tone_duration_standard"] = (
             prompt_int(
                 "Standard tone duration (ms)",
                 std_dur_ms,
                 min_val=10,
                 max_val=500,
+                hint_text="Short tone — e.g. 50 ms for CogPsy Duration MMN",
             )
             / 1000.0
         )
-        dev_dur_ms = int(cfg.get("tone_duration_deviant", -1.0) * 1000)
-        if dev_dur_ms < 0:
-            dev_dur_ms = int(cfg["tone_duration"] * 1000)
         cfg["tone_duration_deviant"] = (
             prompt_int(
                 "Deviant tone duration (ms)",
                 dev_dur_ms,
                 min_val=10,
                 max_val=500,
+                hint_text="Long tone — e.g. 100 ms for CogPsy Duration MMN",
             )
             / 1000.0
         )
+        cfg["tone_duration"] = cfg["tone_duration_standard"]
     else:
-        cfg["tone_duration_standard"] = -1.0
-        cfg["tone_duration_deviant"] = -1.0
+        # Reset Frequency MMN defaults when switching from Duration MMN
+        stored_std_freq = cfg.get("tone_freq_standard", 440.0)
+        stored_dev_freq = cfg.get("tone_freq_deviant", 528.0)
+        if abs(stored_std_freq - stored_dev_freq) < 0.0001:
+            cfg["tone_freq_deviant"] = 528.0
+        stored_std_dur = cfg.get("tone_duration_standard", 0.07)
+        stored_dev_dur = cfg.get("tone_duration_deviant", 0.07)
+        if abs(stored_std_dur - stored_dev_dur) > 0.0001:
+            cfg["tone_duration"] = 0.07
+        stored_isi = cfg.get("tone_isi_frames", 24)
+        if stored_isi == 24:
+            cfg["tone_isi_frames"] = 26
+
+        cfg["tone_freq_standard"] = prompt_float(
+            "Standard tone frequency (Hz)",
+            cfg.get("tone_freq_standard", 440.0),
+            hint_text="Pitch of the frequent tone (Peduks Study: 440 Hz)",
+        )
+        cfg["tone_freq_deviant"] = prompt_float(
+            "Deviant tone frequency (Hz)",
+            cfg.get("tone_freq_deviant", 528.0),
+            hint_text="Pitch of the rare tone (Peduks Study: 528 Hz)",
+        )
+        dur_ms = int(cfg.get("tone_duration", 0.07) * 1000)
+        cfg["tone_duration"] = (
+            prompt_int(
+                "Tone duration (ms)",
+                dur_ms,
+                min_val=10,
+                max_val=500,
+                hint_text="Both tones play for the same length (Peduks Study: 70 ms)",
+            )
+            / 1000.0
+        )
+        cfg["tone_duration_standard"] = cfg["tone_duration"]
+        cfg["tone_duration_deviant"] = cfg["tone_duration"]
 
     cfg["tone_isi_frames"] = prompt_int(
         "Inter-stimulus interval (frames)",
-        cfg.get("tone_isi_frames", 26),
+        cfg.get("tone_isi_frames", 24 if is_duration else 26),
         min_val=1,
-        hint_text="Gap between tones in frames (Peduks Study: 26 frames)",
+        hint_text="Gap between tones in frames (Frequency MMN PEDUKS: 26 frames; Duration MMN CogPsy: 24 frames)",
     )
     fps = cfg.get("target_refresh_rate", 60)
     info(f"  → Effective ISI: ~{cfg['tone_isi_frames'] / fps * 1000:.0f} ms at {fps} Hz")
+    if is_duration:
+        info("  → Duration MMN: ISI is automatically shortened for the longer deviant tone to keep SOA constant.")
 
     cfg["tone_volume"] = prompt_float(
         "Tone volume",
@@ -1980,64 +2039,115 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
         hint_text="Plays standard/deviant tones during the main blocks (Mismatch Negativity paradigm)",
     )
     if cfg["enable_audio"]:
-        cfg["tone_freq_standard"] = prompt_float(
-            "Standard tone frequency (Hz)",
-            cfg.get("tone_freq_standard", 440.0),
-            hint_text="Pitch of the frequent tone (Peduks Study: 440 Hz)",
+        cfg["mmn_type"] = prompt_options(
+            "MMN type",
+            ["frequency", "duration"],
+            cfg.get("mmn_type", "frequency"),
+            labels={
+                "frequency": "Frequency MMN — standard and deviant differ in pitch",
+                "duration": "Duration MMN — standard and deviant differ in length (same pitch)",
+            },
+            hint_text="Frequency = pitch oddball; Duration = length oddball",
         )
-        cfg["tone_freq_deviant"] = prompt_float(
-            "Deviant tone frequency (Hz)",
-            cfg.get("tone_freq_deviant", 528.0),
-            hint_text="Pitch of the rare tone (Peduks Study: 528 Hz)",
-        )
-        duration_ms = int(cfg.get("tone_duration", 0.07) * 1000)
-        cfg["tone_duration"] = (
-            prompt_int(
-                "Base tone duration (ms)",
-                duration_ms,
-                min_val=10,
-                max_val=500,
-                hint_text="How long each tone plays by default (Peduks Study: 70 ms)",
+        print()
+        is_duration_quick = cfg["mmn_type"] == "duration"
+
+        if is_duration_quick:
+            # Reset stored durations to Duration MMN defaults if they were equal
+            stored_std = cfg.get("tone_duration_standard", 0.07)
+            stored_dev = cfg.get("tone_duration_deviant", 0.07)
+            if abs(stored_std - stored_dev) < 0.0001:
+                cfg["tone_duration_standard"] = 0.05
+                cfg["tone_duration_deviant"] = 0.10
+            # Reset ISI to Duration MMN default if it matches Frequency MMN default
+            stored_isi = cfg.get("tone_isi_frames", 26)
+            if stored_isi == 26:
+                cfg["tone_isi_frames"] = 24
+
+            shared_freq = prompt_float(
+                "Tone frequency for both standard and deviant (Hz)",
+                cfg.get("tone_freq_standard", 440.0),
+                hint_text="Both tones share the same pitch; only their length differs",
             )
-            / 1000.0
-        )
-        if prompt_yn("Customize standard vs. deviant durations separately?", False):
-            std_dur_ms = int(cfg.get("tone_duration_standard", -1.0) * 1000)
+            cfg["tone_freq_standard"] = shared_freq
+            cfg["tone_freq_deviant"] = shared_freq
+
+            std_dur_ms = int(cfg.get("tone_duration_standard", 50.0) * 1000)
             if std_dur_ms < 0:
-                std_dur_ms = int(cfg["tone_duration"] * 1000)
+                std_dur_ms = 50
+            dev_dur_ms = int(cfg.get("tone_duration_deviant", 100.0) * 1000)
+            if dev_dur_ms < 0:
+                dev_dur_ms = 100
+
             cfg["tone_duration_standard"] = (
                 prompt_int(
                     "Standard tone duration (ms)",
                     std_dur_ms,
                     min_val=10,
                     max_val=500,
+                    hint_text="Short tone — e.g. 50 ms for CogPsy Duration MMN",
                 )
                 / 1000.0
             )
-            dev_dur_ms = int(cfg.get("tone_duration_deviant", -1.0) * 1000)
-            if dev_dur_ms < 0:
-                dev_dur_ms = int(cfg["tone_duration"] * 1000)
             cfg["tone_duration_deviant"] = (
                 prompt_int(
                     "Deviant tone duration (ms)",
                     dev_dur_ms,
                     min_val=10,
                     max_val=500,
+                    hint_text="Long tone — e.g. 100 ms for CogPsy Duration MMN",
                 )
                 / 1000.0
             )
+            cfg["tone_duration"] = cfg["tone_duration_standard"]
         else:
-            cfg["tone_duration_standard"] = -1.0
-            cfg["tone_duration_deviant"] = -1.0
+            # Reset Frequency MMN defaults when switching from Duration MMN
+            stored_std_freq = cfg.get("tone_freq_standard", 440.0)
+            stored_dev_freq = cfg.get("tone_freq_deviant", 528.0)
+            if abs(stored_std_freq - stored_dev_freq) < 0.0001:
+                cfg["tone_freq_deviant"] = 528.0
+            stored_std_dur = cfg.get("tone_duration_standard", 0.07)
+            stored_dev_dur = cfg.get("tone_duration_deviant", 0.07)
+            if abs(stored_std_dur - stored_dev_dur) > 0.0001:
+                cfg["tone_duration"] = 0.07
+            stored_isi = cfg.get("tone_isi_frames", 24)
+            if stored_isi == 24:
+                cfg["tone_isi_frames"] = 26
+
+            cfg["tone_freq_standard"] = prompt_float(
+                "Standard tone frequency (Hz)",
+                cfg.get("tone_freq_standard", 440.0),
+                hint_text="Pitch of the frequent tone (Peduks Study: 440 Hz)",
+            )
+            cfg["tone_freq_deviant"] = prompt_float(
+                "Deviant tone frequency (Hz)",
+                cfg.get("tone_freq_deviant", 528.0),
+                hint_text="Pitch of the rare tone (Peduks Study: 528 Hz)",
+            )
+            dur_ms = int(cfg.get("tone_duration", 0.07) * 1000)
+            cfg["tone_duration"] = (
+                prompt_int(
+                    "Tone duration (ms)",
+                    dur_ms,
+                    min_val=10,
+                    max_val=500,
+                    hint_text="Both tones play for the same length (Peduks Study: 70 ms)",
+                )
+                / 1000.0
+            )
+            cfg["tone_duration_standard"] = cfg["tone_duration"]
+            cfg["tone_duration_deviant"] = cfg["tone_duration"]
 
         cfg["tone_isi_frames"] = prompt_int(
             "Inter-stimulus interval (frames)",
-            cfg.get("tone_isi_frames", 26),
+            cfg.get("tone_isi_frames", 24 if is_duration_quick else 26),
             min_val=1,
-            hint_text="Gap between tones in frames (Peduks Study: 26 frames)",
+            hint_text="Gap between tones in frames (Frequency MMN PEDUKS: 26 frames; Duration MMN CogPsy: 24 frames)",
         )
         fps = cfg.get("target_refresh_rate", 60)
         info(f"  → Effective ISI: ~{cfg['tone_isi_frames'] / fps * 1000:.0f} ms at {fps} Hz")
+        if is_duration_quick:
+            info("  → Duration MMN: ISI is automatically shortened for the longer deviant to keep SOA constant.")
 
         cfg["tone_volume"] = prompt_float(
             "Tone volume",
@@ -2193,7 +2303,9 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
             dur_str = f"{t_std*1000:.0f}s/{t_dev*1000:.0f}d ms"
         else:
             dur_str = f"{t_dur*1000:.0f} ms"
+        mmn_type_label = cfg.get('mmn_type', 'frequency')
         items += [
+            ("MMN type", mmn_type_label, "6"),
             ("Tones", f"{cfg.get('tone_freq_standard', '?')} / {cfg.get('tone_freq_deviant', '?')} Hz", "6"),
             ("Tone dur / ISI", f"{dur_str} / {cfg.get('tone_isi_frames', '?')} frames", "6"),
             ("Tone volume", cfg.get("tone_volume", "?"), "6"),
@@ -2334,7 +2446,8 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
                 dur_str = f"{t_std*1000:.0f}s/{t_dev*1000:.0f}d ms"
             else:
                 dur_str = f"{t_dur*1000:.0f} ms"
-            audio = f"{cfg.get('tone_freq_standard', '?')}/{cfg.get('tone_freq_deviant', '?')} Hz, {dur_str}, vol {cfg.get('tone_volume', '?')}"
+            mmn_lbl = cfg.get('mmn_type', 'frequency')
+            audio = f"{mmn_lbl}: {cfg.get('tone_freq_standard', '?')}/{cfg.get('tone_freq_deviant', '?')} Hz, {dur_str}, vol {cfg.get('tone_volume', '?')}"
         else:
             audio = _c(C["dim"], "disabled")
 
@@ -2661,6 +2774,11 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
     _write_laser_task_config(cfg)
     info(f"Dialog sessions auto-synced: {', '.join(derived_sessions)}  |  orders: {', '.join(derived_orders)}")
 
+    # ── offer to run verification ──
+    if prompt_yn("View verification plots for generated sequences?", True):
+        from stimgen.laser.verify_sequences import run_verification
+        run_verification(show=True)
+
     return True
 
 
@@ -2734,7 +2852,7 @@ SECTION_REGISTRY: List[Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]
     ("3", "Trigger mode & hardware ports", configure_triggers),
     ("4", "Experiment design (practice, earth bg, reward reset)", configure_design),
     ("5", "Shield mechanics & reward (size, speed, loss factor)", configure_shield_reward),
-    ("6", "Auditory MMN (tone frequencies, duration, ISI)", configure_audio),
+    ("6", "Auditory MMN (type, frequencies, durations, ISI)", configure_audio),
     ("7", "Sequence generation (noise levels, volatility, durations)", configure_stimgen),
     ("8", "Startup dialog (which fields, dropdown options, framing)", configure_dialog),
 ]
@@ -2785,6 +2903,7 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
         print(f"  {_c(C['cyan'], 'a')})  Run all sections")
         print(f"  {_c(C['cyan'], 's')})  Show current configuration")
         print(f"  {_c(C['cyan'], 'g')})  Generate sequences")
+        print(f"  {_c(C['cyan'], 'v')})  Verify generated sequences")
         print(f"  {_c(C['cyan'], 'r')})  Run experiment" + _c(C["dim"], "  (python main.py)"))
         print(f"  {_c(C['dim'], 'b')})  Back to main menu")
 
@@ -2815,6 +2934,19 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
             print()
             subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
             return dirty
+        elif choice == "v":
+            print()
+            info("Running sequence verification …")
+            from stimgen.laser.verify_sequences import run_verification
+            n = run_verification(show=True)  # try to display plots
+            print()
+            if n > 0:
+                seq_dir = PROJECT_ROOT / "sequences"
+                pngs = sorted(p for p in seq_dir.glob("*_VERIFY_*.png") if not p.name.endswith("_summary"))
+                success(f"{n} session(s) verified.")
+                info("Verification plots saved to:")
+                for p in pngs:
+                    info(f"  {p}")
         elif choice == "g":
             show_slim_summary(cfg, "generate")
             if dirty:
@@ -2876,6 +3008,7 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
         print()
         print(f"  {_c(C['cyan'], 's')})  Show current configuration")
         print(f"  {_c(C['cyan'], 'g')})  Generate sequences")
+        print(f"  {_c(C['cyan'], 'v')})  Verify generated sequences")
         print(f"  {_c(C['cyan'], 'r')})  Run experiment" + _c(C["dim"], "  (python main.py)"))
         print(f"  {_c(C['dim'], 'q')})  Quit & save")
 
@@ -2924,6 +3057,19 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
             print()
             subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
             return
+        elif choice == "v":
+            print()
+            info("Running sequence verification …")
+            from stimgen.laser.verify_sequences import run_verification
+            n = run_verification(show=True)  # try to display plots
+            print()
+            if n > 0:
+                seq_dir = PROJECT_ROOT / "sequences"
+                pngs = sorted(p for p in seq_dir.glob("*_VERIFY_*.png") if not p.name.endswith("_summary"))
+                success(f"{n} session(s) verified.")
+                info("Verification plots saved to:")
+                for p in pngs:
+                    info(f"  {p}")
         elif choice == "g":
             show_slim_summary(cfg, "generate")
             if dirty:
@@ -2979,6 +3125,10 @@ def main() -> None:
         if run_sequence_generation(cfg):
             print()
             success("All sequences regenerated.")
+            if "--verify" in sys.argv:
+                print()
+                from stimgen.laser.verify_sequences import run_verification
+                run_verification()
         else:
             print()
             fail("Sequence generation had errors — check output above.")
