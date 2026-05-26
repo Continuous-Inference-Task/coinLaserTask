@@ -26,9 +26,25 @@ Any arguments passed to `run.py` are forwarded directly to the configuration wiz
 
 - `python run.py` — Opens the interactive configuration menu (and runs the setup GUI if chosen).
 - `python run.py --full` — Starts the step-by-step onboarding wizard for all sections.
+- `python run.py --preset NAME` — Loads a study-design preset, then only prompts for machine-local settings (monitor, keys, triggers). Ideal for sharing reproducible configs via git.
 - `python run.py --report` — Displays a complete configuration printout.
 - `python run.py --generate` — Regenerates all experimental sequences.
 - `python run.py --help` — Shows the helper/usage message.
+
+### Experiment Presets
+
+A **preset** is a JSON file in `presets/` that locks in the study design (shield, reward, audio, block design, etc.). When you load a preset, you only configure machine-specific settings — perfect for sharing reproducible experiment setups.
+
+```bash
+# Interactive: pick a preset from the menu
+python run.py
+# → choose "1) Load Preset"
+
+# Direct: load a specific preset by name
+python run.py --preset PEDUKS_default
+```
+
+You can save your current configuration as a new preset from the interactive menu (option `p`). The resulting JSON file can be committed to git and shared with other researchers, who can then reproduce your exact study design on their own hardware.
 
 ---
 
@@ -41,6 +57,7 @@ coin_laser_task/
 ├── requirements.txt           # Python package dependencies
 ├── README.md                  # Project documentation
 │
+├── presets/                  # Study-design presets (JSON, committed to git)
 ├── laserTask/                 # Experiment Engine (PsychoPy)
 │   ├── config.py              #   Configuration loader (ExperimentConfig & StimulusStyle)
 │   ├── experiment.py          #   Core trial, block, and session execution logic

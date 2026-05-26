@@ -9,6 +9,7 @@ at once or pick individual sections.
 Usage:
     python setup.py              # interactive menu
     python setup.py --full       # straight into full wizard (all sections)
+    python setup.py --preset NAME  # load a preset, configure machine only
     python setup.py --report     # print current config without prompts
     python setup.py --generate   # just regenerate sequences from current config
     python setup.py --generate --verify  # regenerate + verify with plots
@@ -19,11 +20,17 @@ No dependencies beyond Python stdlib.  Works over SSH, in tmux, anywhere.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
 import subprocess
 from pathlib import Path
+
+try:
+    import readline  # noqa: F401 — enables arrow keys, history for input()
+except ImportError:
+    pass  # Windows / platforms without readline
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # ── project root detection ──────────────────────────────────────────────────
@@ -870,6 +877,379 @@ OS_DEFAULTS = {
         "parallel_hint": "macOS does not support parallel ports",
     },
 }
+
+
+# ── preset system ──────────────────────────────────────────────────────────
+
+PRESET_DIR = PROJECT_ROOT / "presets"
+
+# Maps each setup section ID to its cfg keys, a human label, and which
+# namespace the keys live in ("experiment" or "stimgen").
+# Used to determine which sections are fully covered by a preset.
+SECTION_FIELDS: Dict[str, Dict[str, Any]] = {
+    "1": {
+        "namespace": "experiment",
+        "fields": {"target_os", "window_size_w", "window_size_h", "fullscreen",
+                   "screen_index", "monitor_name", "target_refresh_rate"},
+        "label": "Machine setup",
+    },
+    "2": {
+        "namespace": "experiment",
+        "fields": {"input_device", "key_left", "key_right", "use_legacy_key_tracking"},
+        "label": "Input & controls",
+    },
+    "3": {
+        "namespace": "experiment",
+        "fields": {"trigger_mode", "serial_port", "serial_baud_rate", "parallel_address"},
+        "label": "Triggers & hardware",
+    },
+    "4": {
+        "namespace": "experiment",
+        "fields": {"enable_practice", "show_earth_background", "reset_reward_after_practice"},
+        "label": "Experiment design",
+    },
+    "5": {
+        "namespace": "experiment",
+        "fields": {"allow_shield_adjustment", "fixed_shield_degrees", "rotation_speed",
+                   "circle_radius", "loss_factor", "currency_symbol", "min_laser_duration_frames"},
+        "label": "Shield & reward",
+    },
+    "6": {
+        "namespace": "experiment",
+        "fields": {"enable_audio", "mmn_type", "tone_freq_standard", "tone_freq_deviant",
+                   "tone_duration", "tone_duration_standard", "tone_duration_deviant",
+                   "tone_isi_frames", "tone_volume"},
+        "label": "Auditory MMN",
+    },
+    "7": {
+        "namespace": "stimgen",
+        "fields": {"PRACTICE_VOLATILITY", "PRACTICE_NOISE", "PRACTICE_NOISE_MODE",
+                   "PRACTICE_N_SESSIONS", "PRACTICE_BLOCK_DURATION_MIN",
+                   "MAIN_VOLATILITY", "MAIN_NOISE", "MAIN_NOISE_MODE",
+                   "MAIN_N_SESSIONS", "MAIN_BLOCK_DURATION_MIN",
+                   "JUMP_DURATION_MEAN_SEC", "JUMP_DURATION_MIN_SEC",
+                   "JUMP_DURATION_MAX_SEC", "JUMP_VALUE_SET"},
+        "label": "Sequence generation",
+    },
+    "8": {
+        "namespace": "experiment",
+        "fields": {"dialog_fields", "visits", "framings"},
+        "label": "Startup dialog",
+    },
+}
+
+# Sections that are "study design" (selected by default when saving a preset).
+STUDY_DESIGN_SECTIONS = {"4", "5", "6", "7", "8"}
+# Sections that are "machine-local" (off by default when saving a preset).
+MACHINE_LOCAL_SECTIONS = {"1", "2", "3"}
+
+
+def _section_covered(section_id: str, preset: Dict[str, Any]) -> bool:
+    """Return True if a preset fully covers all fields in a section."""
+    sec = SECTION_FIELDS[section_id]
+    ns = sec["namespace"]
+    preset_keys = set(preset.get(ns, {}).keys())
+    return sec["fields"].issubset(preset_keys)
+
+
+def _uncovered_sections(preset: Dict[str, Any]) -> List[str]:
+    """Return section IDs whose fields are NOT fully covered by the preset."""
+    return [sid for sid in SECTION_FIELDS if not _section_covered(sid, preset)]
+
+
+def _locked_sections(preset: Dict[str, Any]) -> List[str]:
+    """Return section IDs whose fields ARE fully covered by the preset."""
+    return [sid for sid in SECTION_FIELDS if _section_covered(sid, preset)]
+
+
+def _scan_presets() -> List[Path]:
+    """Return sorted list of .json preset files in presets/.
+
+    Creates the directory if it doesn't exist.
+    """
+    PRESET_DIR.mkdir(exist_ok=True)
+    return sorted(PRESET_DIR.glob("*.json"))
+
+
+def _load_preset(path: Path) -> Dict[str, Any]:
+    """Load a preset JSON and return its contents as a dict."""
+    text = path.read_text(encoding="utf-8")
+    data = json.loads(text)
+    # Basic validation
+    if "experiment" not in data and "stimgen" not in data:
+        data = {"experiment": data}
+    data.setdefault("experiment", {})
+    data.setdefault("stimgen", {})
+    data.setdefault("name", path.stem)
+    data.setdefault("description", "")
+    return data
+
+
+def _show_preset_summary(preset: Dict[str, Any]) -> None:
+    """Print a read-only summary of what a preset locks in."""
+    exp = preset.get("experiment", {})
+    sti = preset.get("stimgen", {})
+    name = preset.get("name", "?")
+    desc = preset.get("description", "")
+    notes = preset.get("notes", "")
+
+    print()
+    print(_c(C["bold"], f"  Preset: {name}"))
+    if desc:
+        print(_c(C["dim"], f"  {desc}"))
+    print()
+
+    # Show which sections are locked vs open
+    locked = _locked_sections(preset)
+    open_ids = _uncovered_sections(preset)
+
+    if locked:
+        section("Locked by preset (will NOT be prompted)")
+        for sid in locked:
+            label = SECTION_FIELDS[sid]["label"]
+            ns = SECTION_FIELDS[sid]["namespace"]
+            fields_in_preset = sorted(SECTION_FIELDS[sid]["fields"] & set(preset.get(ns, {}).keys()))
+            print(_kv(f"  §{sid} {label}", f"{len(fields_in_preset)} field{'s' if len(fields_in_preset) != 1 else ''} set"))
+
+    if open_ids:
+        section("Open — you will configure these")
+        for sid in open_ids:
+            label = SECTION_FIELDS[sid]["label"]
+            print(_kv(f"  §{sid} {label}", ""))
+
+    # Key value highlights from the preset
+    section("Preset values (highlights)")
+
+    practice_str = "Yes" if exp.get("enable_practice") else "No"
+    shield_str = ("adjustable" if exp.get("allow_shield_adjustment")
+                  else f"fixed {exp.get('fixed_shield_degrees', 20.0)}°")
+    audio_str = "Yes" if exp.get("enable_audio") else "No"
+    mmn_str = exp.get("mmn_type", "?") if audio_str == "Yes" else "\u2014"
+
+    items = [
+        ("Practice", practice_str),
+        ("Shield", shield_str),
+        ("Loss factor", f"{exp.get('loss_factor', '?')} {exp.get('currency_symbol', '?')}"),
+        ("Audio / MMN", f"{audio_str} / {mmn_str}"),
+    ]
+
+    if exp.get("enable_audio"):
+        if exp.get("mmn_type") == "duration":
+            items.append(("Tone dur", f"{int(exp.get('tone_duration_standard', 0.05)*1000)} / {int(exp.get('tone_duration_deviant', 0.1)*1000)} ms  (ISI {exp.get('tone_isi_frames', '?')} fr)"))
+        else:
+            items.append(("Tone freq", f"{exp.get('tone_freq_standard', '?')} / {exp.get('tone_freq_deviant', '?')} Hz  ({int(exp.get('tone_duration', 0.07)*1000)} ms, ISI {exp.get('tone_isi_frames', '?')} fr)"))
+
+    items.append(("Dialog fields", ", ".join(exp.get("dialog_fields", []))))
+    items.append(("Framings", ", ".join(exp.get("framings", []))))
+    if exp.get("visits"):
+        items.append(("Visits", ", ".join(str(v) for v in exp.get("visits", []))))
+
+    # Stimgen
+    prac_vol = sti.get("PRACTICE_VOLATILITY", [])
+    prac_noise = sti.get("PRACTICE_NOISE", [])
+    main_vol = sti.get("MAIN_VOLATILITY", [])
+    main_noise = sti.get("MAIN_NOISE", [])
+
+    if prac_vol or main_vol:
+        items.append(("Practice vol\u00d7noise", f"{_format_volatility(prac_vol)} \u00d7 {_format_noise(prac_noise)}"))
+        items.append(("Main vol\u00d7noise", f"{_format_volatility(main_vol)} \u00d7 {_format_noise(main_noise)}"))
+    if sti.get("MAIN_BLOCK_DURATION_MIN"):
+        items.append(("Main block dur", f"{sti.get('MAIN_BLOCK_DURATION_MIN', '?')} min \u00d7 {sti.get('MAIN_N_SESSIONS', '?')} session(s)"))
+    if sti.get("JUMP_DURATION_MIN_SEC"):
+        items.append(("Jump range", f"{sti.get('JUMP_DURATION_MIN_SEC', '?')}\u2013{sti.get('JUMP_DURATION_MAX_SEC', '?')} s  (mean {sti.get('JUMP_DURATION_MEAN_SEC', '?')} s)"))
+    if sti.get("JUMP_VALUE_SET"):
+        items.append(("Jump values", str(sti.get("JUMP_VALUE_SET"))))
+
+    for label, value in items:
+        print(_kv(label, value))
+
+    if notes:
+        print()
+        section("Notes")
+        for line in notes.split("\n"):
+            info(f"  {line}")
+
+    print()
+
+
+def _apply_preset(preset: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge preset values into the in-memory cfg dict.
+
+    Any field present in the preset's "experiment" dict goes into cfg.
+    Any field present in the preset's "stimgen" dict goes into
+    cfg["_stimgen_updates"] so it is written by the existing
+    ``_save_stimgen_from_cfg`` path.
+    """
+    exp = preset.get("experiment", {})
+    sti = preset.get("stimgen", {})
+
+    # \u2500 Apply experiment fields (any key present) \u2500
+    for key, val in exp.items():
+        cfg[key] = val
+
+    # \u2500 Apply stimgen fields (any key present) \u2500
+    stimgen_updates = cfg.get("_stimgen_updates", {})
+    for key, val in sti.items():
+        stimgen_updates[key] = val
+    cfg["_stimgen_updates"] = stimgen_updates
+
+    # \u2500 Auto-derive sessions/orders from the stimgen values \u2500
+    n_sessions = stimgen_updates.get("MAIN_N_SESSIONS", cfg.get("sessions", ["1"]))
+    if isinstance(n_sessions, int):
+        cfg["sessions"] = [str(i) for i in range(1, n_sessions + 1)]
+    cfg["orders"] = ["1", "2", "3", "4"]
+
+    return cfg
+
+
+def _pick_preset() -> Optional[Dict[str, Any]]:
+    """Interactive preset picker.  Returns a preset dict or None (custom)."""
+    preset_files = _scan_presets()
+
+    if not preset_files:
+        info("No presets found in presets/ \u2014 starting from scratch.")
+        return None
+
+    while True:
+        clear()
+        header("Choose Experiment Preset")
+        info("A preset locks in config values so you don't have to configure them.")
+        info("Pick 'Custom' to configure everything from scratch.\n")
+
+        # Load and display presets
+        loaded = []
+        for i, pf in enumerate(preset_files, 1):
+            try:
+                data = _load_preset(pf)
+                loaded.append(data)
+                name = data.get("name", pf.stem)
+                desc = data.get("description", "")
+                n_locked = len(_locked_sections(data))
+                n_open = len(_uncovered_sections(data))
+                desc_suffix = f" \u2014 {desc}" if desc else ""
+                lock_hint = _c(C["dim"], f"  ({n_locked} locked, {n_open} open)")
+                print(f"    {_c(C['green'], str(i))})  {_c(C['bold'], name)}{desc_suffix} {lock_hint}")
+            except Exception as exc:
+                err_msg = f'(invalid: {exc})'
+                red_i = _c(C['red'], str(i))
+                print(f"    {red_i})  {pf.stem} " + _c(C['dim'], err_msg))
+                loaded.append(None)
+
+        custom_num = len(preset_files) + 1
+        print(f"    {_c(C['green'], str(custom_num))})  Custom \u2014 no preset, configure everything")
+        print()
+
+        choice = input(_c(C["magenta"], "  \u276f ")).strip()
+
+        if not choice:
+            return None
+
+        try:
+            num = int(choice)
+        except ValueError:
+            warn("Enter a number.")
+            continue
+
+        if num == custom_num:
+            return None  # Custom
+        if 1 <= num <= len(loaded):
+            preset = loaded[num - 1]
+            if preset is None:
+                warn("That preset file is invalid \u2014 pick another or choose Custom.")
+                continue
+            # Show summary and confirm
+            clear()
+            _show_preset_summary(preset)
+            if prompt_yn("Use this preset?", True):
+                return preset
+            # Loop back to pick again
+        else:
+            warn(f"Choose 1\u2013{custom_num}.")
+
+
+def _save_current_as_preset(cfg: Dict[str, Any]) -> None:
+    """Save the current in-memory config as a preset JSON file."""
+    section("Save Current Config as Preset")
+    info("Choose which sections to lock into the preset. Locked sections won't need")
+    info("to be configured when loading this preset. Unlocked sections stay open.\n")
+
+    name = prompt("Preset name", "", hint_text="Used as filename and display name (e.g. PEDUKS_2024)").strip()
+    if not name:
+        warn("Cancelled \u2014 no name given.")
+        return
+
+    # Sanitise filename
+    safe_name = re.sub(r'[^A-Za-z0-9_\-.]', '_', name)
+    filename = f"{safe_name}.json"
+    filepath = PRESET_DIR / filename
+
+    if filepath.exists():
+        if not prompt_yn(f"{filename} already exists. Overwrite?", False):
+            info("Cancelled.")
+            return
+
+    description = prompt("Description", "", hint_text="Short one-liner shown in the preset picker").strip()
+
+    # Let user choose which sections to include
+    section_ids = list(SECTION_FIELDS.keys())
+    section_labels = [SECTION_FIELDS[sid]["label"] for sid in section_ids]
+    # Default: study design sections on, machine-local off
+    default_ids = [sid for sid in section_ids if sid in STUDY_DESIGN_SECTIONS]
+
+    print()
+    info(_c(C["bold"], "Which sections should the preset lock?"))
+    for sid in section_ids:
+        tag = "  (study design)" if sid in STUDY_DESIGN_SECTIONS else "  (machine-local)"
+        print(_c(C["dim"], f"    §{sid} {SECTION_FIELDS[sid]['label']}{tag}"))
+    print()
+
+    chosen_str = prompt(
+        "Sections to lock (comma-separated, e.g. 1,4,5,6,7,8)",
+        ",".join(default_ids),
+        hint_text="Study-design sections are selected by default; add 1,2,3 to also lock machine settings",
+    ).strip()
+    chosen = {s.strip() for s in chosen_str.split(",") if s.strip() in section_ids}
+
+    # Collect fields for chosen sections
+    exp = {}
+    sti = {}
+    for sid in chosen:
+        ns = SECTION_FIELDS[sid]["namespace"]
+        for key in SECTION_FIELDS[sid]["fields"]:
+            if ns == "experiment":
+                if key in cfg:
+                    val = cfg[key]
+                    if hasattr(val, "item"):
+                        val = val.item()
+                    exp[key] = val
+            elif ns == "stimgen":
+                stimgen_updates = cfg.get("_stimgen_updates", {})
+                stimgen_live = _read_stimgen_config()
+                if key in stimgen_updates:
+                    val = stimgen_updates[key]
+                elif key in stimgen_live:
+                    val = stimgen_live[key]
+                else:
+                    continue
+                if hasattr(val, "item"):
+                    val = val.item()
+                sti[key] = val
+
+    preset = {
+        "name": name,
+        "description": description,
+        "experiment": exp,
+        "stimgen": sti,
+    }
+
+    PRESET_DIR.mkdir(exist_ok=True)
+    filepath.write_text(json.dumps(preset, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
+    n_locked = len(chosen)
+    n_exp = len(exp)
+    n_sti = len(sti)
+    success(f"Preset saved to {filepath}")
+    info(f"  {n_locked} sections locked ({n_exp} experiment + {n_sti} stimgen fields)")
+    info(f"  Commit to git to share:  git add presets/{filename} && git commit")
 
 
 # ── interactive configuration sections ──────────────────────────────────────
@@ -2902,6 +3282,7 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
         print()
         print(f"  {_c(C['cyan'], 'a')})  Run all sections")
         print(f"  {_c(C['cyan'], 's')})  Show current configuration")
+        print(f"  {_c(C['cyan'], 'p')})  Save current config as preset")
         print(f"  {_c(C['cyan'], 'g')})  Generate sequences")
         print(f"  {_c(C['cyan'], 'v')})  Verify generated sequences")
         print(f"  {_c(C['cyan'], 'r')})  Run experiment" + _c(C["dim"], "  (python main.py)"))
@@ -2919,6 +3300,8 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
                 info("All-sections cancelled — returning to menu.")
         elif choice == "s":
             show_summary(cfg)
+        elif choice == "p":
+            _save_current_as_preset(cfg)
         elif choice == "r":
             show_slim_summary(cfg, "run")
             if dirty:
@@ -2990,9 +3373,67 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
             input(_c(C["dim"], "  Press Enter to continue …"))
 
 
+def _sequences_exist() -> bool:
+    """Check whether any generated sequence CSVs exist."""
+    seq_dir = PROJECT_ROOT / SEQUENCE_ROOT.strip("/")
+    if not seq_dir.exists():
+        return False
+    return any(seq_dir.glob("**/*.csv"))
+
+
+def _run_preset_setup(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Load a preset and run only the sections it does NOT cover.
+
+    Returns the updated cfg dict.  The caller is responsible for saving.
+    """
+    preset = _pick_preset()
+    if preset is None:
+        # User chose "Custom" — run the full quick setup instead
+        return configure_quick(cfg)
+
+    cfg = _apply_preset(preset, cfg)
+
+    # Determine which sections are open (not fully covered by the preset)
+    open_ids = _uncovered_sections(preset)
+    locked_ids = _locked_sections(preset)
+
+    clear()
+    header("Setup (preset: {})".format(preset.get("name", "?")))
+
+    if locked_ids:
+        info("Locked by preset (skip):  " + ", ".join(f"§{sid} {SECTION_FIELDS[sid]['label']}" for sid in locked_ids))
+    if open_ids:
+        info("You will configure:      " + ", ".join(f"§{sid} {SECTION_FIELDS[sid]['label']}" for sid in open_ids))
+    print()
+
+    # Map section IDs to their configure functions
+    section_fn = {
+        "1": configure_machine,
+        "2": configure_input,
+        "3": configure_triggers,
+        "4": configure_design,
+        "5": configure_shield_reward,
+        "6": configure_audio,
+        "7": configure_stimgen,
+        "8": configure_dialog,
+    }
+
+    for sid in open_ids:
+        fn = section_fn.get(sid)
+        if fn:
+            try:
+                cfg = fn(cfg)
+            except GoBack:
+                info(f"Section {sid} cancelled — continuing.")
+
+    show_summary(cfg)
+    return cfg
+
+
 def run_section_menu(cfg: Dict[str, Any]) -> None:
-    """Top-level menu — Quick Setup vs. Advanced Settings."""
+    """Top-level menu — Preset, Quick Setup, or Advanced Settings."""
     dirty = False
+    active_preset_name: Optional[str] = None
 
     while True:
         clear()
@@ -3002,11 +3443,17 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
             print(_c(C["yellow"], "  ← unsaved changes in memory"))
             print()
 
+        if active_preset_name:
+            print(_c(C["cyan"], f"  Preset: {active_preset_name}") + _c(C["dim"], "  (study design locked)"))
+            print()
+
         print("  Setup mode:\n")
-        print(f"    {_c(C['green'], '1')})  Quick Setup — essential settings only")
-        print(f"    {_c(C['green'], '2')})  Advanced Settings — all sections")
+        print(f"    {_c(C['green'], '1')})  Load Preset — pick a study design, configure your machine only")
+        print(f"    {_c(C['green'], '2')})  Quick Setup — essential settings only")
+        print(f"    {_c(C['green'], '3')})  Advanced Settings — all sections")
         print()
         print(f"  {_c(C['cyan'], 's')})  Show current configuration")
+        print(f"  {_c(C['cyan'], 'p')})  Save current config as preset")
         print(f"  {_c(C['cyan'], 'g')})  Generate sequences")
         print(f"  {_c(C['cyan'], 'v')})  Verify generated sequences")
         print(f"  {_c(C['cyan'], 'r')})  Run experiment" + _c(C["dim"], "  (python main.py)"))
@@ -3024,11 +3471,30 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
             break
         elif choice == "1":
             try:
+                cfg = _run_preset_setup(cfg)
+            except GoBack:
+                info("Preset setup cancelled.")
+                continue
+            dirty = True
+            if prompt_yn("Save configuration?", True):
+                _write_laser_task_config(cfg)
+                _save_stimgen_from_cfg(cfg.copy())
+                dirty = False
+                if cfg.get("_stimgen_updates") or not _sequences_exist():
+                    if prompt_yn("Generate sequences now?", True):
+                        if run_sequence_generation(cfg.copy()):
+                            success("Sequences generated.")
+                success("Configuration saved.")
+            else:
+                info("Changes held in memory — use 's' to review, 'q' to save & quit.")
+        elif choice == "2":
+            try:
                 cfg = configure_quick(cfg)
             except GoBack:
                 info("Quick setup cancelled.")
                 continue
             dirty = True
+            active_preset_name = None
             show_summary(cfg)
             if prompt_yn("Save quick settings?", True):
                 _write_laser_task_config(cfg)
@@ -3037,11 +3503,14 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
                 success("Quick settings saved.")
             else:
                 info("Changes held in memory — use 's' to review, 'q' to save & quit.")
-        elif choice == "2":
+        elif choice == "3":
             if _run_advanced_menu(cfg):
                 dirty = True
+                active_preset_name = None
         elif choice == "s":
             show_summary(cfg)
+        elif choice == "p":
+            _save_current_as_preset(cfg)
         elif choice == "r":
             show_slim_summary(cfg, "run")
             if dirty:
@@ -3137,6 +3606,50 @@ def main() -> None:
     # ── interactive ──
     cfg = _read_laser_task_config()
 
+    # --preset <name>  — directly load a preset from presets/ and skip the picker
+    preset_arg = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--preset" and i + 1 < len(sys.argv):
+            preset_arg = sys.argv[i + 1]
+            break
+
+    if preset_arg:
+        # Load a specific preset by name (with or without .json)
+        preset_path = PRESET_DIR / f"{preset_arg}.json" if not preset_arg.endswith(".json") else PRESET_DIR / preset_arg
+        if not preset_path.exists():
+            # Try as a bare filename
+            alt = PRESET_DIR / preset_arg
+            if alt.exists():
+                preset_path = alt
+            else:
+                fail(f"Preset not found: {preset_path}")
+                info("Available presets:")
+                for pf in _scan_presets():
+                    info(f"  {pf.stem}")
+                return
+        preset = _load_preset(preset_path)
+        _show_preset_summary(preset)
+        if not prompt_yn("Use this preset?", True):
+            info("Cancelled.")
+            return
+        cfg = _apply_preset(preset, cfg)
+        clear()
+        header("Machine Setup (preset: {})".format(preset.get("name", "?")))
+        info("Study design is set by the preset. Configure your machine settings below.")
+        print()
+        cfg = configure_machine(cfg)
+        cfg = configure_input(cfg)
+        cfg = configure_triggers(cfg)
+        show_summary(cfg)
+        if prompt_yn("Save configuration?", True):
+            _write_laser_task_config(cfg)
+            _save_stimgen_from_cfg(cfg.copy())
+            success("Configuration saved.")
+            if prompt_yn("Generate sequences now?", True):
+                if run_sequence_generation(cfg.copy()):
+                    success("Sequences generated.")
+        return
+
     if "--full" in sys.argv:
         # Straight into the full wizard
         clear()
@@ -3162,11 +3675,11 @@ def main() -> None:
                     info("Run the experiment with:")
                     print(_c(C["green"], f"    cd {PROJECT_ROOT}"))
                     print(_c(C["green"], "    python main.py"))
-            else:
-                print()
-                info("Run the experiment with:")
-                print(_c(C["green"], f"    cd {PROJECT_ROOT}"))
-                print(_c(C["green"], "    python main.py"))
+        else:
+            print()
+            info("Run the experiment with:")
+            print(_c(C["green"], f"    cd {PROJECT_ROOT}"))
+            print(_c(C["green"], "    python main.py"))
     else:
         run_section_menu(cfg)
 

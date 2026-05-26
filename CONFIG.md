@@ -196,3 +196,66 @@ If you prefer editing files directly over the wizard:
 4. **Shared settings**: Edit `config_shared.py`.
 
 > After editing stimgen config, you must regenerate sequences for changes to take effect.
+
+---
+
+## Experiment Presets
+
+A preset is a JSON file in `presets/` that captures configuration values so they can be shared and reproduced. **Any field can go in a preset** — the setup wizard automatically detects which sections are fully covered (locked) and which are open, then only prompts you for the open ones.
+
+### How routing works
+
+The wizard maps config fields to 8 sections. If a preset contains **all** fields for a section, that section is locked (skipped). If any field is missing, the section is open (you'll be prompted).
+
+| § | Section | Namespace | Fields |
+|---|---|---|---|
+| 1 | Machine setup | experiment | `target_os`, `window_size`, `fullscreen`, `screen_index`, `monitor_name`, `target_refresh_rate` |
+| 2 | Input & controls | experiment | `input_device`, `key_left`, `key_right`, `use_legacy_key_tracking` |
+| 3 | Triggers & hardware | experiment | `trigger_mode`, `serial_port`, `serial_baud_rate`, `parallel_address` |
+| 4 | Experiment design | experiment | `enable_practice`, `show_earth_background`, `reset_reward_after_practice` |
+| 5 | Shield & reward | experiment | `allow_shield_adjustment`, `fixed_shield_degrees`, `rotation_speed`, `circle_radius`, `loss_factor`, `currency_symbol`, `min_laser_duration_frames` |
+| 6 | Auditory MMN | experiment | `enable_audio`, `mmn_type`, `tone_freq_standard`, `tone_freq_deviant`, `tone_duration`, `tone_duration_standard`, `tone_duration_deviant`, `tone_isi_frames`, `tone_volume` |
+| 7 | Sequence generation | stimgen | `PRACTICE_VOLATILITY`, `PRACTICE_NOISE`, `PRACTICE_NOISE_MODE`, `PRACTICE_N_SESSIONS`, `PRACTICE_BLOCK_DURATION_MIN`, `MAIN_VOLATILITY`, `MAIN_NOISE`, `MAIN_NOISE_MODE`, `MAIN_N_SESSIONS`, `MAIN_BLOCK_DURATION_MIN`, `JUMP_DURATION_MEAN_SEC`, `JUMP_DURATION_MIN_SEC`, `JUMP_DURATION_MAX_SEC`, `JUMP_VALUE_SET` |
+| 8 | Startup dialog | experiment | `dialog_fields`, `visits`, `framings` |
+
+A preset that includes sections 4–8 locks the study design and only prompts for machine settings (1–3). A preset that includes all 8 sections locks everything. A minimal preset that only includes section 7 still lets you configure everything else interactively.
+
+### Usage
+
+```bash
+# Interactive preset picker
+python setup.py
+# → choose "1) Load Preset"
+
+# Direct preset load (skip the picker)
+python setup.py --preset PEDUKS_default
+
+# Save current config as a preset (from the interactive menu, press 'p')
+python setup.py
+```
+
+### Preset JSON format
+
+```json
+{
+    "name": "PEDUKS_default",
+    "description": "PEDUKS study replication — fixed 20° shield, duration MMN",
+    "notes": "Optional notes shown in the summary",
+    "experiment": {
+        "enable_practice": true,
+        "allow_shield_adjustment": false,
+        "fixed_shield_degrees": 20.0,
+        "...": "(any experiment fields — only included ones are locked)"
+    },
+    "stimgen": {
+        "MAIN_VOLATILITY": ["stable", "volatile"],
+        "MAIN_NOISE": ["noisy"],
+        "JUMP_VALUE_SET": [-40, -30, -20, 20, 30, 40],
+        "...": "(any stimgen fields — only included ones are locked)"
+    }
+}
+```
+
+When saving a preset from the menu, you choose which sections to lock. Study-design sections (4–8) are pre-selected; machine-local sections (1–3) are off by default but can be added.
+
+Commit preset files to git to share them. Other researchers clone the repo, pick the preset, and configure only the open sections.
