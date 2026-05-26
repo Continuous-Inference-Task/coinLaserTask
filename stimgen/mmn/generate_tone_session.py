@@ -48,6 +48,8 @@ def generate_tone_session(
         Session structure with keys ``n_blocks``, ``block_duration``,
         ``block_sequence``, and ``blocks`` (list of per-block dicts).
     """
+    os.makedirs(output_dir, exist_ok=True)
+
     session: Dict[str, Any] = {
         "n_blocks": len(conditions),
         "block_duration": 3,
@@ -121,6 +123,8 @@ def write_block_csv_files(session: Dict[str, Any], sess_name: str, output_dir: s
     sess_name : str
         Base name for output files.
     """
+    os.makedirs(output_dir, exist_ok=True)
+    
     for i in range(session["n_blocks"]):
         path = os.path.join(output_dir, f"{sess_name}_block{i + 1}.csv")
         with open(path, "w", newline="") as fh:
