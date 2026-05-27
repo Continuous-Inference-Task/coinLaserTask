@@ -173,6 +173,8 @@ class ExperimentConfig:
     loss_factor: float = 0.003
     currency_symbol: str = "€"
 
+    flash_feedback: bool = False
+
     # -- Trigger settings --
     trigger_mode: str = "parallel"
     """How event markers are sent to the recording system.
