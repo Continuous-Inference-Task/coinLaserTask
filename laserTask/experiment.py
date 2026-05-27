@@ -798,7 +798,7 @@ def run_experiment(
                 log=False,
             )
             S["rbar_change"].setSize(
-                (cfg.style.reward_bar_width, reward_tracker.red_bar_length),
+                (cfg.style.reward_bar_width, reward_tracker.flash_bar_length),
                 log=False,
             )
             S["rbar_change"].setFillColor(reward_tracker.change_color, log=False)
