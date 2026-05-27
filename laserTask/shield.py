@@ -82,7 +82,7 @@ class ShieldSizeConfig:
                 ShieldSize(
                     degrees=degrees,
                     loss=FramingProfile(
-                        hit=EventReward(total=0.0),
+                        hit=EventReward(total=0.0, colour=[-1, 1, -1]),
                         miss=EventReward(total=-lf, colour=[1, -1, -1]),
                     ),
                     win=FramingProfile(
@@ -90,7 +90,7 @@ class ShieldSizeConfig:
                             total=+lf,
                             colour=[-1, 1, -1],
                         ),
-                        miss=EventReward(total=-lf, colour=[1, -1, -1]),
+                        miss=EventReward(total=0.0, colour=[1, -1, -1]),
                     ),
                 )
             ],
@@ -105,7 +105,7 @@ class ShieldSizeConfig:
                 ShieldSize(
                     degrees=20.0,
                     loss=FramingProfile(
-                        hit=EventReward(total=0.0),
+                        hit=EventReward(total=0.0, colour=[-1, 1, -1]),
                         miss=EventReward(total=-lf, colour=[1, -1, -1]),
                     ),
                     win=FramingProfile(
@@ -113,7 +113,7 @@ class ShieldSizeConfig:
                             total=+lf,
                             colour=[-1, 1, -1],
                         ),
-                        miss=EventReward(total=-lf, colour=[1, -1, -1]),
+                        miss=EventReward(total=0.0, colour=[1, -1, -1]),
                     ),
                 )
             ],
@@ -133,7 +133,7 @@ class ShieldSizeConfig:
                     ),
                     win=FramingProfile(
                         hit=EventReward(total=lf, colour=[-1, 1, -1]),
-                        miss=EventReward(total=-lf, colour=[1, -1, -1]),
+                        miss=EventReward(total=0.0, colour=[1, -1, -1]),
                     ),
                 ),
                 ShieldSize(
