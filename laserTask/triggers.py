@@ -79,33 +79,41 @@ class TriggerManager:
     def send(self, code: int) -> None:
         """Send a single trigger *code* (int, typically 1–127)."""
         if self.mode == "serial":
-            # Current implementation sends 4 bytes: "m", "h", chr(code), chr(0).
-            # This may be a protocol for older BrainAmp hardware or a non-TriggerBox
-            # serial device.  The standard BrainVision TriggerBox (rev.02 and Plus)
-            # protocol expects a *single byte* — just the code value.
+            # -------------------------------------------------------------------
+            # HARDWARE NOTE — the lab uses a PST Chronos (PST-100430), NOT a
+            # BrainVision TriggerBox.  Chronos is a USB HID/bulk device — it does
+            # NOT present as a serial (COM) port.  The current serial-mode code
+            # (4-byte "m", "h", chr(code), chr(0) protocol) is therefore
+            # incompatible with the lab's actual hardware.
             #
-            # TODO: verify with the lab what serial trigger hardware is used.
-            # If it's a standard BrainVision TriggerBox, replace with:
+            # The Chronos has 16 digital outputs accessible via the I/O Expander
+            # or Auxiliary I/O Breakout Cable.  In E-Prime these are controlled via
+            # ChronosDigitalOut.WriteByte(value).  From Python, the options are:
             #
-            #   self._port.write(bytes([code]))
-            #   self._port.flush()
+            #   Option A — use the `psychopy-chronos` package (pip install).
+            #   It communicates via libusb (VID=0x2266, PID=0x0007, EP 0x01/0x81).
+            #   Currently supports button events + LED control but NOT digital
+            #   output.  To add digital-out support, we need the USB command
+            #   protocol for ChronosDigitalOut — likely a vendor-specific control
+            #   or bulk transfer.  This could be reverse-engineered from an
+            #   E-Prime USB trace.
             #
-            # HOW TO TEST:
-            #   1. Connect the trigger hardware to the MEG/EEG recording PC.
-            #   2. Run in dummy mode first: `python -c "
-            #      from laserTask.triggers import TriggerManager
-            #      from laserTask.config import ExperimentConfig
-            #      cfg = ExperimentConfig(trigger_mode='dummy')
-            #      trig = TriggerManager(cfg)
-            #      trig.send(30)  # should print '[TRIGGER] 30'
-            #      trig.close()"`
-            #   3. Switch to serial mode with the correct port/baud rate.
-            #   4. Send a known code (e.g., 30) and check BrainVision Recorder:
-            #      - With current 4-byte protocol: look for markers S 109, S 104, S 30
-            #        appearing in sequence.  If it works, the lab's hardware expects this.
-            #      - With single-byte protocol: BrainVision Recorder should show
-            #        exactly one marker "S 30" at the expected baud rate.
-            #   5. Send code 0 to verify the reset/pulse boundary works.
+            #   Option B — connect a simple USB-to-serial adapter (FTDI cable,
+            #   Arduino, or BrainVision TriggerBox) between the stimulus PC and
+            #   the EEG/MEG amplifier's trigger port.  The current serial code
+            #   would then work with the appropriate byte protocol (typically a
+            #   single byte for most trigger interfaces).
+            #
+            #   Option C — add a dedicated "chronos" trigger_mode that opens the
+            #   Chronos via libusb/pyusb, sends the init sequence (136 packets),
+            #   and writes digital-out commands.  This requires the Chronos
+            #   digital-out USB protocol to be documented or captured.
+            #
+            # TODO: decide which option to implement and verify with the lab.
+            #   - Option B is the fastest path if a USB-serial adapter is available.
+            #   - Option A/C requires protocol work but gives direct Chronos control.
+            #
+            # -------------------------------------------------------------------
             for ch in ("m", "h", chr(code), chr(0)):
                 self._port.write(ch.encode())
             self._port.flush()

@@ -1,9 +1,17 @@
 # ============================================================
+# Python version requirement
+# ============================================================
+# This project REQUIRES Python 3.10.
+# PsychoPy and psychtoolbox have known issues with 3.11+.
+
+# ============================================================
 # Core experiment dependencies (PsychoPy-based laser task)
 # ============================================================
 psychopy
+psychtoolbox
 PyQt6
 pylsl
+sounddevice
 
 # ============================================================
 # Scientific computing

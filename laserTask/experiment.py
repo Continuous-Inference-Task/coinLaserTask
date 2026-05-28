@@ -17,7 +17,7 @@ else:
     prefs.hardware["audioLib"] = ["sounddevice", "pygame"]
 
 import numpy as np
-from psychopy import core, data, logging, visual
+from psychopy import core, data, logging, monitors, visual
 from psychopy.hardware import keyboard
 
 from laserTask.dialog import show_session_dialog
@@ -38,6 +38,88 @@ from laserTask.triggers import TriggerManager
 
 _PACKAGE_DIR = Path(__file__).parent
 _PROJECT_ROOT = _PACKAGE_DIR.parent
+
+
+def _ensure_monitor(monitor_name: str, fallback_resolution=(1920, 1080)) -> None:
+    """Make sure *monitor_name* exists in PsychoPy's monitor centre.
+
+    If the named monitor doesn't exist, a minimal profile is auto-created
+    so ``visual.Window(monitor=...)`` won't fail on first run.
+
+    This is a common pain point on macOS where no monitor profiles ship
+    with a clean PsychoPy install.
+    """
+    if monitor_name in monitors.getAllMonitors():
+        return
+
+    logging.warning(
+        f"Monitor '{monitor_name}' not found in PsychoPy monitor centre — "
+        f"auto-creating with fallback resolution {fallback_resolution}."
+    )
+    try:
+        mon = monitors.Monitor(
+            monitor_name,
+            width=53.0,   # ~24" diagonal in cm
+            distance=60.0,  # typical viewing distance
+            notes="Auto-created by coin_laser_task.",
+        )
+        mon.setSizePix(fallback_resolution)
+        mon.save()
+        logging.warning(
+            f"Auto-created monitor '{monitor_name}'. "
+            f"Edit in PsychoPy Monitor Centre or re-run setup.py for "
+            f"accurate dimensions."
+        )
+    except Exception as exc:
+        logging.warning(
+            f"Could not auto-create monitor '{monitor_name}': {exc}. "
+            f"The experiment may fail to open a window."
+        )
+
+
+def _preflight_macos() -> None:
+    """Print macOS-specific permission reminders before opening a window.
+
+    PsychoPy (especially with PTB / ioHub keyboard backends) needs two
+    permissions on macOS:
+
+    1. **Accessibility** — to control window placement, fullscreen, etc.
+    2. **Input Monitoring** — to read keyboard events.
+
+    Without these, PsychoPy may hang, crash, or silently fail to detect
+    keypresses.  The user must grant them manually.
+    """
+    if sys.platform != "darwin":
+        return
+
+    # Only print once per session (set an env var so sub-processes don't
+    # repeat the message).
+    if os.environ.get("_COIN_LASER_MACOS_PREFLIGHT_DONE"):
+        return
+    os.environ["_COIN_LASER_MACOS_PREFLIGHT_DONE"] = "1"
+
+    import textwrap
+
+    msg = textwrap.dedent(f"""\
+    {'─' * 57}
+      macOS Permissions Required
+
+      PsychoPy needs two permissions to run this experiment correctly:
+
+      1.  Accessibility  —  System Settings > Privacy & Security >
+                            Accessibility
+      2.  Input Monitoring — System Settings > Privacy & Security >
+                            Input Monitoring
+
+      If PsychoPy (or Terminal / iTerm) is NOT in these lists:
+        • Click the [+] button
+        • Navigate to your terminal app (e.g. /Applications/iTerm.app)
+        • Add it and toggle it ON
+
+      You may need to restart your terminal after granting permissions.
+    {'─' * 57}
+    """)
+    print(msg, flush=True)
 
 
 def quit_experiment(
@@ -187,6 +269,11 @@ def run_experiment(
     # ------------------------------------------------------------------ #
     #  WINDOW                                                             #
     # ------------------------------------------------------------------ #
+    # macOS: warn about required permissions before opening a window.
+    _preflight_macos()
+    # Ensure the monitor profile exists in PsychoPy's monitor centre.
+    _ensure_monitor(cfg.monitor_name)
+
     win = visual.Window(
         size=cfg.window_size,
         fullscr=cfg.fullscreen,
