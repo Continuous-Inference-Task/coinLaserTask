@@ -16,7 +16,8 @@ class TriggerManager:
 
     Examples
     --------
-    >>> cfg = ExperimentConfig(trigger_mode="serial", serial_port="COM6")
+    >>> from laserTask.config import get_config
+    >>> cfg = get_config()
     >>> trig = TriggerManager(cfg)
     >>> trig.send(TRIGGER_CODES["exp_start"])
     >>> trig.close()
