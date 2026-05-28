@@ -78,14 +78,15 @@ class ShieldSizeConfig:
         return self.size_degrees[self.default_index]
 
     @classmethod
-    def fixed_custom(cls, degrees: float = 20.0, loss_factor: float = 0.003) -> "ShieldSizeConfig":
+    def fixed_custom(cls, degrees: float = 20.0, loss_factor: float = 0.003, flash_feedback=False) -> "ShieldSizeConfig": 
+        # flash_feedback: Whether to show the bar flashes on hit/miss
         lf = loss_factor
         return cls(
             sizes=[
                 ShieldSize(
                     degrees=degrees,
                     loss=FramingProfile(
-                        hit=EventReward(total=0.0, bar_magnitude=lf, colour=[-1, 1, -1]),
+                        hit=EventReward(total=0.0, bar_magnitude=lf if flash_feedback==True else 0.0, colour=[-1, 1, -1]), 
                         miss=EventReward(total=-lf, bar_magnitude=lf, colour=[1, -1, -1]),
                     ),
                     win=FramingProfile(
@@ -94,7 +95,7 @@ class ShieldSizeConfig:
                             bar_magnitude=lf, 
                             colour=[-1, 1, -1],
                         ),
-                        miss=EventReward(total=0.0, bar_magnitude=lf, colour=[1, -1, -1]),
+                        miss=EventReward(total=0.0, bar_magnitude=lf if flash_feedback==True else 0.0, colour=[1, -1, -1]),
                     ),
                 )
             ],
@@ -102,14 +103,14 @@ class ShieldSizeConfig:
         )
 
     @classmethod
-    def peduks_fixed(cls, loss_factor: float = 0.003) -> "ShieldSizeConfig":
+    def peduks_fixed(cls, loss_factor: float = 0.003, flash_feedback=False) -> "ShieldSizeConfig":
         lf = loss_factor
         return cls(
             sizes=[
                 ShieldSize(
                     degrees=20.0,
                     loss=FramingProfile(
-                        hit=EventReward(total=0.0, bar_magnitude=lf, colour=[-1, 1, -1]),
+                        hit=EventReward(total=0.0, bar_magnitude=lf if flash_feedback==True else 0.0, colour=[-1, 1, -1]),
                         miss=EventReward(total=-lf, bar_magnitude=lf, colour=[1, -1, -1]),
                     ),
                     win=FramingProfile(
@@ -118,7 +119,7 @@ class ShieldSizeConfig:
                             bar_magnitude=lf, 
                             colour=[-1, 1, -1],
                         ),
-                        miss=EventReward(total=0.0, bar_magnitude=lf, colour=[1, -1, -1]),
+                        miss=EventReward(total=0.0, bar_magnitude=lf if flash_feedback==True else 0.0, colour=[1, -1, -1]),
                     ),
                 )
             ],
@@ -126,41 +127,41 @@ class ShieldSizeConfig:
         )
 
     @classmethod
-    def adjustable_standard(cls, loss_factor: float = 0.003) -> "ShieldSizeConfig":
+    def adjustable_standard(cls, loss_factor: float = 0.003, flash_feedback=True) -> "ShieldSizeConfig":
         lf = loss_factor
         return cls(
             sizes=[
                 ShieldSize(
                     degrees=10.0,
                     loss=FramingProfile(
-                        hit=EventReward(total=0.0, bar_magnitude=lf if cfg.flash_feedback==True else 0.0, colour=[-1, 1, -1]),
+                        hit=EventReward(total=0.0, bar_magnitude=lf if flash_feedback==True else 0.0, colour=[-1, 1, -1]),
                         miss=EventReward(total=-lf, bar_magnitude=lf,  colour=[1, -1, -1]),
                     ),
                     win=FramingProfile(
                         hit=EventReward(total=lf, bar_magnitude=lf, colour=[-1, 1, -1]),
-                        miss=EventReward(total=0.0, bar_magnitude=lf, colour=[1, -1, -1]),
+                        miss=EventReward(total=0.0, bar_magnitude=lf if flash_feedback==True else 0.0, colour=[1, -1, -1]),
                     ),
                 ),
                 ShieldSize(
                     degrees=20.0,
                     loss=FramingProfile(
-                        hit=EventReward(total=-(lf / 3.0), bar_magnitude=lf, colour=[-1, 1, -1]),
+                        hit=EventReward(total=-(lf / 3.0), bar_magnitude=lf if flash_feedback==True else 0.0, colour=[-1, 1, -1]),
                         miss=EventReward(total=-lf, bar_magnitude=lf, colour=[1, -1, -1]),
                     ),
                     win=FramingProfile(
                         hit=EventReward(total=lf * (2.0 / 3.0), bar_magnitude=lf *(2.0 / 3.0), colour=[-1, 1, -1]),
-                        miss=EventReward(total=0.0, bar_magnitude=lf, colour=[1, -1, -1]),
+                        miss=EventReward(total=0.0, bar_magnitude=lf if flash_feedback==True else 0.0, colour=[1, -1, -1]),
                     ),
                 ),
                 ShieldSize(
                     degrees=30.0,
                     loss=FramingProfile(
-                        hit=EventReward(total=-(lf / 2.0), bar_magnitude=lf / 2.0, colour=[-1, 1, -1]),
+                        hit=EventReward(total=-(lf / 2.0), bar_magnitude=lf / 2.0 if flash_feedback==True else 0.0, colour=[-1, 1, -1]),
                         miss=EventReward(total=-lf, bar_magnitude=lf, colour=[1, -1, -1]),
                     ),
                     win=FramingProfile(
                         hit=EventReward(total=lf / 2.0, bar_magnitude=lf / 2.0, colour=[-1, 1, -1]),
-                        miss=EventReward(total=0.0, bar_magnitude=lf, colour=[1, -1, -1]),
+                        miss=EventReward(total=0.0, bar_magnitude=lf if flash_feedback==True else 0.0, colour=[1, -1, -1]),
                     ),
                 ),
             ],
