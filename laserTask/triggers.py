@@ -29,48 +29,75 @@ class TriggerManager:
         self._outlet = None
 
         if self.mode == "serial":
-            import serial
-            self._port = serial.Serial(
-                config.serial_port,
-                config.serial_baud_rate,
-                timeout=config.serial_timeout,
-            )
-            logging.exp(f"Opened serial trigger port {config.serial_port}")
+            try:
+                import serial
+                self._port = serial.Serial(
+                    config.serial_port,
+                    config.serial_baud_rate,
+                    timeout=config.serial_timeout,
+                )
+                logging.exp(f"Opened serial trigger port {config.serial_port}")
+            except Exception as exc:
+                logging.error(
+                    f"Could not open serial trigger port '{config.serial_port}': {exc}. "
+                    "Falling back to dummy trigger mode."
+                )
+                print(f"\n  ⚠  WARNING: Serial trigger port initialization failed: {exc}")
+                print("     Falling back to DUMMY trigger mode.\n")
+                self.mode = "dummy"
 
         elif self.mode == "parallel":
-            from psychopy import parallel
-            addr = config.parallel_address
-            if isinstance(addr, str):
-                addr_str = addr.strip()
-                if addr_str.lower().startswith("0x"):
-                    try:
-                        addr = int(addr_str, 16)
-                    except ValueError:
-                        pass
+            try:
+                from psychopy import parallel
+                addr = config.parallel_address
+                if isinstance(addr, str):
+                    addr_str = addr.strip()
+                    if addr_str.lower().startswith("0x"):
+                        try:
+                            addr = int(addr_str, 16)
+                        except ValueError:
+                            pass
+                    else:
+                        try:
+                            addr = int(addr_str)
+                        except ValueError:
+                            pass
+                self._port = parallel.ParallelPort(address=addr)
+                if isinstance(addr, int):
+                    logging.exp(f"Opened parallel trigger port {addr:#x}")
                 else:
-                    try:
-                        addr = int(addr_str)
-                    except ValueError:
-                        pass
-            self._port = parallel.ParallelPort(address=addr)
-            if isinstance(addr, int):
-                logging.exp(f"Opened parallel trigger port {addr:#x}")
-            else:
-                logging.exp(f"Opened parallel trigger port {addr}")
+                    logging.exp(f"Opened parallel trigger port {addr}")
+            except Exception as exc:
+                logging.error(
+                    f"Could not open parallel trigger port at address '{config.parallel_address}': {exc}. "
+                    "Falling back to dummy trigger mode."
+                )
+                print(f"\n  ⚠  WARNING: Parallel trigger port initialization failed: {exc}")
+                print("     Falling back to DUMMY trigger mode.\n")
+                self.mode = "dummy"
 
         elif self.mode == "lsl":
-            import pylsl
-            info = pylsl.StreamInfo(
-                "LaserTask_Triggers", "Markers", 1, 0, "int32",
-                "laser_task_triggers",
-            )
-            self._outlet = pylsl.StreamOutlet(info)
-            logging.exp("Created LSL trigger outlet")
+            try:
+                import pylsl
+                info = pylsl.StreamInfo(
+                    "LaserTask_Triggers", "Markers", 1, 0, "int32",
+                    "laser_task_triggers",
+                )
+                self._outlet = pylsl.StreamOutlet(info)
+                logging.exp("Created LSL trigger outlet")
+            except Exception as exc:
+                logging.error(
+                    f"Could not open LSL trigger outlet: {exc}. "
+                    "Falling back to dummy trigger mode."
+                )
+                print(f"\n  ⚠  WARNING: LSL trigger initialization failed: {exc}")
+                print("     Falling back to DUMMY trigger mode.\n")
+                self.mode = "dummy"
 
-        elif self.mode == "dummy":
+        if self.mode == "dummy":
             logging.exp("TriggerManager in dummy mode (console only)")
 
-        else:
+        elif self.mode not in ("serial", "parallel", "lsl"):
             raise ValueError(
                 f"Unknown trigger_mode '{self.mode}'. "
                 "Choose from: 'serial', 'parallel', 'lsl', 'dummy'."

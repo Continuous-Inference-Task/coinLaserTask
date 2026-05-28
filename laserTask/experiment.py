@@ -318,7 +318,7 @@ def run_experiment(
     save_path = build_save_path(cfg, exp_info)
     main_conditions = data.importConditions(session_path)
 
-    wins_condition = 1 if exp_info["framing"] == "win" else 0
+    wins_condition = 1 if exp_info.get("framing") == "win" else 0
 
     practice_mode = exp_info.get("practice_mode", "Practice + Main")
     practice_only = (practice_mode == "Practice Only")

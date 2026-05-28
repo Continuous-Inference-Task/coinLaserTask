@@ -25,7 +25,7 @@
         "parallel_address": "/dev/parport0",
         "enable_audio": true,
         "mmn_type": "duration",
-        "show_earth_background": false,
+        "show_earth_background": true,
         "tone_freq_standard": 440.0,
         "tone_freq_deviant": 440.0,
         "tone_duration": 0.05,
@@ -35,12 +35,12 @@
         "tone_isi_frames": 24,
         "enable_practice": true,
         "reset_reward_after_practice": true,
-        "min_laser_duration_frames": 6,
+        "min_laser_duration_frames": 4,
         "visits": ["1"],
         "sessions": ["1"],
         "orders": ["1", "2", "3", "4"],
-        "framings": ["loss"],
-        "dialog_fields": ["participant", "session", "order", "framing", "practice_mode"]
+        "framings": ["loss", "win"],
+        "dialog_fields": ["participant", "visit", "session", "order", "framing", "practice_mode"]
     },
     "stimgen": {
         "SAMPLE_RATE": 60,
