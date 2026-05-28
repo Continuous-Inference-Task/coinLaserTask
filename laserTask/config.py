@@ -8,15 +8,16 @@ from laserTask.shield import ShieldSizeConfig
 
 @dataclass
 class StimulusStyle:
-    """All visual-appearance settings in one place.
+    """Visual appearance settings for all on-screen elements.
 
-    Edit values here to change colours, sizes, positions, and fonts of
-    every visual element — no need to search through experiment logic.
+    This is the one configuration class that is still edited directly in
+    Python rather than via ``config.json``.  Change values here to adjust
+    colours, sizes, positions, and fonts without touching experiment logic.
 
     Notes
     -----
     Colour values use PsychoPy's ``rgb`` colour space where each channel
-    ranges from -1 (black) to +1 (full intensity).
+    ranges from -1 (black / off) to +1 (full intensity).
     """
 
     # -- General layout --
@@ -85,10 +86,11 @@ class StimulusStyle:
 
 @dataclass
 class ExperimentConfig:
-    """Central, single-source-of-truth configuration for the experiment.
+    """Schema and defaults for the experiment configuration.
 
-    Modify values here to adapt the experiment to a new setup without
-    touching any experiment-logic code below.
+    Runtime values are loaded from ``laserTask/config.json`` (generated
+    by ``python setup.py``).  Edit that file — or run the setup wizard —
+    rather than modifying defaults here directly.
     """
 
     # -- File paths (relative to script directory) --
@@ -295,12 +297,20 @@ class ExperimentConfig:
             else:
                 self.parallel_address = "/dev/parport0"
 
-        # Rebuild shield_sizes with the configured loss_factor so that
-        # changing loss_factor actually reaches the shield cost calculations.
+        # Rebuild shield_sizes from primary config fields so that changes
+        # to loss_factor, fixed_shield_degrees, and flash_feedback are
+        # reflected in the shield cost/colour calculations.
         if self.allow_shield_adjustment:
-            self.shield_sizes = ShieldSizeConfig.adjustable_standard(loss_factor=self.loss_factor)
+            self.shield_sizes = ShieldSizeConfig.adjustable_standard(
+                loss_factor=self.loss_factor,
+                flash_feedback=self.flash_feedback,
+            )
         else:
-            self.shield_sizes = ShieldSizeConfig.fixed_custom(degrees=self.fixed_shield_degrees, loss_factor=self.loss_factor)
+            self.shield_sizes = ShieldSizeConfig.fixed_custom(
+                degrees=self.fixed_shield_degrees,
+                loss_factor=self.loss_factor,
+                flash_feedback=self.flash_feedback,
+            )
 
         # Fall back to tone_duration if specific durations aren't set
         if self.tone_duration_standard < 0:
