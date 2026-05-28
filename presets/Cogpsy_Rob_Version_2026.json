@@ -52,7 +52,7 @@
         "NOISE_PRESETS": {
             "precise": 15,
             "noisy": 20,
-            "medium": 17.5
+            "medium": 10.0
         },
         "PRACTICE_VOLATILITY": ["medium"],
         "PRACTICE_NOISE": ["medium"],
@@ -60,7 +60,7 @@
         "PRACTICE_N_SESSIONS": 1,
         "PRACTICE_BLOCK_DURATION_MIN": 2,
         "MAIN_VOLATILITY": ["stable", "volatile"],
-        "MAIN_NOISE": ["noisy"],
+        "MAIN_NOISE": ["precise"],
         "MAIN_NOISE_MODE": "counterbalanced",
         "MAIN_N_SESSIONS": 1,
         "MAIN_BLOCK_DURATION_MIN": 4,

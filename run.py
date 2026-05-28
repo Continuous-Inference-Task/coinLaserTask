@@ -133,9 +133,18 @@ def _find_python310() -> str | None:
     # 5. OS-specific common install locations
     common_paths: list[Path] = []
 
+    # Dynamic pyenv versions check (handles any 3.10.x folder, e.g. 3.10.20)
+    pyenv_versions_dir = Path.home() / ".pyenv" / "versions"
+    if pyenv_versions_dir.is_dir():
+        for item in pyenv_versions_dir.iterdir():
+            if item.is_dir() and item.name.startswith("3.10"):
+                common_paths.append(item / "bin" / "python3.10")
+                common_paths.append(item / "bin" / "python3")
+                common_paths.append(item / "bin" / "python")
+
     if CURRENT_OS == "linux":
-        common_paths = [
-            # pyenv
+        common_paths.extend([
+            # pyenv fallback
             Path.home() / ".pyenv" / "versions" / "3.10" / "bin" / "python3.10",
             Path.home() / ".pyenv" / "versions" / "3.10" / "bin" / "python3",
             Path.home() / ".pyenv" / "shims" / "python3.10",
@@ -146,10 +155,10 @@ def _find_python310() -> str | None:
             Path.home() / "miniconda3" / "envs" / "coinlaser" / "bin" / "python",
             Path.home() / "anaconda3" / "envs" / "coinlaser" / "bin" / "python",
             Path.home() / "micromamba" / "envs" / "coinlaser" / "bin" / "python",
-        ]
+        ])
     elif CURRENT_OS == "macos":
-        common_paths = [
-            # pyenv
+        common_paths.extend([
+            # pyenv fallback
             Path.home() / ".pyenv" / "versions" / "3.10" / "bin" / "python3.10",
             Path.home() / ".pyenv" / "versions" / "3.10" / "bin" / "python3",
             Path.home() / ".pyenv" / "shims" / "python3.10",
@@ -167,9 +176,9 @@ def _find_python310() -> str | None:
             # conda / mamba
             Path.home() / "miniconda3" / "envs" / "coinlaser" / "bin" / "python",
             Path.home() / "anaconda3" / "envs" / "coinlaser" / "bin" / "python",
-        ]
+        ])
     elif CURRENT_OS == "windows":
-        common_paths = [
+        common_paths.extend([
             # Windows Store / user install
             Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python310" / "python.exe",
             Path.home() / "AppData" / "Local" / "Microsoft" / "WindowsApps" / "python3.10.exe",
@@ -179,7 +188,7 @@ def _find_python310() -> str | None:
             # conda / mamba (Windows)
             Path.home() / "miniconda3" / "envs" / "coinlaser" / "python.exe",
             Path.home() / "anaconda3" / "envs" / "coinlaser" / "python.exe",
-        ]
+        ])
 
     for p in common_paths:
         try:

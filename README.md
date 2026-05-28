@@ -18,22 +18,23 @@ The project includes a smart cross-platform bootstrap script, **`run.py`**, whic
 python run.py
 ```
 
-This works out-of-the-box on **Windows, macOS, and Linux** with no manual virtual environment setup or package installation required.
+This should work out-of-the-box on **Windows, macOS, and Linux** with no manual virtual environment setup or package installation required.
 
 ### CLI Options
 
 Any arguments passed to `run.py` are forwarded directly to the configuration wizard:
 
-- `python run.py` — Opens the interactive configuration menu (and runs the setup GUI if chosen).
+- `python run.py` — Opens the interactive configuration menu.
 - `python run.py --full` — Starts the step-by-step onboarding wizard for all sections.
-- `python run.py --preset NAME` — Loads a study-design preset, then only prompts for machine-local settings (monitor, keys, triggers). Ideal for sharing reproducible configs via git.
+- `python run.py --preset NAME` — Loads a study-design preset, then only prompts for machine-local settings (monitor, keys, triggers).
 - `python run.py --report` — Displays a complete configuration printout.
-- `python run.py --generate` — Regenerates all experimental sequences.
+- `python run.py --generate [--verify]` — Regenerates experimental sequences (and verifies them if `--verify` is included).
+- `python run.py --reinstall` — Forces a clean reinstallation of all dependencies in the virtual environment.
 - `python run.py --help` — Shows the helper/usage message.
 
 ### Experiment Presets
 
-A **preset** is a JSON file in `presets/` that locks in the study design (shield, reward, audio, block design, etc.). When you load a preset, you only configure machine-specific settings — perfect for sharing reproducible experiment setups.
+A **preset** is a JSON file in `presets/` that locks in the study design (shield, reward, audio, block design, etc.). When you load a preset, you only configure machine-specific settings.
 
 ```bash
 # Interactive: pick a preset from the menu
@@ -53,6 +54,7 @@ You can save your current configuration as a new preset from the interactive men
 ```
 coin_laser_task/
 ├── setup.py                   # Central CLI onboarding & configuration wizard
+├── run.py                     # Cross-platform bootstrap script (venv setup, installs packages)
 ├── main.py                    # Experiment entry point (runs the PsychoPy interface)
 ├── requirements.txt           # Python package dependencies
 ├── README.md                  # Project documentation
@@ -60,6 +62,7 @@ coin_laser_task/
 ├── presets/                  # Study-design presets (JSON, committed to git)
 ├── laserTask/                 # Experiment Engine (PsychoPy)
 │   ├── config.py              #   Configuration loader (ExperimentConfig & StimulusStyle)
+│   ├── dialog.py              #   PyQt6 setup dialog replacing legacy wxWidgets
 │   ├── experiment.py          #   Core trial, block, and session execution logic
 │   ├── stimuli.py             #   Visual components (shield, laser, Earth, icons)
 │   ├── audio.py               #   Dynamic MMN auditory tone scheduler
@@ -116,6 +119,7 @@ To guarantee scientific accuracy and prevent runtime failures, the runner automa
 Validate both sequence generators and task components using the test suite:
 
 **On macOS/Linux:**
+
 ```bash
 # Run laser sequence generator tests
 ./stw/bin/python stimgen/laser/test_all.py
@@ -125,6 +129,7 @@ Validate both sequence generators and task components using the test suite:
 ```
 
 **On Windows:**
+
 ```cmd
 # Run laser sequence generator tests
 stw\Scripts\python stimgen/laser/test_all.py
