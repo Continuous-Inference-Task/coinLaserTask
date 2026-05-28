@@ -80,7 +80,7 @@ class RewardTracker(BaseRewardTracker):
             self.top_amount  = 0.2    
             self.bottom_amount = 0.0 
             self.change_color  = [-1, 1, -1]   # green for gains
-        self.red_bar_length = 0.0
+        self.flash_bar_length = 0.0
 
     def update(
         self, 
@@ -107,36 +107,31 @@ class RewardTracker(BaseRewardTracker):
     # -- internal --------------------------------------------------------- #
     def _on_hit(self, size_index: int) -> None:
         # Lookup delegates all framing/size-specific logic to ShieldSizeConfig.
-        total, scale, colour = self.shield_size.get_reward(
+        total, scale, magnitude, colour = self.shield_size.get_reward(
             size_index, self.wins, True
         )
-        self._apply_event(total, scale, colour)
+        self._apply_event(total, scale, magnitude, colour)
 
     def _on_miss(self, size_index: int) -> None:
         # Misses use the same config-driven lookup path as hits.
-        total, scale, colour = self.shield_size.get_reward(
+        total, scale, magnitude, colour = self.shield_size.get_reward(
             size_index, self.wins, False
         )
-        self._apply_event(total, scale, colour)
+        self._apply_event(total, scale, magnitude, colour)
 
+
+    # TODO: if flash_feedback = True: make size of flash equivalent to lf, somehow, irrespective of whether total goes up or down
+    # TODO: figure out how to access lf from here
     def _apply_event(
-        self, total: float, scale: float, colour: Optional[List[float]]
+        self, total: float, scale: float, magnitude: float, colour: Optional[List[float]]
     ) -> None:
         # Negative totals are losses, positive totals are gains, zero is neutral.
-        if total < 0:
-            if self.total > 0:
-                # total is already negative, so this reduces bar length and total.
-                self._bar_length += scale * total
-                self.total += total
-                self.red_bar_length = abs(scale * total)
-            else:
-                self._set_floor()
-        elif total > 0:
+        self.flash_bar_length = magnitude * scale 
+
+        self.total += total
+
+        if total != 0:
             self._bar_length += scale * total
-            self.total += total
-            self.red_bar_length = scale * total
-        else:
-            self.red_bar_length = 0.0
 
         # Only override colour when the event explicitly asks for it.
         if colour is not None:
@@ -145,7 +140,7 @@ class RewardTracker(BaseRewardTracker):
     def _set_floor(self):
         self.bar_length = 1e-5
         self.total = 0.0
-        self.red_bar_length = 0.0
+        self.flash_bar_length = 0.0
 
     def _clamp(self):
         """Handle bar-wrap and floor for both framing conditions."""
@@ -170,7 +165,7 @@ class RewardTracker(BaseRewardTracker):
                 self.bottom_amount = 0.0
             else:
                 self.bar_length = 1e-5
-                self.red_bar_length = 0
+                self.flash_bar_length = 0
                 self.top_amount = 0.2 # NOTE: changed from 1
                 self.bottom_amount = 0
 
