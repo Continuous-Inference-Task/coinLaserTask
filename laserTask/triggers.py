@@ -107,41 +107,7 @@ class TriggerManager:
     def send(self, code: int) -> None:
         """Send a single trigger *code* (int, typically 1–127)."""
         if self.mode == "serial":
-            # -------------------------------------------------------------------
-            # HARDWARE NOTE — the lab uses a PST Chronos (PST-100430), NOT a
-            # BrainVision TriggerBox.  Chronos is a USB HID/bulk device — it does
-            # NOT present as a serial (COM) port.  The current serial-mode code
-            # (4-byte "m", "h", chr(code), chr(0) protocol) is therefore
-            # incompatible with the lab's actual hardware.
-            #
-            # The Chronos has 16 digital outputs accessible via the I/O Expander
-            # or Auxiliary I/O Breakout Cable.  In E-Prime these are controlled via
-            # ChronosDigitalOut.WriteByte(value).  From Python, the options are:
-            #
-            #   Option A — use the `psychopy-chronos` package (pip install).
-            #   It communicates via libusb (VID=0x2266, PID=0x0007, EP 0x01/0x81).
-            #   Currently supports button events + LED control but NOT digital
-            #   output.  To add digital-out support, we need the USB command
-            #   protocol for ChronosDigitalOut — likely a vendor-specific control
-            #   or bulk transfer.  This could be reverse-engineered from an
-            #   E-Prime USB trace.
-            #
-            #   Option B — connect a simple USB-to-serial adapter (FTDI cable,
-            #   Arduino, or BrainVision TriggerBox) between the stimulus PC and
-            #   the EEG/MEG amplifier's trigger port.  The current serial code
-            #   would then work with the appropriate byte protocol (typically a
-            #   single byte for most trigger interfaces).
-            #
-            #   Option C — add a dedicated "chronos" trigger_mode that opens the
-            #   Chronos via libusb/pyusb, sends the init sequence (136 packets),
-            #   and writes digital-out commands.  This requires the Chronos
-            #   digital-out USB protocol to be documented or captured.
-            #
-            # TODO: decide which option to implement and verify with the lab.
-            #   - Option B is the fastest path if a USB-serial adapter is available.
-            #   - Option A/C requires protocol work but gives direct Chronos control.
-            #
-            # -------------------------------------------------------------------
+            # Note: Protocol expects BrainVision TriggerBox or compatible adapter
             for ch in ("m", "h", chr(code), chr(0)):
                 self._port.write(ch.encode())
             self._port.flush()
