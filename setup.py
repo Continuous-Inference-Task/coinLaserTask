@@ -3273,6 +3273,8 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
         timeout=300,
     )
     if result.returncode != 0:
@@ -3313,6 +3315,8 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
         timeout=60,
     )
     if result.returncode != 0:
