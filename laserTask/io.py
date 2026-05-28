@@ -27,29 +27,34 @@ def load_stimulus_stream(
 
 def build_session_path(cfg: ExperimentConfig, info: dict) -> str:
     """Construct the path to the main session-level conditions CSV."""
+    order = info.get("order") or (cfg.orders[0] if cfg.orders else "1")
+    session = info.get("session") or (cfg.sessions[0] if cfg.sessions else "1")
     return (
         f"{cfg.sequence_root}"
-        f"coin_main_{cfg.sequence_version}_order{info['order']}/"
-        f"session_s{info['session']}_main_{cfg.sequence_version}.csv"
+        f"coin_main_{cfg.sequence_version}_order{order}/"
+        f"session_s{session}_main_{cfg.sequence_version}.csv"
     )
 
 
 def build_practice_session_path(cfg: ExperimentConfig, info: dict) -> str:
     """Construct the path to the practice session-level conditions CSV."""
+    order = info.get("order") or (cfg.orders[0] if cfg.orders else "1")
     return (
         f"{cfg.sequence_root}"
-        f"coin_practice_{cfg.practice_sequence_version}_order{info['order']}/"
+        f"coin_practice_{cfg.practice_sequence_version}_order{order}/"
         f"session_s1_practice_{cfg.practice_sequence_version}.csv"
     )
 
 
 def build_save_path(cfg: ExperimentConfig, info: dict) -> str:
     """Construct the path for the custom output CSV."""
+    visit = info.get("visit") or (cfg.visits[0] if cfg.visits else "1")
+    session = info.get("session") or (cfg.sessions[0] if cfg.sessions else "1")
     return (
         f"{cfg.data_root}"
         f"sub-{info['participant']}"
-        f"_vis-{info['visit']}"
-        f"_ses-{info['session']}"
+        f"_vis-{visit}"
+        f"_ses-{session}"
         f"_task-laser_type-baseline.csv"
     )
 

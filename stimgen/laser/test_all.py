@@ -4,6 +4,23 @@ expected MATLAB behavior. Checks edge cases, array shapes, value ranges,
 and internal consistency.
 """
 import os
+import sys
+
+# Lock configuration variables to standard baseline for consistent unit tests
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import config
+config.MAIN_VOLATILITY = ['stable', 'volatile']
+config.MAIN_NOISE = ['precise', 'noisy']
+config.MAIN_NOISE_MODE = 'counterbalanced'
+config.PRACTICE_VOLATILITY = ['stable', 'volatile']
+config.PRACTICE_NOISE = ['precise', 'noisy']
+config.PRACTICE_NOISE_MODE = 'counterbalanced'
+config.NOISE_PRESETS["precise"] = 15
+config.NOISE_PRESETS["noisy"] = 20
+config.NOISE_PRESETS["medium"] = 10.0
+config.MAIN_BLOCK_DURATION_MIN = 3
+config.PRACTICE_BLOCK_DURATION_MIN = 1
+
 import numpy as np
 
 

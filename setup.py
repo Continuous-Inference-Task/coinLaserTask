@@ -764,9 +764,14 @@ def _prompt_multiselect_fallback(
 # ── config readers / writers ────────────────────────────────────────────────
 
 def _read_laser_task_config() -> Dict[str, Any]:
-    """Read laserTask/config.py via direct import."""
-    from laserTask.config import ExperimentConfig
-    c = ExperimentConfig()
+    """Read laserTask config via get_config() (loads from config.json)."""
+    import importlib
+    # Reload to pick up any manual edits to config.json
+    for mod_name in ["laserTask.config", "laserTask"]:
+        if mod_name in sys.modules:
+            importlib.reload(sys.modules[mod_name])
+    from laserTask.config import get_config
+    c = get_config()
     return {
         "target_os": c.target_os,
         "window_size_w": c.window_size[0],
@@ -812,24 +817,18 @@ def _read_laser_task_config() -> Dict[str, Any]:
 
 
 def _read_stimgen_config() -> Dict[str, Any]:
-    """Read stimgen/laser/config.py via direct import, reloading all potential caches."""
-    import sys
+    """Read stimgen/laser config (loads from config.json overlay)."""
     import importlib
 
-    # 1. Reload the config modules
-    for name in ["config", "stimgen.laser.config"]:
+    # Reload to pick up any manual edits to config.json
+    for name in ["stimgen.laser.config", "stimgen.laser", "config"]:
         if name in sys.modules:
             try:
                 importlib.reload(sys.modules[name])
             except Exception:
                 pass
-        else:
-            try:
-                importlib.import_module(name)
-            except Exception:
-                pass
 
-    # 2. Reload the design modules that depend on config
+    # Also reload design modules that depend on config
     for name in [
         "design_vola_stocha",
         "stimgen.laser.design_vola_stocha",
@@ -866,147 +865,89 @@ def _read_stimgen_config() -> Dict[str, Any]:
     }
 
 
+def _write_laser_task_config(cfg: Dict[str, Any]) -> None:
+    """Write experiment config to laserTask/config.json."""
+    cfg_path = PROJECT_ROOT / "laserTask" / "config.json"
+
+    # Build a clean dict with only primary fields (no derived/complex types).
+    # Derived fields like shield_sizes, keyboard_backend are computed by
+    # __post_init__ at load time.
+    data: Dict[str, Any] = {}
+
+    for key, value in cfg.items():
+        # Skip internal bookkeeping keys
+        if key.startswith("_"):
+            continue
+        # Skip window_size components — they're merged into window_size below
+        if key in ("window_size_w", "window_size_h"):
+            continue
+        # Convert numpy types to plain Python
+        if hasattr(value, "item"):
+            value = value.item()
+        # Skip complex types that aren't JSON-serializable
+        if isinstance(value, (str, int, float, bool, list, tuple, type(None))):
+            if isinstance(value, tuple):
+                value = list(value)
+            data[key] = value
+
+    # Merge window_size components into a single list
+    if "window_size_w" in cfg and "window_size_h" in cfg:
+        data["window_size"] = [cfg["window_size_w"], cfg["window_size_h"]]
+
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _write_stimgen_config(updates: Dict[str, Any]) -> None:
+    """Write stimgen config to stimgen/laser/config.json."""
+    cfg_path = PROJECT_ROOT / "stimgen" / "laser" / "config.json"
+
+    data: Dict[str, Any] = {}
+    for key, value in updates.items():
+        if key.startswith("_"):
+            continue
+        if hasattr(value, "item"):
+            value = value.item()
+        if isinstance(value, (str, int, float, bool, list, tuple, dict, type(None))):
+            data[key] = value
+
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def _save_stimgen_from_cfg(cfg: Dict[str, Any]) -> bool:
-    """Write stimgen config if there are pending updates in cfg."""
+    """Write stimgen config if there are pending updates in cfg.
+
+    Pops ``_stimgen_updates`` from *cfg* and writes them to
+    ``stimgen/laser/config.json``.
+    """
     stimgen_updates = cfg.pop("_stimgen_updates", None)
     if not stimgen_updates:
         return True
-
     try:
         _write_stimgen_config(stimgen_updates)
-        success("stimgen/laser/config.py updated")
+        success("stimgen/laser/config.json updated")
         return True
     except Exception as exc:
         fail(f"Could not write stimgen config: {exc}")
         return False
 
 
-def _write_stimgen_config(updates: Dict[str, Any]) -> None:
-    cfg_path = PROJECT_ROOT / "stimgen" / "laser" / "config.py"
-    source = cfg_path.read_text(encoding="utf-8")
-    for name, value in updates.items():
-        if isinstance(value, dict):
-            # Multi-line dict — replace entire block from KEY = { … }
-            lines = [f"{name} = {{"]
-            for dk, dv in value.items():
-                if isinstance(dv, str):
-                    lines.append(f'    "{dk}": "{dv}",')
-                elif isinstance(dv, list):
-                    inner = ", ".join(repr(x) for x in dv)
-                    lines.append(f'    "{dk}": [{inner}],')
-                else:
-                    lines.append(f'    "{dk}": {dv},')
-            lines.append("}")
-            replacement = "\n".join(lines)
-            source = re.sub(
-                rf'^{name}\s*=\s*\{{.*?^\s*\}}',
-                replacement,
-                source,
-                flags=re.MULTILINE | re.DOTALL,
-            )
-        elif isinstance(value, list):
-            inner = ", ".join(repr(x) for x in value)
-            new_val = f"[{inner}]"
-            source = re.sub(
-                rf'^({name}\s*=\s*).+?(\s*(?:#.*)?)$',
-                rf'\g<1>{new_val}\g<2>',
-                source,
-                flags=re.MULTILINE,
-            )
-        else:
-            py_val = repr(value) if isinstance(value, str) else str(value)
-            source = re.sub(
-                rf'^({name}\s*=\s*).+?(\s*(?:#.*)?)$',
-                rf'\g<1>{py_val}\g<2>',
-                source,
-                flags=re.MULTILINE,
-            )
-    cfg_path.write_text(source, encoding="utf-8")
-
-
-def _write_laser_task_config(updates: Dict[str, Any]) -> None:
-    cfg_path = PROJECT_ROOT / "laserTask" / "config.py"
-    source = cfg_path.read_text(encoding="utf-8")
-
-    field_map = {
-        "target_os": "target_os",
-        "fullscreen": "fullscreen",
-        "screen_index": "screen_index",
-        "monitor_name": "monitor_name",
-        "target_refresh_rate": "target_refresh_rate",
-        "key_right": "key_right",
-        "key_left": "key_left",
-        "input_device": "input_device",
-        "rotation_speed": "rotation_speed",
-        "circle_radius": "circle_radius",
-        "allow_shield_adjustment": "allow_shield_adjustment",
-        "fixed_shield_degrees": "fixed_shield_degrees",
-        "loss_factor": "loss_factor",
-        "currency_symbol": "currency_symbol",
-        "trigger_mode": "trigger_mode",
-        "serial_port": "serial_port",
-        "serial_baud_rate": "serial_baud_rate",
-        "parallel_address": "parallel_address",
-        "enable_audio": "enable_audio",
-        "mmn_type": "mmn_type",
-        "tone_freq_standard": "tone_freq_standard",
-        "tone_freq_deviant": "tone_freq_deviant",
-        "tone_duration": "tone_duration",
-        "tone_duration_standard": "tone_duration_standard",
-        "tone_duration_deviant": "tone_duration_deviant",
-        "tone_volume": "tone_volume",
-        "tone_isi_frames": "tone_isi_frames",
-        "enable_practice": "enable_practice",
-        "reset_reward_after_practice": "reset_reward_after_practice",
-        "show_earth_background": "show_earth_background",
-        "min_laser_duration_frames": "min_laser_duration_frames",
-        "visits": "visits",
-        "sessions": "sessions",
-        "orders": "orders",
-        "framings": "framings",
-        "dialog_fields": "dialog_fields",
-        "use_legacy_key_tracking": "use_legacy_key_tracking",
+def _write_preset_origin(preset_name: str) -> None:
+    """Record which preset was loaded and when."""
+    from datetime import datetime
+    origin = {
+        "preset": preset_name,
+        "loaded_at": datetime.now().isoformat(),
     }
-
-    # Handle window_size specially
-    if "window_size_w" in updates and "window_size_h" in updates:
-        new_val = f"({updates['window_size_w']}, {updates['window_size_h']})"
-        source = re.sub(
-            r'^([ \t]*window_size:\s*[^=\n]+\s*=\s*)(.*?)(?=\n[ \t]*(?:[a-zA-Z_]\w*\s*:|#|"""|\'\'\'|@|class\s|def\s|$))',
-            rf'\g<1>{new_val}',
-            source,
-            count=1,
-            flags=re.MULTILINE | re.DOTALL,
-        )
-
-    for key, value in updates.items():
-        field_name = field_map.get(key)
-        if field_name is None:
-            continue
-        if key in ("window_size_w", "window_size_h"):
-            continue  # handled above
-
-        if isinstance(value, bool):
-            new_val = str(value)
-        elif isinstance(value, str) and not value.startswith("["):
-            new_val = f'"{value}"'
-        elif isinstance(value, list):
-            inner = ", ".join(f'"{x}"' for x in value)
-            new_val = f"field(default_factory=lambda: [{inner}])"
-        else:
-            new_val = str(value)
-
-        source = re.sub(
-            rf'^([ \t]*{field_name}:\s*[^=\n]+\s*=\s*)(.*?)(?=\n[ \t]*(?:[a-zA-Z_]\w*\s*:|#|"""|\'\'\'|@|class\s|def\s|$))',
-            rf'\g<1>{new_val}',
-            source,
-            count=1,
-            flags=re.MULTILINE | re.DOTALL,
-        )
-    cfg_path.write_text(source, encoding="utf-8")
+    origin_path = PROJECT_ROOT / "laserTask" / ".preset_origin.json"
+    origin_path.parent.mkdir(parents=True, exist_ok=True)
+    origin_path.write_text(json.dumps(origin, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def detect_os() -> str:
+# ------------------------------------------------------------------ #
+#  OS HELPERS                                                        #
+# ------------------------------------------------------------------ #
     """Return 'linux', 'windows', or 'macos'."""
     if sys.platform.startswith("linux"):
         return "linux"
@@ -1037,6 +978,17 @@ OS_DEFAULTS = {
         "parallel_hint": "macOS does not support parallel ports",
     },
 }
+
+
+def detect_os() -> str:
+    """Return 'linux', 'windows', or 'macos'."""
+    if sys.platform.startswith("linux"):
+        return "linux"
+    elif sys.platform == "win32":
+        return "windows"
+    elif sys.platform == "darwin":
+        return "macos"
+    return sys.platform
 
 
 # ── preset system ──────────────────────────────────────────────────────────
@@ -1232,34 +1184,64 @@ def _show_preset_summary(preset: Dict[str, Any]) -> None:
     print()
 
 
+def _validate_preset(preset: Dict[str, Any]) -> List[str]:
+    """Validate a preset before applying. Returns a list of error messages."""
+    errors = []
+    sti = preset.get("stimgen", {})
+
+    # Check that referenced volatility/noise names exist in their presets
+    vol_presets = sti.get("VOLATILITY_PRESETS", sti.get("volatility_presets", {}))
+    for key in ("PRACTICE_VOLATILITY", "practice_volatility", "MAIN_VOLATILITY", "main_volatility"):
+        for name in sti.get(key, []):
+            if name not in vol_presets:
+                errors.append(
+                    f"stimgen.{key} references '{name}' which is not "
+                    f"defined in VOLATILITY_PRESETS"
+                )
+
+    noise_presets = sti.get("NOISE_PRESETS", sti.get("noise_presets", {}))
+    for key in ("PRACTICE_NOISE", "practice_noise", "MAIN_NOISE", "main_noise"):
+        for name in sti.get(key, []):
+            if name not in noise_presets:
+                errors.append(
+                    f"stimgen.{key} references '{name}' which is not "
+                    f"defined in NOISE_PRESETS"
+                )
+
+    return errors
+
+
 def _apply_preset(preset: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Merge preset values into the in-memory cfg dict.
 
-    Any field present in the preset's "experiment" dict goes into cfg.
-    Any field present in the preset's "stimgen" dict goes into
-    cfg["_stimgen_updates"] so it is written by the existing
-    ``_save_stimgen_from_cfg`` path.
+    Experiment fields go into *cfg*.  Stimgen fields go into
+    ``cfg["_stimgen_updates"]``.
+    Sessions and orders are derived from MAIN_N_SESSIONS.
     """
     exp = preset.get("experiment", {})
     sti = preset.get("stimgen", {})
 
-    # \u2500 Apply experiment fields (any key present) \u2500
     for key, val in exp.items():
         cfg[key] = val
 
-    # \u2500 Apply stimgen fields (any key present) \u2500
     stimgen_updates = cfg.get("_stimgen_updates", {})
     for key, val in sti.items():
         stimgen_updates[key] = val
     cfg["_stimgen_updates"] = stimgen_updates
 
-    # \u2500 Auto-derive sessions/orders from the stimgen values \u2500
-    n_sessions = stimgen_updates.get("MAIN_N_SESSIONS", cfg.get("sessions", ["1"]))
+    n_sessions = stimgen_updates.get("MAIN_N_SESSIONS", stimgen_updates.get("main_n_sessions"))
     if isinstance(n_sessions, int):
         cfg["sessions"] = [str(i) for i in range(1, n_sessions + 1)]
     cfg["orders"] = ["1", "2", "3", "4"]
 
     return cfg
+
+
+def _apply_preset_to_disk(preset: Dict[str, Any]) -> None:
+    """Write preset values directly to config.json files."""
+    _write_laser_task_config(preset.get("experiment", {}))
+    _write_stimgen_config(preset.get("stimgen", {}))
+    _write_preset_origin(preset.get("name", "unknown"))
 
 
 def _pick_preset() -> Optional[Dict[str, Any]]:
@@ -1328,10 +1310,14 @@ def _pick_preset() -> Optional[Dict[str, Any]]:
 
 
 def _save_current_as_preset(cfg: Dict[str, Any]) -> None:
-    """Save the current in-memory config as a preset JSON file."""
+    """Save the current in-memory config as an exhaustive preset JSON file.
+
+    An exhaustive preset contains ALL config values (both experiment and
+    stimgen), not just non-default ones.  This makes presets self-contained
+    and reproducible without depending on built-in defaults.
+    """
     section("Save Current Config as Preset")
-    info("Choose which sections to lock into the preset. Locked sections won't need")
-    info("to be configured when loading this preset. Unlocked sections stay open.\n")
+    info("All current config values (experiment + stimgen) will be saved.")
 
     name = prompt("Preset name", "", hint_text="Used as filename and display name (e.g. PEDUKS_2024)").strip()
     if not name:
@@ -1350,50 +1336,34 @@ def _save_current_as_preset(cfg: Dict[str, Any]) -> None:
 
     description = prompt("Description", "", hint_text="Short one-liner shown in the preset picker").strip()
 
-    # Let user choose which sections to include
-    section_ids = list(SECTION_FIELDS.keys())
-    section_labels = [SECTION_FIELDS[sid]["label"] for sid in section_ids]
-    # Default: study design sections on, machine-local off
-    default_ids = [sid for sid in section_ids if sid in STUDY_DESIGN_SECTIONS]
+    # Read ALL experiment values
+    exp_cfg = _read_laser_task_config()
+    exp: Dict[str, Any] = {}
+    for key in sorted(exp_cfg.keys()):
+        if key.startswith("_"):
+            continue
+        val = exp_cfg[key]
+        if hasattr(val, "item"):
+            val = val.item()
+        if key in ("window_size_w", "window_size_h"):
+            continue
+        if isinstance(val, (str, int, float, bool, list, tuple, type(None))):
+            if isinstance(val, tuple):
+                val = list(val)
+            exp[key] = val
+    # Merge window_size
+    if "window_size_w" in exp_cfg and "window_size_h" in exp_cfg:
+        exp["window_size"] = [exp_cfg["window_size_w"], exp_cfg["window_size_h"]]
 
-    print()
-    info(_c(C["bold"], "Which sections should the preset lock?"))
-    for sid in section_ids:
-        tag = "  (study design)" if sid in STUDY_DESIGN_SECTIONS else "  (machine-local)"
-        print(_c(C["dim"], f"    §{sid} {SECTION_FIELDS[sid]['label']}{tag}"))
-    print()
-
-    chosen_str = prompt(
-        "Sections to lock (comma-separated, e.g. 1,4,5,6,7,8)",
-        ",".join(default_ids),
-        hint_text="Study-design sections are selected by default; add 1,2,3 to also lock machine settings",
-    ).strip()
-    chosen = {s.strip() for s in chosen_str.split(",") if s.strip() in section_ids}
-
-    # Collect fields for chosen sections
-    exp = {}
-    sti = {}
-    for sid in chosen:
-        ns = SECTION_FIELDS[sid]["namespace"]
-        for key in SECTION_FIELDS[sid]["fields"]:
-            if ns == "experiment":
-                if key in cfg:
-                    val = cfg[key]
-                    if hasattr(val, "item"):
-                        val = val.item()
-                    exp[key] = val
-            elif ns == "stimgen":
-                stimgen_updates = cfg.get("_stimgen_updates", {})
-                stimgen_live = _read_stimgen_config()
-                if key in stimgen_updates:
-                    val = stimgen_updates[key]
-                elif key in stimgen_live:
-                    val = stimgen_live[key]
-                else:
-                    continue
-                if hasattr(val, "item"):
-                    val = val.item()
-                sti[key] = val
+    # Read ALL stimgen values
+    sti_cfg = _read_stimgen_config()
+    sti: Dict[str, Any] = {}
+    for key, val in sti_cfg.items():
+        if key.startswith("_"):
+            continue
+        if hasattr(val, "item"):
+            val = val.item()
+        sti[key] = val
 
     preset = {
         "name": name,
@@ -1404,15 +1374,12 @@ def _save_current_as_preset(cfg: Dict[str, Any]) -> None:
 
     PRESET_DIR.mkdir(exist_ok=True)
     filepath.write_text(json.dumps(preset, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
-    n_locked = len(chosen)
     n_exp = len(exp)
     n_sti = len(sti)
-    success(f"Preset saved to {filepath}")
-    info(f"  {n_locked} sections locked ({n_exp} experiment + {n_sti} stimgen fields)")
+    success(f"Exhaustive preset saved to {filepath}")
+    info(f"  {n_exp} experiment fields + {n_sti} stimgen fields")
     info(f"  Commit to git to share:  git add presets/{filename} && git commit")
 
-
-# ── interactive configuration sections ──────────────────────────────────────
 
 def configure_machine(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Machine Setup")
@@ -3306,6 +3273,8 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
         timeout=300,
     )
     if result.returncode != 0:
@@ -3346,6 +3315,8 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
         timeout=60,
     )
     if result.returncode != 0:
@@ -3599,6 +3570,13 @@ def _run_preset_setup(cfg: Dict[str, Any]) -> Dict[str, Any]:
         return configure_quick(cfg)
 
     cfg = _apply_preset(preset, cfg)
+    _apply_preset_to_disk(preset)
+
+    # Validate preset — warn but don't block if issues found
+    errors = _validate_preset(preset)
+    if errors:
+        for e in errors:
+            warn(e)
 
     # Determine which sections are open (not fully covered by the preset)
     open_ids = _uncovered_sections(preset)
@@ -3836,10 +3814,21 @@ def main() -> None:
                 return
         preset = _load_preset(preset_path)
         _show_preset_summary(preset)
+
+        errors = _validate_preset(preset)
+        if errors:
+            fail("Preset validation failed:")
+            for e in errors:
+                print(f"  - {e}")
+            return
+
         if not prompt_yn("Use this preset?", True):
             info("Cancelled.")
             return
+
         cfg = _apply_preset(preset, cfg)
+        _apply_preset_to_disk(preset)
+
         clear()
         header("Machine Setup (preset: {})".format(preset.get("name", "?")))
         info("Study design is set by the preset. Configure your machine settings below.")

@@ -302,16 +302,15 @@ def create_stimuli(
     # --- block start / end --------------------------------------------- #
     S["earth_background"] = visual.ImageStim(
         win,
-        name="earth_background",  # units = undefined,
-        image=None,  # mask = undefined,
+        name="earth_background",
+        image=None,
         ori=0.0,
         pos=[0, 0],
         size=[0.75, 0.75],
-        # color = util.Color([1,1,1]), opacity = undefined,
         flipHoriz=False,
         flipVert=False,
         texRes=128.0,
-        interpolate=True,  # , depth = -1.0
+        interpolate=True,
     )
 
     S["blk_source_img"] = visual.ImageStim(

@@ -1,70 +1,73 @@
 {
-    "name": "Cogpsy Rob Version 2026",
-    "description": "",
+    "name": "Cogpsy_Rob_Version_2026",
+    "description": "CogPsy adapted for Rob — 40° shield, medium noise for practice, £ currency, loss-only",
     "experiment": {
-        "framings": [
-            "loss"
-        ],
-        "dialog_fields": [
-            "participant",
-            "session",
-            "order",
-            "framing",
-            "practice_mode"
-        ],
-        "visits": [
-            "1"
-        ],
+        "target_os": "linux",
+        "window_size": [1512, 982],
+        "fullscreen": true,
+        "screen_index": 0,
+        "monitor_name": "testMonitor",
+        "target_refresh_rate": 60,
+        "key_right": "j",
+        "key_left": "f",
+        "input_device": "keyboard",
+        "keyboard_backend": "",
+        "use_legacy_key_tracking": true,
         "rotation_speed": 1.0,
+        "circle_radius": 3.0,
         "allow_shield_adjustment": false,
+        "fixed_shield_degrees": 40.0,
         "loss_factor": 0.003,
         "currency_symbol": "£",
-        "fixed_shield_degrees": 40.0,
-        "circle_radius": 3.0,
-        "min_laser_duration_frames": 6,
-        "reset_reward_after_practice": true,
-        "show_earth_background": false,
-        "enable_practice": true,
-        "tone_freq_deviant": 440.0,
-        "tone_volume": 1.0,
-        "tone_freq_standard": 440.0,
-        "mmn_type": "duration",
+        "trigger_mode": "parallel",
+        "serial_port": "/dev/ttyUSB0",
+        "serial_baud_rate": 115200,
+        "parallel_address": "/dev/parport0",
         "enable_audio": true,
-        "tone_duration_deviant": 0.1,
-        "tone_isi_frames": 24,
+        "mmn_type": "duration",
+        "show_earth_background": true,
+        "tone_freq_standard": 440.0,
+        "tone_freq_deviant": 440.0,
         "tone_duration": 0.05,
-        "tone_duration_standard": 0.05
+        "tone_duration_standard": 0.05,
+        "tone_duration_deviant": 0.1,
+        "tone_volume": 1.0,
+        "tone_isi_frames": 24,
+        "enable_practice": true,
+        "reset_reward_after_practice": true,
+        "min_laser_duration_frames": 4,
+        "visits": ["1"],
+        "sessions": ["1"],
+        "orders": ["1", "2", "3", "4"],
+        "framings": ["loss", "win"],
+        "dialog_fields": ["participant", "visit", "session", "order", "framing", "practice_mode"]
     },
     "stimgen": {
-        "PRACTICE_VOLATILITY": [
-            "medium"
-        ],
-        "JUMP_DURATION_MEAN_SEC": 0.3,
-        "PRACTICE_NOISE": [
-            "medium"
-        ],
-        "MAIN_BLOCK_DURATION_MIN": 4,
-        "JUMP_VALUE_SET": [
-            -45,
-            -30,
-            -15,
-            15,
-            30,
-            45
-        ],
-        "MAIN_NOISE": [
-            "noisy"
-        ],
+        "SAMPLE_RATE": 60,
+        "VOLATILITY_PRESETS": {
+            "stable": [10, 1.5, 8, 15],
+            "volatile": [3, 1.5, 2, 6],
+            "medium": [5, 1.5, 3, 12]
+        },
+        "NOISE_PRESETS": {
+            "precise": 15,
+            "noisy": 20,
+            "medium": 10.0
+        },
+        "PRACTICE_VOLATILITY": ["medium"],
+        "PRACTICE_NOISE": ["medium"],
+        "PRACTICE_NOISE_MODE": "counterbalanced",
+        "PRACTICE_N_SESSIONS": 1,
+        "PRACTICE_BLOCK_DURATION_MIN": 2,
+        "MAIN_VOLATILITY": ["stable", "volatile"],
+        "MAIN_NOISE": ["precise"],
+        "MAIN_NOISE_MODE": "counterbalanced",
         "MAIN_N_SESSIONS": 1,
+        "MAIN_BLOCK_DURATION_MIN": 4,
+        "SAVED_DESIGNS": {},
+        "JUMP_DURATION_MEAN_SEC": 0.3,
         "JUMP_DURATION_MIN_SEC": 0.1,
         "JUMP_DURATION_MAX_SEC": 1.0,
-        "PRACTICE_NOISE_MODE": "counterbalanced",
-        "MAIN_VOLATILITY": [
-            "stable",
-            "volatile"
-        ],
-        "PRACTICE_N_SESSIONS": 1,
-        "MAIN_NOISE_MODE": "counterbalanced",
-        "PRACTICE_BLOCK_DURATION_MIN": 2
+        "JUMP_VALUE_SET": [-45, -30, -15, 15, 30, 45]
     }
 }

@@ -16,7 +16,8 @@ class TriggerManager:
 
     Examples
     --------
-    >>> cfg = ExperimentConfig(trigger_mode="serial", serial_port="COM6")
+    >>> from laserTask.config import get_config
+    >>> cfg = get_config()
     >>> trig = TriggerManager(cfg)
     >>> trig.send(TRIGGER_CODES["exp_start"])
     >>> trig.close()
@@ -28,48 +29,75 @@ class TriggerManager:
         self._outlet = None
 
         if self.mode == "serial":
-            import serial
-            self._port = serial.Serial(
-                config.serial_port,
-                config.serial_baud_rate,
-                timeout=config.serial_timeout,
-            )
-            logging.exp(f"Opened serial trigger port {config.serial_port}")
+            try:
+                import serial
+                self._port = serial.Serial(
+                    config.serial_port,
+                    config.serial_baud_rate,
+                    timeout=config.serial_timeout,
+                )
+                logging.exp(f"Opened serial trigger port {config.serial_port}")
+            except Exception as exc:
+                logging.error(
+                    f"Could not open serial trigger port '{config.serial_port}': {exc}. "
+                    "Falling back to dummy trigger mode."
+                )
+                print(f"\n  ⚠  WARNING: Serial trigger port initialization failed: {exc}")
+                print("     Falling back to DUMMY trigger mode.\n")
+                self.mode = "dummy"
 
         elif self.mode == "parallel":
-            from psychopy import parallel
-            addr = config.parallel_address
-            if isinstance(addr, str):
-                addr_str = addr.strip()
-                if addr_str.lower().startswith("0x"):
-                    try:
-                        addr = int(addr_str, 16)
-                    except ValueError:
-                        pass
+            try:
+                from psychopy import parallel
+                addr = config.parallel_address
+                if isinstance(addr, str):
+                    addr_str = addr.strip()
+                    if addr_str.lower().startswith("0x"):
+                        try:
+                            addr = int(addr_str, 16)
+                        except ValueError:
+                            pass
+                    else:
+                        try:
+                            addr = int(addr_str)
+                        except ValueError:
+                            pass
+                self._port = parallel.ParallelPort(address=addr)
+                if isinstance(addr, int):
+                    logging.exp(f"Opened parallel trigger port {addr:#x}")
                 else:
-                    try:
-                        addr = int(addr_str)
-                    except ValueError:
-                        pass
-            self._port = parallel.ParallelPort(address=addr)
-            if isinstance(addr, int):
-                logging.exp(f"Opened parallel trigger port {addr:#x}")
-            else:
-                logging.exp(f"Opened parallel trigger port {addr}")
+                    logging.exp(f"Opened parallel trigger port {addr}")
+            except Exception as exc:
+                logging.error(
+                    f"Could not open parallel trigger port at address '{config.parallel_address}': {exc}. "
+                    "Falling back to dummy trigger mode."
+                )
+                print(f"\n  ⚠  WARNING: Parallel trigger port initialization failed: {exc}")
+                print("     Falling back to DUMMY trigger mode.\n")
+                self.mode = "dummy"
 
         elif self.mode == "lsl":
-            import pylsl
-            info = pylsl.StreamInfo(
-                "LaserTask_Triggers", "Markers", 1, 0, "int32",
-                "laser_task_triggers",
-            )
-            self._outlet = pylsl.StreamOutlet(info)
-            logging.exp("Created LSL trigger outlet")
+            try:
+                import pylsl
+                info = pylsl.StreamInfo(
+                    "LaserTask_Triggers", "Markers", 1, 0, "int32",
+                    "laser_task_triggers",
+                )
+                self._outlet = pylsl.StreamOutlet(info)
+                logging.exp("Created LSL trigger outlet")
+            except Exception as exc:
+                logging.error(
+                    f"Could not open LSL trigger outlet: {exc}. "
+                    "Falling back to dummy trigger mode."
+                )
+                print(f"\n  ⚠  WARNING: LSL trigger initialization failed: {exc}")
+                print("     Falling back to DUMMY trigger mode.\n")
+                self.mode = "dummy"
 
-        elif self.mode == "dummy":
+        if self.mode == "dummy":
             logging.exp("TriggerManager in dummy mode (console only)")
 
-        else:
+        elif self.mode not in ("serial", "parallel", "lsl"):
             raise ValueError(
                 f"Unknown trigger_mode '{self.mode}'. "
                 "Choose from: 'serial', 'parallel', 'lsl', 'dummy'."
@@ -79,33 +107,7 @@ class TriggerManager:
     def send(self, code: int) -> None:
         """Send a single trigger *code* (int, typically 1–127)."""
         if self.mode == "serial":
-            # Current implementation sends 4 bytes: "m", "h", chr(code), chr(0).
-            # This may be a protocol for older BrainAmp hardware or a non-TriggerBox
-            # serial device.  The standard BrainVision TriggerBox (rev.02 and Plus)
-            # protocol expects a *single byte* — just the code value.
-            #
-            # TODO: verify with the lab what serial trigger hardware is used.
-            # If it's a standard BrainVision TriggerBox, replace with:
-            #
-            #   self._port.write(bytes([code]))
-            #   self._port.flush()
-            #
-            # HOW TO TEST:
-            #   1. Connect the trigger hardware to the MEG/EEG recording PC.
-            #   2. Run in dummy mode first: `python -c "
-            #      from laserTask.triggers import TriggerManager
-            #      from laserTask.config import ExperimentConfig
-            #      cfg = ExperimentConfig(trigger_mode='dummy')
-            #      trig = TriggerManager(cfg)
-            #      trig.send(30)  # should print '[TRIGGER] 30'
-            #      trig.close()"`
-            #   3. Switch to serial mode with the correct port/baud rate.
-            #   4. Send a known code (e.g., 30) and check BrainVision Recorder:
-            #      - With current 4-byte protocol: look for markers S 109, S 104, S 30
-            #        appearing in sequence.  If it works, the lab's hardware expects this.
-            #      - With single-byte protocol: BrainVision Recorder should show
-            #        exactly one marker "S 30" at the expected baud rate.
-            #   5. Send code 0 to verify the reset/pulse boundary works.
+            # Note: Protocol expects BrainVision TriggerBox or compatible adapter
             for ch in ("m", "h", chr(code), chr(0)):
                 self._port.write(ch.encode())
             self._port.flush()
