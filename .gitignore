@@ -3,6 +3,11 @@ data/
 # Keep the directory placeholder
 !data/.gitkeep
 
+# --- Generated config files ---
+laserTask/config.json
+laserTask/.preset_origin.json
+stimgen/laser/config.json
+
 # --- Sequence generation artifacts ---
 sequences/*
 

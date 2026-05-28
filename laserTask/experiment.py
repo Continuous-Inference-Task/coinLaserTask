@@ -191,7 +191,8 @@ def run_experiment(
     # Configuration passed as argument
     # If none provided, fall back to the production defaults
     if cfg is None:
-        cfg = ExperimentConfig()
+        from laserTask.config import get_config
+        cfg = get_config()
 
     # ------------------------------------------------------------------ #
     #  PATHS & DIALOG                                                     #

@@ -4,7 +4,13 @@
 run.py — Cross-platform bootstrap script for the CoIn Laser Task.
 
 Automatically locates Python 3.10, creates a virtual environment,
-installs dependencies, and runs setup.py.
+installs dependencies via **uv** (fast Rust-based package manager,
+with pip fallback), and runs setup.py.
+
+On Linux, wxPython has no pre-built PyPI wheels, so a source build
+would take 30-60 minutes.  This script tries pre-built wheels from
+the wxPython extras server first, falling back to source only when
+necessary.
 
 Requires Python 3.10 exactly — PsychoPy and psychtoolbox have
 known issues with 3.11+.
@@ -276,6 +282,113 @@ def _needs_reinstall(marker_file: Path, requirements_txt: Path) -> bool:
 
 
 # ------------------------------------------------------------------ #
+#  UV PACKAGE MANAGER                                                 #
+# ------------------------------------------------------------------ #
+
+def _ensure_uv(python_exe: Path) -> bool:
+    """Install uv into the virtual environment.  Returns True on success."""
+    _safe_print("Installing uv (fast package manager) ...")
+    try:
+        subprocess.run(
+            [str(python_exe), "-m", "pip", "install", "--upgrade", "uv"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        _safe_print("  (uv install failed — falling back to pip)")
+        return False
+
+
+# ------------------------------------------------------------------ #
+#  wxPython LINUX EXTRAS                                              #
+# ------------------------------------------------------------------ #
+
+# Pre-built wxPython wheels for Linux are NOT on PyPI.
+# The wxPython project publishes Ubuntu-tagged wheels at:
+#   https://extras.wxpython.org/wxPython4/extras/linux/gtk3/<ubuntu-ver>/
+# These use the ``linux_x86_64`` platform tag and work on any Linux
+# distro with a glibc version >= the one the wheel was built against.
+# We try the newest Ubuntu version first (higher glibc), then older.
+_WXPYTHON_EXTRAS_URLS_LINUX = [
+    "https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-24.04",
+    "https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-22.04",
+]
+
+
+def _install_dependencies(
+    python_exe: Path,
+    requirements_txt: Path,
+    use_uv: bool,
+) -> None:
+    """Install dependencies, with special handling for wxPython on Linux.
+
+    On Linux, wxPython has no pre-built wheels on PyPI.  We first try
+    the wxPython extras server (Ubuntu-tagged wheels that work on any
+    distro with new-enough glibc).  If no compatible wheel is found, we
+    fall back to a source build with a clear warning about the wait.
+
+    On macOS / Windows, wxPython wheels are on PyPI, so no special
+    handling is needed.
+    """
+    pkg_runner = (
+        [str(python_exe), "-m", "uv", "pip"]
+        if use_uv
+        else [str(python_exe), "-m", "pip"]
+    )
+
+    # ── Linux: try pre-built wxPython wheels first ──
+    if CURRENT_OS == "linux":
+        for url in _WXPYTHON_EXTRAS_URLS_LINUX:
+            _safe_print(f"  Trying pre-built wxPython wheel: {url}")
+            cmd = pkg_runner + [
+                "install",
+                "--find-links", url,
+                "--only-binary", "wxPython",
+                "-r", str(requirements_txt),
+            ]
+            result = subprocess.run(cmd)
+            if result.returncode == 0:
+                return  # installed from pre-built wheel
+            _safe_print(f"  No compatible wheel found at {url}")
+
+        # No pre-built wheel available — fall back to source build
+        _safe_print()
+        _safe_print("  ────────────────────────────────────────────────────")
+        _safe_print("  WARNING: No pre-built wxPython wheel found for Linux.")
+        _safe_print("  Falling back to SOURCE BUILD — this takes 30-60 min.")
+        _safe_print("  To avoid this in future, see:")
+        _safe_print("    https://wxpython.org/pages/downloads/")
+        _safe_print("  ────────────────────────────────────────────────────")
+        _safe_print()
+
+    # ── Standard install ──
+    # macOS / Windows: PyPI wheels for wxPython exist → fast.
+    # Linux fallback: removes --only-binary so source build is allowed.
+    cmd = pkg_runner + ["install", "-r", str(requirements_txt)]
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        _safe_print()
+        _safe_print(f"ERROR: Dependency installation failed: {e}")
+        _safe_print()
+        _safe_print("Common fixes:")
+        _safe_print("  - Check internet connection")
+        if CURRENT_OS == "macos":
+            _safe_print("  - On macOS: brew install portaudio  (required by sounddevice)")
+        elif CURRENT_OS == "linux":
+            _safe_print("  - On Ubuntu/Debian: sudo apt install portaudio19-dev python3.10-dev")
+            _safe_print("  - On Arch/Manjaro:  sudo pacman -S portaudio")
+        pkg_mgr = "uv pip" if use_uv else "pip"
+        _safe_print(
+            f"  - Try manually: {python_exe} -m {pkg_mgr} install"
+            f" -r requirements.txt"
+        )
+        sys.exit(1)
+
+
+# ------------------------------------------------------------------ #
 #  MAIN BOOTSTRAP                                                     #
 # ------------------------------------------------------------------ #
 
@@ -385,36 +498,20 @@ def bootstrap():
 
     if _needs_reinstall(marker_file, requirements_txt):
         _safe_print("Installing dependencies from requirements.txt ...")
-        _safe_print("(this downloads ~500 MB and may take a few minutes)")
+        if CURRENT_OS == "linux":
+            _safe_print(
+                "(wxPython source build on Linux can take 30-60 min;"
+                " pre-built wheels will be tried first)"
+            )
+        else:
+            _safe_print("(this may take a few minutes on first run)")
         _safe_print()
 
-        # Upgrade pip first
-        try:
-            subprocess.run(
-                [str(python_exe), "-m", "pip", "install", "--upgrade", "pip"],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except subprocess.CalledProcessError:
-            _safe_print("  (pip upgrade skipped — proceeding with current version)")
+        # Install uv for faster dependency resolution (falls back to pip)
+        use_uv = _ensure_uv(python_exe)
 
-        # Install requirements
-        try:
-            subprocess.run(
-                [str(python_exe), "-m", "pip", "install", "-r", str(requirements_txt)],
-                check=True,
-            )
-        except subprocess.CalledProcessError as e:
-            _safe_print()
-            _safe_print(f"ERROR: Dependency installation failed: {e}")
-            _safe_print()
-            _safe_print("Common fixes:")
-            _safe_print("  - Check internet connection")
-            _safe_print("  - On macOS: brew install portaudio  (required by sounddevice)")
-            _safe_print("  - On Linux: sudo apt install portaudio19-dev python3.10-dev")
-            _safe_print(f"  - Try manually: {python_exe} -m pip install -r requirements.txt")
-            sys.exit(1)
+        # Install all dependencies (handles wxPython Linux extras internally)
+        _install_dependencies(python_exe, requirements_txt, use_uv=use_uv)
 
         # Write marker with hash and version tag
         try:
