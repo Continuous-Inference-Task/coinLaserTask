@@ -499,11 +499,16 @@ def prompt_select(
         sys.stdout.flush()
         return options[cursor]
 
-    except (ImportError, termios.error, AttributeError):
-        pass
+    # except (ImportError, termios.error, AttributeError):
+    #     pass
+
+    except (ImportError, AttributeError, OSError):
+        return _prompt_select_fallback(
+            text, options, default, descriptions, hint_text
+        )
 
     # ── fallback: simple numbered prompt ──
-    return _prompt_select_fallback(text, options, default, descriptions, hint_text)
+    #return _prompt_select_fallback(text, options, default, descriptions, hint_text)
 
 
 def _prompt_select_fallback(
@@ -1476,6 +1481,7 @@ def configure_triggers(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     _trigger_descriptions = {
         "dummy": (
+            "Chose only if no other mode required, always available as default.\n"
             "No hardware — trigger events are printed to the console log.\n"
             "Use this for testing, development, or when no EEG/MEG\n"
             "system is connected. Zero setup required."
@@ -2461,6 +2467,7 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
     info(_c(C["bold"], "Trigger Setup"))
     _trigger_descriptions = {
         "dummy": (
+            "Chose only if no other mode required, always available as default.\n"
             "No hardware — trigger events are printed to the console log.\n"
             "Use this for testing, development, or when no EEG/MEG\n"
             "system is connected. Zero setup required."

@@ -33,7 +33,7 @@ from laserTask.io import (
     validate_dialog_options,
 )
 from laserTask.reward import BaseRewardTracker, RewardTracker
-from laserTask.stimuli import compute_shield_vertices, create_stimuli
+from laserTask.stimuli import compute_shield_vertices, compute_progress_vertices, create_stimuli
 from laserTask.triggers import TriggerManager
 
 _PACKAGE_DIR = Path(__file__).parent
@@ -214,6 +214,7 @@ def run_experiment(
         "order":       lambda c: ("order",       ["-- select order --"] + c.orders),
         "framing":     lambda c: ("framing",     ["-- select framing --"] + c.framings),
         "practice_mode": lambda c: ("practice_mode", ["Practice + Main", "Practice Only", "Skip Practice (Main Only)"]),
+        "trigger_mode": lambda c: ("trigger_mode", ["-- select trigger --", "dummy", c.trigger_mode])
     }
 
     _dialog_fields = {}
@@ -288,7 +289,6 @@ def run_experiment(
     )
     win.mouseVisible = False
 
-    # TODO: refresh variable not used again --> check that warning gets sent somewhere if mismatch
     actual_fps = win.getActualFrameRate()
     exp_info["frameRate"] = actual_fps
 
@@ -472,17 +472,30 @@ def run_experiment(
     the_exp.nextEntry()
 
     # SCREEN 2 -- Shield-size instructions only if shield adjustments allowed
-    if cfg.allow_shield_adjustment:
-        wait_for_key(
-            win,
-            trig,
-            [S["shield_instr"]],
-            default_kb,
-            the_exp,
-            label="shield_instr",
-        )
-        logging.exp("Participant completed instruction screen 2.")
-        the_exp.nextEntry()
+    # NOTE: adapted instructions specifically for Rob, need to make this modular
+    #if cfg.allow_shield_adjustment:
+    wait_for_key(
+        win,
+        trig,
+        [S["shield_instr"]],
+        default_kb,
+        the_exp,
+        label="shield_instr",
+    )
+    logging.exp("Participant completed instruction screen 2.")
+    the_exp.nextEntry()
+
+    # SCREEN 3 -- Reward instructions
+    wait_for_key(
+        win,
+        trig,
+        [S["reward_instr"]],
+        default_kb,
+        the_exp,
+        label="reward_instr",
+    )
+    logging.exp("Participant completed instruction screen 2.")
+    the_exp.nextEntry()
 
     # ================================================================== #
     #  BLOCK LOOP                                                         #
@@ -516,6 +529,33 @@ def run_experiment(
                 the_exp,
                 label="main_start",
             )
+            the_exp.nextEntry()
+
+            wait_for_key(
+                win,
+                trig,
+                [S["main_task_instr"]],
+                default_kb,
+                the_exp,
+                label="main_task_instr",
+            )
+            the_exp.nextEntry()
+
+            wait_for_key(
+                win,
+                trig,
+                [
+                    S["source_colours"],
+                    S["radioactive_colour1"],
+                    S["radioactive_colour2"],
+                ],
+                default_kb,
+                the_exp,
+                label="source_colours",
+            )
+            the_exp.nextEntry()
+
+
             entered_main_phase = True
 
         block_id = bt["blockID"]
@@ -590,7 +630,7 @@ def run_experiment(
 
         reward_tracker.reset_block()
         S["source"].setImage(src_path)
-        if cfg.show_earth_background:
+        if cfg.show_earth_background or phase_n == PHASE_PRACTICE:
             S["earth_background"].setImage(earth_path)
 
         block_audio_enabled = bool(
@@ -600,8 +640,12 @@ def run_experiment(
             audio.load_block_sequence(f"{cfg.sequence_root}{tone_seq_file}")
 
         # Progress bar state
-        prog_len = 0.0
-        prog_pos = -0.4
+        if not cfg.round_pbar:
+            prog_len = 0.0
+            prog_pos = -0.4
+        else:
+            #progress_frame = 0
+            progress_deg = 0.0
 
         # --- show trial stimuli ---------------------------------------- #
         trial_stims = [
@@ -611,18 +655,25 @@ def run_experiment(
             S["shield_bg"],
             S["laser"],
             S["laser_long"],
-            S["source"],
-            S["rbar_change"],
-            S["rbar"],
-            S["pbar_edge"],
-            S["pbar"],
-            S["rtxt_top"],
-            S["rtxt_bot"],
-            S["start_lbl"],
-            S["end_lbl"],
+            
         ]
-        if cfg.show_earth_background:
+        if cfg.show_earth_background or phase_n == PHASE_PRACTICE:
             trial_stims.insert(0, S["earth_background"])
+        if cfg.show_rbar or phase_n == PHASE_PRACTICE:
+            trial_stims.insert(5, S["rbar"])
+            trial_stims.insert(6, S["rbar_change"])
+            trial_stims.insert(7, S["rtxt_top"])
+            trial_stims.insert(8, S["rtxt_bot"])
+        if not cfg.round_pbar:
+            trial_stims.append(S["pbar_edge"])
+            trial_stims.append(S["pbar"])
+            trial_stims.append(S["start_lbl"])
+            trial_stims.append(S["end_lbl"]),
+        else:
+            trial_stims.append(S["progress_circle"])
+
+        if cfg.show_source:
+            trial_stims.append(S["source"])
         for stim in trial_stims:
             stim.setAutoDraw(True)
 
@@ -852,7 +903,7 @@ def run_experiment(
 
             S["shield_centre"].setOri(shield_rot, log=False)
             S["shield_centre"].setVertices(
-                [[0, 0], [0, cfg.circle_radius * 1.2]],
+                [[0, 0], [0, cfg.circle_radius * 1.21]],
                 log=False,
             )
 
@@ -870,41 +921,68 @@ def run_experiment(
                 log=False,
             )
 
-            S["rbar"].setPos(
-                (cfg.style.reward_bar_x, reward_tracker.bar_position),
-                log=False,
-            )
-            S["rbar"].setSize(
-                (cfg.style.reward_bar_width, reward_tracker.bar_length),
-                log=False,
-            )
-            S["rbar_change"].setPos(
-                (
-                    cfg.style.reward_bar_x,
-                    reward_tracker.BAR_BOTTOM + reward_tracker.bar_length,
-                ),
-                log=False,
-            )
-            S["rbar_change"].setSize(
-                (cfg.style.reward_bar_width, reward_tracker.flash_bar_length),
-                log=False,
-            )
-            S["rbar_change"].setFillColor(reward_tracker.change_color, log=False)
-            S["rbar_change"].setLineColor(reward_tracker.change_color, log=False)
+            if cfg.show_rbar or phase_n == PHASE_PRACTICE:
+                S["rbar"].setPos(
+                    (cfg.style.reward_bar_x, reward_tracker.bar_position),
+                    log=False,
+                )
+                S["rbar"].setSize(
+                    (cfg.style.reward_bar_width, reward_tracker.bar_length),
+                    log=False,
+                )
+                S["rbar_change"].setPos(
+                    (
+                        cfg.style.reward_bar_x,
+                        reward_tracker.BAR_BOTTOM + reward_tracker.bar_length,
+                    ),
+                    log=False,
+                )
+                S["rbar_change"].setSize(
+                    (cfg.style.reward_bar_width, reward_tracker.flash_bar_length),
+                    log=False,
+                )
+                S["rbar_change"].setFillColor(reward_tracker.change_color, log=False)
+                S["rbar_change"].setLineColor(reward_tracker.change_color, log=False)
 
-            S["rtxt_top"].setText(reward_tracker.top_text, log=False)
-            S["rtxt_bot"].setText(reward_tracker.bottom_text, log=False)
+                S["rtxt_top"].setText(reward_tracker.top_text, log=False)
+                S["rtxt_bot"].setText(reward_tracker.bottom_text, log=False)
 
-            prog_len += cfg.style.progress_bar_width / n_frames
-            prog_pos += 0.4 / n_frames
-            S["pbar"].setPos(
-                (prog_pos, cfg.style.progress_bar_y),
-                log=False,
-            )
-            S["pbar"].setSize(
-                (prog_len, cfg.style.progress_bar_height),
-                log=False,
-            )
+            if not cfg.round_pbar:
+                prog_len += cfg.style.progress_bar_width / n_frames
+                prog_pos += 0.4 / n_frames
+                S["pbar"].setPos(
+                    (prog_pos, cfg.style.progress_bar_y),
+                    log=False,
+                )
+                S["pbar"].setSize(
+                    (prog_len, cfg.style.progress_bar_height),
+                    log=False,
+                )
+            else:
+                # progress_frame += 1
+                progress_deg = 360.0 * (cur_frame / n_frames)
+
+                # S["shield"].setOri(shield_rot, log=False)
+                # S["shield"].setVertices(shield_verts, log=False)
+                
+
+                S["progress_circle"].setVertices(
+                    compute_progress_vertices(
+                        progress_deg,
+                        cfg.circle_radius,
+                    ),
+                    log=False,
+                )
+                S["progress_circle"].setLineWidth(
+                    cfg.style.progress_bar_width,
+                    log=False,
+                )
+                S["progress_circle"].setFillColor(cfg.style.progress_bar_color, log=False)
+                S["progress_circle"].setLineColor(
+                    cfg.style.progress_bar_edge_color,
+                    log=False,
+                )
+                
 
             # ---- triggers (deferred to post-flip for frame sync) -- #
 

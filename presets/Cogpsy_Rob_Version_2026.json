@@ -2,7 +2,7 @@
     "name": "Cogpsy_Rob_Version_2026",
     "description": "CogPsy adapted for Rob — 40° shield, medium noise for practice, £ currency, loss-only",
     "experiment": {
-        "target_os": "linux",
+        "target_os": "windows",
         "window_size": [1512, 982],
         "fullscreen": true,
         "screen_index": 0,
@@ -16,16 +16,19 @@
         "rotation_speed": 1.0,
         "circle_radius": 3.0,
         "allow_shield_adjustment": false,
-        "fixed_shield_degrees": 40.0,
+        "fixed_shield_degrees": 20.0,
         "loss_factor": 0.003,
         "currency_symbol": "£",
-        "trigger_mode": "parallel",
+        "trigger_mode": ["parallel", "dummy"],
         "serial_port": "/dev/ttyUSB0",
         "serial_baud_rate": 115200,
         "parallel_address": "/dev/parport0",
         "enable_audio": true,
         "mmn_type": "duration",
-        "show_earth_background": true,
+        "show_earth_background": false,
+        "show_rbar": false,
+        "show_source": true,
+        "round_pbar": true,
         "tone_freq_standard": 440.0,
         "tone_freq_deviant": 440.0,
         "tone_duration": 0.05,
@@ -39,8 +42,8 @@
         "visits": ["1"],
         "sessions": ["1"],
         "orders": ["1", "2", "3", "4"],
-        "framings": ["loss", "win"],
-        "dialog_fields": ["participant", "visit", "session", "order", "framing", "practice_mode"]
+        "framings": ["loss"],
+        "dialog_fields": ["participant", "visit", "session", "order", "framing", "practice_mode", "trigger_mode"]
     },
     "stimgen": {
         "SAMPLE_RATE": 60,
@@ -50,9 +53,9 @@
             "medium": [5, 1.5, 3, 12]
         },
         "NOISE_PRESETS": {
-            "precise": 15,
+            "precise": 10,
             "noisy": 20,
-            "medium": 10.0
+            "medium": 15.0
         },
         "PRACTICE_VOLATILITY": ["medium"],
         "PRACTICE_NOISE": ["medium"],
@@ -60,7 +63,7 @@
         "PRACTICE_N_SESSIONS": 1,
         "PRACTICE_BLOCK_DURATION_MIN": 2,
         "MAIN_VOLATILITY": ["stable", "volatile"],
-        "MAIN_NOISE": ["precise"],
+        "MAIN_NOISE": ["medium"],
         "MAIN_NOISE_MODE": "counterbalanced",
         "MAIN_N_SESSIONS": 1,
         "MAIN_BLOCK_DURATION_MIN": 4,

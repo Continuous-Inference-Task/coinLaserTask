@@ -82,7 +82,7 @@ class StimulusStyle:
     progress_bar_y: float = -0.45
     progress_bar_height: float = 0.05
     progress_bar_width: float = 0.8
-
+    progress_circle_size: Tuple[float, float] = (0.015, 0.015)
 
 @dataclass
 class ExperimentConfig:
@@ -116,6 +116,7 @@ class ExperimentConfig:
     # -- Keyboard controls --
     key_right: str = "j"
     key_left: str = "f"
+    key_next: str = "space"
     # controls instruction screen -- other option is "response_box"
     # if set to response_box, instruction do not name the keys
     # NOTE: must still set key mappings to code the device sends! 
@@ -225,7 +226,11 @@ class ExperimentConfig:
 
     # -- Visual style --
     show_earth_background: bool = True
-    """Whether to show the earth/world picture as the background during trials."""
+    """Whether to show the earth/world picture as the background during main trials. 
+    As of right now it is always visible during practice trials."""
+    show_rbar: bool = True
+    show_source: bool = True
+    round_pbar: bool = False
     style: StimulusStyle = field(default_factory=StimulusStyle)
 
     # -- Session structure --
