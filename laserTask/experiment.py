@@ -644,8 +644,7 @@ def run_experiment(
             prog_len = 0.0
             prog_pos = -0.4
         else:
-            #progress_frame = 0
-            progress_deg = 0.0
+            prog_deg = 0.0
 
         # --- show trial stimuli ---------------------------------------- #
         trial_stims = [
@@ -959,16 +958,11 @@ def run_experiment(
                     log=False,
                 )
             else:
-                # progress_frame += 1
-                progress_deg = 360.0 * (cur_frame / n_frames)
-
-                # S["shield"].setOri(shield_rot, log=False)
-                # S["shield"].setVertices(shield_verts, log=False)
-                
+                prog_deg = 360.0 * (cur_frame / n_frames)
 
                 S["progress_circle"].setVertices(
                     compute_progress_vertices(
-                        progress_deg,
+                        prog_deg,
                         cfg.circle_radius,
                     ),
                     log=False,
@@ -981,8 +975,7 @@ def run_experiment(
                 S["progress_circle"].setLineColor(
                     cfg.style.progress_bar_edge_color,
                     log=False,
-                )
-                
+                )                
 
             # ---- triggers (deferred to post-flip for frame sync) -- #
 

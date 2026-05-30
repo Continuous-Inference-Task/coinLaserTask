@@ -5,6 +5,7 @@ from typing import List, Tuple, Dict
 
 from config_shared import SEQUENCE_VERSION, PRACTICE_SEQUENCE_VERSION, SEQUENCE_ROOT
 from laserTask.shield import ShieldSizeConfig
+from laserTask.instructions import InstructionSet
 
 @dataclass
 class StimulusStyle:
@@ -83,6 +84,7 @@ class StimulusStyle:
     progress_bar_height: float = 0.05
     progress_bar_width: float = 0.8
     progress_circle_size: Tuple[float, float] = (0.015, 0.015)
+    progress_circle_width: float = 10.5
 
 @dataclass
 class ExperimentConfig:
@@ -232,6 +234,7 @@ class ExperimentConfig:
     show_source: bool = True
     round_pbar: bool = False
     style: StimulusStyle = field(default_factory=StimulusStyle)
+    instruction_set: InstructionSet = InstructionSet.COGPSY
 
     # -- Session structure --
     enable_practice: bool = True

@@ -158,7 +158,7 @@ def compute_progress_vertices(
     circle_radius: float,
     *,
     start_angle_deg: float = 0.0,
-    n_points: int = 60,
+    n_points: int = 360,
     ring_fraction: float = 0.2,   # radial thickness as fraction of circle_radius
 ) -> list:
     if progress_degrees <= 0:
@@ -174,52 +174,12 @@ def compute_progress_vertices(
     outer = [[float(np.sin(a) * outer_r), float(np.cos(a) * outer_r)] for a in angles]
     inner = [[float(np.sin(a) * inner_r), float(np.cos(a) * inner_r)] for a in reversed(angles)]
 
-    return outer + inner           # closed annular sector — no [0,0]
+    return outer + inner
+    # NOTE: Tried to close it explicitly, but that did not help with filling
+    # verts = outer + inner
+    # verts.append(outer[0])
+    # return verts
 
-# def compute_progress_vertices(
-#     progress_degrees: float,
-#     circle_radius: float,
-#     *,
-#     start_angle_deg: float = 0.0,
-#     n_points: int = 60,
-# ) -> list:
-#     """
-#     Return vertices for a radial progress sector.
-
-#     Parameters
-#     ----------
-#     progress_degrees :
-#         Angular span of the progress indicator.
-#     circle_radius :
-#         Radius of the game circle.
-#     start_angle_deg :
-#         Where the progress arc begins.
-#         0° = top (12 o'clock).
-#     n_points :
-#         Arc smoothness.
-
-#     Returns
-#     -------
-#     list of [x, y]
-#         Polygon vertices suitable for ShapeStim.
-#     """
-#     if progress_degrees <= 0:
-#         return [[0.0, 0.0]]
-
-#     start_rad = np.radians(start_angle_deg)
-#     end_rad = np.radians(start_angle_deg + progress_degrees)
-
-#     angles = np.linspace(start_rad, end_rad, n_points)
-
-#     scale = circle_radius * 1.1
-
-#     xs = np.sin(angles) * scale
-#     ys = np.cos(angles) * scale
-
-#     return [[0.0, 0.0]] + [
-#         [float(x), float(y)]
-#         for x, y in zip(xs, ys)
-#     ]
 # NOTE: adapted instructions specifically for Rob, need to make this modular
 
 def create_stimuli(
@@ -731,9 +691,10 @@ def create_stimuli(
             size=s.progress_circle_size,
             ori=0,
             pos=s.center_pos,
-            lineWidth=s.progress_bar_width,
+            lineWidth=s.progress_circle_width,
             lineColor=s.progress_bar_color,
-            fillColor=s.progress_bar_color,
+            #fillColor=s.progress_bar_color,
+            #closeShape=True,
         )
     else:
         S["pbar_edge"] = visual.Rect(
