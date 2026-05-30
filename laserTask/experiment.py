@@ -968,7 +968,7 @@ def run_experiment(
                     log=False,
                 )
                 S["progress_circle"].setLineWidth(
-                    cfg.style.progress_bar_width,
+                    cfg.style.progress_circle_width,
                     log=False,
                 )
                 S["progress_circle"].setFillColor(cfg.style.progress_bar_color, log=False)

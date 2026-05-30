@@ -683,6 +683,9 @@ def create_stimuli(
         fillColor=s.reward_bar_color,
     )
     
+    # NOTE: This is not a clean implementation
+    # It uses a very thick line because I could not get the fillColour to be displayed
+    # Next step might be to try RadialStim instead, but that has to be imported from psychopy-visionscience
     if cfg.round_pbar:
         S["progress_circle"] = visual.ShapeStim(
             win,
