@@ -5,119 +5,6 @@ from psychopy import visual
 
 from laserTask.config import ExperimentConfig
 
-# TODO: in long run want to make instruction screen easily adaptable
-def build_shield_instructions(cfg: ExperimentConfig, winds_cond: int) -> str:
-    """Return the participant-facing text explaining shield-size controls
-    and their reward consequences.
-
-    The text adapts automatically to the number of sizes, their values,
-    the assigned keys, and the reward framing (loss vs. win).
-    """
-    sds = cfg.shield_sizes
-    n = len(sds.sizes)
-
-    def _fmt_money(amount: float) -> str:
-        value = f"{abs(amount):.5f}".rstrip("0").rstrip(".")
-        if "." not in value:
-            value = f"{value}.00"
-        return f"{cfg.currency_symbol}{value}"
-
-    def _event_text(amount: float) -> str:
-        if amount > 0:
-            return f"you gain {_fmt_money(amount)} when you catch a beam"
-        if amount < 0:
-            return f"you lose {_fmt_money(amount)} when you catch a beam"
-        return "no change when you catch a beam"
-
-    def _miss_text(amount: float) -> str:
-        if amount > 0:
-            return f"When you miss a beam, you gain {_fmt_money(amount)}."
-        if amount < 0:
-            return f"When you miss a beam, you lose {_fmt_money(amount)}."
-        return "When you miss a beam, there is no score change."
-
-    # readable labels
-    labels: List[str] = []
-    for i, sz in enumerate(sds.sizes):
-        tag = ""
-        if i == 0:
-            tag = " (smallest)"
-        elif i == n - 1:
-            tag = " (largest)"
-        labels.append(f"{sz.degrees:.0f}°{tag}")
-
-
-    if winds_cond == 0:
-        # --- loss framing ---
-        lines = []
-        for lbl, size in zip(labels, sds.sizes):
-            lines.append(f"  • {lbl}:  {_event_text(size.loss.hit.total)}")
-        consequence = "\n".join(lines)
-        miss_values = [size.loss.miss.total for size in sds.sizes]
-        hint = "A smaller shield is harder to aim but protects your score better!"
-    else:
-        # --- win framing ---
-        lines = []
-        for lbl, size in zip(labels, sds.sizes):
-            lines.append(f"  • {lbl}:  {_event_text(size.win.hit.total)}")
-        consequence = "\n".join(lines)
-        miss_values = [size.win.miss.total for size in sds.sizes]
-        hint = "A smaller shield is harder to aim but earns you more when you succeed!"
-
-    if len(set(miss_values)) == 1:
-        # Keep text compact when miss outcome is identical for all sizes.
-        miss_line = f"{_miss_text(miss_values[0])} This is the same for all shield sizes."
-    else:
-        # Otherwise show explicit per-size miss consequences.
-        miss_line = "Miss outcome by shield size:\n" + "\n".join(
-            f"  • {lbl}: {_miss_text(total).replace('When you miss a beam, ', '')}"
-            for lbl, total in zip(labels, miss_values)
-        )
-
-    default_sz = sds.default_degrees
-
-    _keyboard_shield_blurb = (
-        f"Press  '{sds.key_shrink.upper()}'  to make the shield SMALLER.\n"
-        f"Press  '{sds.key_grow.upper()}'  to make the shield LARGER.\n\n"
-    )
-    _box_shield_blurb = (
-        "Use the second response box to make the shield smaller or larger.\n\n"
-    )
-    _shield_blurb = (
-        _keyboard_shield_blurb
-        if cfg.input_device == "keyboard"
-        else _box_shield_blurb
-    )
-
-    return (
-        "Shield Size\n\n"
-        # f"Press  '{sds.key_shrink.upper()}'  to make the shield SMALLER.\n"
-        # f"Press  '{sds.key_grow.upper()}'  to make the shield LARGER.\n\n"
-        f"{_shield_blurb}"
-        f"There are {n} sizes.  Each block starts at the default "
-        f"size ({default_sz:.0f}°).\n\n"
-        f"{hint}\n\n"
-        f"Reward by shield size:\n"
-        f"{consequence}\n\n"
-        f"{miss_line}\n\n"
-        "Press any key to continue."
-    )
-
-# def build_basic_shield_instructions(cfg: ExperimentConfig, winds_cond: int) -> str:
-#     _keyboard_shield_blurb = (
-#         f"Press  '{cfg.key_left.upper()}'  to make the shield SMALLER.\n"
-#         f"Press  '{cfg.key_right.upper()}'  to make the shield LARGER.\n\n"
-#     )
-#     _box_shield_blurb = (
-#         "Use the second response box to make the shield smaller or larger.\n\n"
-#     )
-#     _shield_blurb = (
-#         _keyboard_shield_blurb
-#         if cfg.input_device == "keyboard"
-#         else _box_shield_blurb
-#     )
-
-
 def compute_shield_vertices(
     shield_degrees: float,
     circle_radius: float,
@@ -181,7 +68,6 @@ def compute_progress_vertices(
     # return verts
 
 # NOTE: adapted instructions specifically for Rob, need to make this modular
-
 def create_stimuli(
     win: visual.Window,
     cfg: ExperimentConfig,
