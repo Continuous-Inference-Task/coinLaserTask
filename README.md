@@ -31,7 +31,6 @@ coin_laser_task/
 ├── run.py                     # Bootstrap: venv setup, dependency install, launches setup.py
 ├── setup.py                   # Interactive configuration wizard & sequence generator
 ├── main.py                    # Experiment entry point
-├── config_shared.py           # Sequence version constants (shared between stimgen & runtime)
 │
 ├── presets/                   # Study-design presets (JSON, committed to git)
 ├── laserTask/                 # Experiment engine (PsychoPy)

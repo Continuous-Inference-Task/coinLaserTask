@@ -3,7 +3,6 @@ import sys
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict
 
-from config_shared import SEQUENCE_VERSION, PRACTICE_SEQUENCE_VERSION, SEQUENCE_ROOT
 from laserTask.shield import ShieldSizeConfig
 #from laserTask.instructions import InstructionSet
 
@@ -100,10 +99,7 @@ class ExperimentConfig:
     """
 
     # -- File paths (relative to script directory) --
-    # Values sourced from config_shared.py — change them there.
-    sequence_version: str = SEQUENCE_VERSION
-    practice_sequence_version: str = PRACTICE_SEQUENCE_VERSION
-    sequence_root: str = SEQUENCE_ROOT
+    sequence_root: str = "sequences/"
     data_root: str = "data/"
     image_root: str = "images/"
 

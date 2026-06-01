@@ -3,7 +3,10 @@ generateCoinSessionCsvFiles - Generates high-level CSV files for the CoIn
 (Continuous Inference) Laser task with colour counterbalancing and stability ordering.
 
 Accepts the block design and raw block sequence so that counterbalancing
-works for any N×M (volatility × noise) configuration, not just the original 2×2.
+works for any N×M (volatility × noise) configuration.
+
+MMN tone blocks are assigned 1:1 with laser blocks — each laser block
+gets its own pre-generated MMN tone file.
 """
 import os
 from write_exp_csv_file import write_exp_csv_file
@@ -51,14 +54,10 @@ def _build_counterbalanced_orders(design, block_sequence, n_vol, n_noise):
     block_order0 = list(range(1, n_blocks + 1))
 
     # Order 1: reverse the volatility dimension within each group of n_types
-    # For 2×2: [1,2,3,4, 1,2,3,4, ...]  →  [3,4,1,2, 3,4,1,2, ...]
     cond_order1 = []
     for group_start in range(0, n_blocks, n_types):
         group = list(block_sequence[group_start:group_start + n_types])
-        # Reverse volatility: swap first half and second half of the group
         half = n_types // n_vol
-        # Within each vol level's block group, preserve noise ordering
-        # Just swap vol-level blocks
         reordered = []
         for vol_idx in reversed(range(n_vol)):
             start = vol_idx * n_noise
@@ -66,8 +65,6 @@ def _build_counterbalanced_orders(design, block_sequence, n_vol, n_noise):
         cond_order1.extend(reordered)
 
     # Block file order 1: reorder the file indices the same way
-    block_order1 = list(range(1, n_blocks + 1))
-    # Reorder block indices to match cond_order1
     reordered_files = []
     for group_start in range(0, n_blocks, n_types):
         group_files = list(range(group_start + 1, group_start + n_types + 1))
@@ -83,46 +80,15 @@ def _build_counterbalanced_orders(design, block_sequence, n_vol, n_noise):
     return cond_orders, block_orders
 
 
-def _build_tone_sequences(n_blocks, blocks_per_session, n_vol, n_noise, soi):
-    """Build tone condition/block lists for MMN sequences.
-
-    Tones follow a simple pattern: 3 tone types cycling through sessions.
-    """
-    n_sessions = max(1, (n_blocks + blocks_per_session - 1) // blocks_per_session)
-
-    # 3 tone condition types: [vol=0,noise=1], [vol=1,noise=1], [vol=0,noise=0]
-    tone_vol_indices = [
-        [0, 1, 0, 1],   # tone type 1
-        [1, 1, 0, 0],   # tone type 2
-        [0, 0, 1, 1],   # tone type 3
-    ]
-    tone_noise_indices = [
-        [1, 1, 0, 0],   # tone type 1
-        [1, 0, 1, 0],   # tone type 2
-        [0, 1, 0, 1],   # tone type 3
-    ]
-
-    # Tone ordering for the 4 counterbalance orders
-    tone_session_orders = [
-        [0, 1, 2],  # order 1
-        [1, 2, 0],  # order 2
-        [2, 0, 1],  # order 3
-        [1, 0, 2],  # order 4
-    ]
-
-    return tone_vol_indices, tone_noise_indices, tone_session_orders
-
-
 def generate_coin_session_csv_files(
-    seq_version, order_index, task_flag, output_root,
+    order_index, task_flag, output_root,
     design, block_sequence, n_sessions, blocks_per_session,
+    mmn_filenames=None, tone_vol_list=None, tone_noise_list=None,
 ):
     """Generate session CSV files with counterbalanced orders and image assignments.
 
     Parameters
     ----------
-    seq_version : str
-        Version string (kept for API compatibility; no longer used in filenames).
     order_index : int
         1-based index (1..4) for counterbalancing.
     task_flag : str
@@ -137,13 +103,20 @@ def generate_coin_session_csv_files(
         Number of session CSVs to split into (each = blocks_per_session blocks).
     blocks_per_session : int
         Number of blocks per session CSV.
+    mmn_filenames : list of str or None
+        Pre-generated MMN block filenames (one per laser block), e.g.
+        ``["mmn/mmn_block1.csv", "mmn/mmn_block2.csv", ...]``.
+        Only used when *task_flag* is ``"main"``.
+    tone_vol_list : list of int or None
+        0-based volatility indices for each MMN block.
+    tone_noise_list : list of int or None
+        0-based noise (stochasticity) indices for each MMN block.
     """
     vol_labels, noise_labels, n_vol, n_noise = _derive_dimensions(design)
     n_types = n_vol * n_noise
     n_blocks = len(block_sequence)
 
     # ── Counterbalance orders ──
-    # order_index 1..4 → stab_order 0 or 1, img_order 0 or 1
     stab_orders = [0, 1, 0, 1]
     img_orders = [0, 0, 1, 1]
     soi = stab_orders[order_index - 1]
@@ -162,10 +135,6 @@ def generate_coin_session_csv_files(
     img_reversed = list(reversed(all_images[:n_types]))
     img_lists = [img_forward, img_reversed]
 
-    # ── Tone sequences (main sessions only) ──
-    tone_vol_indices, tone_noise_indices, tone_session_orders = \
-        _build_tone_sequences(n_blocks, blocks_per_session, n_vol, n_noise, soi)
-
     cond_list = cond_orders[soi]
     block_list = block_orders[soi]
     image_list = img_lists[ioi]
@@ -181,18 +150,18 @@ def generate_coin_session_csv_files(
 
         add_str = f's{i_sess + 1}_'
 
-        if task_flag == 'main':
-            t_order_idx = tone_session_orders[soi][min(i_sess, len(tone_session_orders[soi]) - 1)]
-            # Build per-block tone values — pad to match session length
-            t_vol = tone_vol_indices[t_order_idx]
-            t_noise = tone_noise_indices[t_order_idx]
-            # Simple tone block numbering: cycle through 1..12
-            t_blocks = [(start + j) % 12 + 1 for j in range(len(sess_blocks))]
+        if task_flag == 'main' and mmn_filenames is not None:
+            # Apply same counterbalancing reordering to MMN files as laser blocks.
+            # sess_blocks contains the reordered laser block indices (e.g. [3,4,1,2]).
+            # Index into mmn_filenames (0-based) with the corresponding block index.
+            sess_mmn = [mmn_filenames[bidx - 1] for bidx in sess_blocks]
+            sess_tone_vol = [tone_vol_list[bidx - 1] for bidx in sess_blocks] if tone_vol_list else [0] * len(sess_mmn)
+            sess_tone_noise = [tone_noise_list[bidx - 1] for bidx in sess_blocks] if tone_noise_list else [0] * len(sess_mmn)
 
             write_exp_csv_file_with_tones(
                 session_prefix, sess_cond, sess_blocks, image_list,
-                design, t_vol[:len(sess_blocks)], t_noise[:len(sess_blocks)],
-                t_blocks[:len(sess_blocks)], add_str, root2file,
+                design, sess_tone_vol, sess_tone_noise, sess_mmn,
+                add_str, root2file,
             )
         else:
             write_exp_csv_file(

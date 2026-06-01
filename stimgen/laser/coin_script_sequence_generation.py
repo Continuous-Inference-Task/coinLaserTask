@@ -5,10 +5,14 @@ sequences in the Laser task (CoIn / Continuous Inference study).
 Generates raw laser time-series blocks for practice and main sessions,
 then assembles them into counterbalanced session CSV files.
 
+MMN tone blocks are generated inline, one per main-session laser block,
+with the same block duration and volatility/noise coupling.
+
 Usage:  python coin_script_sequence_generation.py
 (typically called from setup.py, not directly)
 """
 import os
+import sys
 import pickle
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for saving figures
@@ -34,15 +38,64 @@ def _build_block_sequence(n_types, n_blocks):
     return seq
 
 
+def _generate_mmn_for_main(main_design, main_block_seq, output_root, n_main_blocks):
+    """Generate MMN tone blocks coupled to main-session laser blocks.
+
+    Returns a dict mapping 1-based block index → list of MMN filenames
+    (one per session-order block), plus per-block (vol, noise) indices.
+    """
+    # Import MMN generation (path relative to stimgen/)
+    mmn_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mmn")
+    sys.path.insert(0, os.path.dirname(mmn_path))
+    from mmn.generate_mmn_blocks import generate_mmn_blocks
+
+    mmn_dir = os.path.join(output_root, "mmn")
+
+    # Build list of block type names in the order they appear
+    block_types = main_design["blockTypes"]
+    block_type_names = [
+        block_types[main_block_seq[i] - 1]
+        for i in range(n_main_blocks)
+    ]
+
+    mmn_filenames = generate_mmn_blocks(
+        block_types=block_type_names,
+        block_duration_min=config.MAIN_BLOCK_DURATION_MIN,
+        output_dir=mmn_dir,
+        tone_duration_ms=config.MMN_TONE_DURATION_MS,
+        isi_duration_ms=config.MMN_ISI_DURATION_MS,
+        deviant_prob_map=config.MMN_DEVIANT_PROB_MAP,
+    )
+
+    # Build per-block (vol, noise) indices matching the MMN condition
+    # Use unique vol/noise labels in design order (preserving first occurrence)
+    design_block_types = main_design["blockTypes"]
+    all_vol_labels = list(dict.fromkeys(vt.split("+")[0] for vt in design_block_types))
+    all_noise_labels = list(dict.fromkeys(vt.split("+")[1] for vt in design_block_types))
+
+    vol_indices = []
+    noise_indices = []
+    for i in range(n_main_blocks):
+        bt_name = block_type_names[i]
+        vol_label, noise_label = bt_name.split("+", 1)
+        vol_idx = all_vol_labels.index(vol_label) if vol_label in all_vol_labels else 0
+        noise_idx = all_noise_labels.index(noise_label) if noise_label in all_noise_labels else 0
+        vol_indices.append(vol_idx)
+        noise_indices.append(noise_idx)
+
+    print(f'MMN tone blocks generated: {len(mmn_filenames)} blocks in {mmn_dir}')
+    return mmn_filenames, vol_indices, noise_indices
+
+
 def main():
     # Sort out paths and source data
     current_path = os.path.dirname(os.path.abspath(__file__))
-    
+
     if os.path.isabs(config.OUTPUT_DIR):
         output_root = config.OUTPUT_DIR
     else:
         output_root = os.path.join(current_path, config.OUTPUT_DIR)
-        
+
     os.makedirs(output_root, exist_ok=True)
     print(f'Saving sequences to: {output_root}\n')
 
@@ -105,26 +158,35 @@ def main():
     print(f'Main session saved: {session_file_name}')
 
     # =========================================================================
+    # MMN tone blocks — coupled to laser blocks (one per laser block)
+    # =========================================================================
+    mmn_filenames, tone_vol_list, tone_noise_list = _generate_mmn_for_main(
+        main_design, main_block_seq, output_root, n_main_blocks
+    )
+
+    # =========================================================================
     # Session CSV files and counterbalancing
     # =========================================================================
-    seq_version = config.VERSION
+    blocks_per_session = n_main_types
 
-    # Main session CSVs
+    # Main session CSVs (with MMN tone info)
     for order_index in range(1, 5):
         generate_coin_session_csv_files(
-            seq_version, order_index, 'main', output_root,
+            order_index, 'main', output_root,
             design=main_design,
             block_sequence=main_block_seq,
             n_sessions=config.MAIN_N_SESSIONS,
-            blocks_per_session=n_main_types,
+            blocks_per_session=blocks_per_session,
+            mmn_filenames=mmn_filenames,
+            tone_vol_list=tone_vol_list,
+            tone_noise_list=tone_noise_list,
         )
-    print(f'\nSession CSV files generated for main ({n_main_blocks} blocks, {n_main_types}/session)')
+    print(f'\nSession CSV files generated for main ({n_main_blocks} blocks, {blocks_per_session}/session, + MMN)')
 
-    # Practice session CSVs
-    seq_version_practice = config.VERSION_PRACTICE
+    # Practice session CSVs (no MMN)
     for order_index in range(1, 5):
         generate_coin_session_csv_files(
-            seq_version_practice, order_index, 'practice', output_root,
+            order_index, 'practice', output_root,
             design=practice_design,
             block_sequence=practice_block_seq,
             n_sessions=config.PRACTICE_N_SESSIONS,
