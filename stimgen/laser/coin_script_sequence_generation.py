@@ -64,7 +64,7 @@ def main():
     )
 
     fh1, fh2 = analyse_session(session)
-    session_file_name = f'practice_{config.VERSION_PRACTICE}'
+    session_file_name = 'practice'
     write_session_to_csv_file(session, session_file_name, output_root)
     with open(os.path.join(output_root, f'session_{session_file_name}.pkl'), 'wb') as f:
         pickle.dump(session, f)
@@ -93,7 +93,7 @@ def main():
     )
 
     fh1, fh2 = analyse_session(session)
-    session_file_name = f'main_{config.VERSION}'
+    session_file_name = 'main'
     write_session_to_csv_file(session, session_file_name, output_root)
     with open(os.path.join(output_root, f'session_{session_file_name}.pkl'), 'wb') as f:
         pickle.dump(session, f)

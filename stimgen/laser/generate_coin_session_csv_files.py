@@ -122,7 +122,7 @@ def generate_coin_session_csv_files(
     Parameters
     ----------
     seq_version : str
-        Version string, e.g. "v4".
+        Version string (kept for API compatibility; no longer used in filenames).
     order_index : int
         1-based index (1..4) for counterbalancing.
     task_flag : str
@@ -170,7 +170,7 @@ def generate_coin_session_csv_files(
     block_list = block_orders[soi]
     image_list = img_lists[ioi]
 
-    session_prefix = f'{task_flag}_{seq_version}'
+    session_prefix = f'{task_flag}'
     root2file = os.path.join(output_root, f'coin_{session_prefix}_order{order_index}')
 
     for i_sess in range(n_sessions):

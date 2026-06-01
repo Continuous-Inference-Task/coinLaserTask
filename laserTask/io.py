@@ -31,8 +31,8 @@ def build_session_path(cfg: ExperimentConfig, info: dict) -> str:
     session = info.get("session") or (cfg.sessions[0] if cfg.sessions else "1")
     return (
         f"{cfg.sequence_root}"
-        f"coin_main_{cfg.sequence_version}_order{order}/"
-        f"session_s{session}_main_{cfg.sequence_version}.csv"
+        f"coin_main_order{order}/"
+        f"session_s{session}_main.csv"
     )
 
 
@@ -41,8 +41,8 @@ def build_practice_session_path(cfg: ExperimentConfig, info: dict) -> str:
     order = info.get("order") or (cfg.orders[0] if cfg.orders else "1")
     return (
         f"{cfg.sequence_root}"
-        f"coin_practice_{cfg.practice_sequence_version}_order{order}/"
-        f"session_s1_practice_{cfg.practice_sequence_version}.csv"
+        f"coin_practice_order{order}/"
+        f"session_s1_practice.csv"
     )
 
 
@@ -96,7 +96,7 @@ def validate_dialog_options(
     # Look at main session order dirs as the canonical source
     main_dirs = sorted([
         d for d in seq_dir.iterdir()
-        if d.is_dir() and d.name.startswith("coin_main_")
+        if d.is_dir() and d.name.startswith("coin_main_order")
     ])
     if not main_dirs:
         warnings.append(
@@ -107,18 +107,18 @@ def validate_dialog_options(
 
     available_orders: List[str] = []
     for d in main_dirs:
-        # Extract order number from "coin_main_v4_order1"
+        # Extract order number from "coin_main_order1"
         parts = d.name.rsplit("order", 1)
         if len(parts) == 2:
             available_orders.append(parts[1])
 
     # ── detect available sessions from first order dir ──
     first_dir = main_dirs[0]
-    session_files = sorted(first_dir.glob("session_s*_main_*.csv"))
-    # Extract session number from "session_s1_main_v4.csv"
+    session_files = sorted(first_dir.glob("session_s*_main.csv"))
+    # Extract session number from "session_s1_main.csv"
     available_sessions: List[str] = []
     for sf in session_files:
-        name = sf.stem  # e.g. "session_s1_main_v4"
+        name = sf.stem  # e.g. "session_s1_main"
         if name.startswith("session_s"):
             rest = name[len("session_s"):]
             sess_num = rest.split("_")[0]

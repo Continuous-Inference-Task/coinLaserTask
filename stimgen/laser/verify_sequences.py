@@ -5,8 +5,8 @@ polished diagnostic/verification plots with config comparisons overlaid.
 
 Usage:
     python verify_sequences.py                          # verify all sessions
-    python verify_sequences.py --session main_v4        # one specific session
-    python verify_sequences.py --session practice_v3    # practice only
+    python verify_sequences.py --session main        # one specific session
+    python verify_sequences.py --session practice    # practice only
     python verify_sequences.py --no-show                # save only, don't display
     python verify_sequences.py --output /tmp/my_plots/  # custom output dir
     python verify_sequences.py --list                   # list available sessions

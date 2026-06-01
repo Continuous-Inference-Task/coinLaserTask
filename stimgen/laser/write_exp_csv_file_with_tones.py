@@ -36,7 +36,7 @@ def write_exp_csv_file_with_tones(
         Output directory.
     """
     block_file_name_base = f'{sess_name}_block'
-    tone_file_name_base = 'mmn/mmn_v1_block'
+    tone_file_name_base = 'mmn/mmn_block'
 
     # Derive dimension counts from design
     block_names = design['blockTypes']
