@@ -11,7 +11,7 @@ import it without pulling in each other's stack.
 # here and both sides pick up the update automatically.
 
 SEQUENCE_VERSION: str = "v4"
-"""Version tag for main / baseline / online-training laser sequences."""
+"""Version tag for main laser sequences."""
 
 PRACTICE_SEQUENCE_VERSION: str = "v3"
 """Version tag for practice laser sequences."""

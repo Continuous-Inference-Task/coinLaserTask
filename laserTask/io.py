@@ -55,7 +55,7 @@ def build_save_path(cfg: ExperimentConfig, info: dict) -> str:
         f"sub-{info['participant']}"
         f"_vis-{visit}"
         f"_ses-{session}"
-        f"_task-laser_type-baseline.csv"
+        f"_task-laser_type-main.csv"
     )
 
 
@@ -115,7 +115,7 @@ def validate_dialog_options(
     # ── detect available sessions from first order dir ──
     first_dir = main_dirs[0]
     session_files = sorted(first_dir.glob("session_s*_main_*.csv"))
-    # Extract session number from "session_s1_baseline_v4.csv"
+    # Extract session number from "session_s1_main_v4.csv"
     available_sessions: List[str] = []
     for sf in session_files:
         name = sf.stem  # e.g. "session_s1_main_v4"
