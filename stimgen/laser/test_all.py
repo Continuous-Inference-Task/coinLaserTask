@@ -6,7 +6,7 @@ and internal consistency.
 import os
 import sys
 
-# Lock configuration variables to standard baseline for consistent unit tests
+# Lock configuration variables to standard defaults for consistent unit tests
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 config.MAIN_VOLATILITY = ['stable', 'volatile']
@@ -368,7 +368,7 @@ def test_generate_coin_session_csv_files():
             generate_coin_session_csv_files('v4', order, 'onlineTrain', tmpdir,
                                             design=main_design, block_sequence=main_block_seq[:4],
                                             n_sessions=1, blocks_per_session=4)
-            generate_coin_session_csv_files('v4', order, 'baseline', tmpdir,
+            generate_coin_session_csv_files('v4', order, 'main', tmpdir,
                                             design=main_design, block_sequence=main_block_seq,
                                             n_sessions=3, blocks_per_session=4)
             generate_coin_session_csv_files('v4', order, 'infusion', tmpdir,
