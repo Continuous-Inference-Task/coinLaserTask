@@ -3069,8 +3069,8 @@ def _preflight_check(cfg: Dict[str, Any]) -> List[str]:
         warnings.append("No sequences/ directory found — generate sequences first.")
         return warnings
 
-    practice_pkl = seq_dir / f"session_practice_{PRACTICE_SEQUENCE_VERSION}.pkl"
-    main_pkl = seq_dir / f"session_main_{SEQUENCE_VERSION}.pkl"
+    practice_pkl = seq_dir / f"session_practice.pkl"
+    main_pkl = seq_dir / f"session_main.pkl"
 
     if not practice_pkl.exists() and not main_pkl.exists():
         warnings.append("No generated sequence .pkl files found — generate sequences first.")

@@ -11,10 +11,13 @@ import it without pulling in each other's stack.
 # here and both sides pick up the update automatically.
 
 SEQUENCE_VERSION: str = "v4"
-"""Version tag for main laser sequences."""
+"""Version tag for laser sequences (used for pkl/plot naming only).
+
+No longer included in generated CSV filenames or directory names.
+Kept for backward compatibility with pkl verification plots."""
 
 PRACTICE_SEQUENCE_VERSION: str = "v3"
-"""Version tag for practice laser sequences."""
+"""Version tag for practice laser sequences (pkl/plot naming only)."""
 
 SEQUENCE_ROOT: str = "sequences/"
 """Root directory for generated sequence CSV files (relative to project root)."""
