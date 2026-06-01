@@ -4,6 +4,7 @@ import numpy as np
 from psychopy import visual
 
 from laserTask.config import ExperimentConfig
+from psychopy_visionscience.radial import RadialStim
 
 # TODO: in long run want to make instruction screen easily adaptable
 def build_shield_instructions(cfg: ExperimentConfig, winds_cond: int) -> str:
@@ -179,6 +180,16 @@ def compute_progress_vertices(
     # verts = outer + inner
     # verts.append(outer[0])
     # return verts
+
+# def compute_progress_wedge(
+#         progress_degrees: float,
+#         circle_radius: float,
+#         cfg: ExperimentConfig
+#     ) -> list:
+#     wedge_table = [
+#         (0.0, 360.0 * i / (cfg.style.wedge_resolution - 1))
+#         for i in range(cfg.style.wedge_resolution) 
+#     ]
 
 # NOTE: adapted instructions specifically for Rob, need to make this modular
 
@@ -687,17 +698,29 @@ def create_stimuli(
     # It uses a very thick line because I could not get the fillColour to be displayed
     # Next step might be to try RadialStim instead, but that has to be imported from psychopy-visionscience
     if cfg.round_pbar:
-        S["progress_circle"] = visual.ShapeStim(
+        # S["progress_circle"] = visual.ShapeStim(
+        #     win,
+        #     name="progress_circle",
+        #     vertices=init_progress,
+        #     size=s.progress_circle_size,
+        #     ori=0,
+        #     pos=s.center_pos,
+        #     lineWidth=s.progress_circle_width,
+        #     lineColor=s.progress_bar_color,
+        #     #fillColor=s.progress_bar_color,
+        #     #closeShape=True,
+        # )
+        S["progress_circle"] = RadialStim(
             win,
             name="progress_circle",
-            vertices=init_progress,
             size=s.progress_circle_size,
-            ori=0,
             pos=s.center_pos,
-            lineWidth=s.progress_circle_width,
-            lineColor=s.progress_bar_color,
-            #fillColor=s.progress_bar_color,
-            #closeShape=True,
+            color=cfg.style.progress_bar_color,
+            colorSpace="named",
+            visibleWedge=(0, 0),
+            radialCycles=0,
+            angularCycles=0,
+            #mask='raisedCos',
         )
     else:
         S["pbar_edge"] = visual.Rect(

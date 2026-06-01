@@ -958,24 +958,39 @@ def run_experiment(
                     log=False,
                 )
             else:
+                # prog_deg = 360.0 * (cur_frame / n_frames)
+
+                # S["progress_circle"].setVertices(
+                #     compute_progress_vertices(
+                #         prog_deg,
+                #         cfg.circle_radius,
+                #     ),
+                #     log=False,
+                # )
+                # S["progress_circle"].setLineWidth(
+                #     cfg.style.progress_circle_width,
+                #     log=False,
+                # )
+                # S["progress_circle"].setFillColor(cfg.style.progress_bar_color, log=False)
+                # S["progress_circle"].setLineColor(
+                #     cfg.style.progress_bar_edge_color,
+                #     log=False,
+                # )  
                 prog_deg = 360.0 * (cur_frame / n_frames)
 
-                S["progress_circle"].setVertices(
-                    compute_progress_vertices(
-                        prog_deg,
-                        cfg.circle_radius,
-                    ),
-                    log=False,
-                )
-                S["progress_circle"].setLineWidth(
-                    cfg.style.progress_circle_width,
-                    log=False,
-                )
-                S["progress_circle"].setFillColor(cfg.style.progress_bar_color, log=False)
-                S["progress_circle"].setLineColor(
-                    cfg.style.progress_bar_edge_color,
-                    log=False,
-                )                
+                S["progress_circle"].visibleWedge = (0, prog_deg)
+
+                # idx = int(cur_frame / n_frames * (cfg.style.wedge_resolution - 1))
+                # S["progress_circle"].visibleWedge = wedge_table[idx]
+
+                # S["progress_circle"].setLineColor(
+                #     cfg.style.progress_bar_edge_color,
+                #     log=False,
+                # )  
+                # S["progress_circle"].setFillColor(
+                #     cfg.style.progress_bar_edge_color,
+                #     log=False,
+                # )                
 
             # ---- triggers (deferred to post-flip for frame sync) -- #
 
