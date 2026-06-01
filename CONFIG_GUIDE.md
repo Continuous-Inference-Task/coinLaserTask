@@ -46,7 +46,10 @@ Defines the `ExperimentConfig` dataclass: field names, types, defaults, and vali
 
 ### `config_shared.py`
 
-Contains `SEQUENCE_VERSION`, `PRACTICE_SEQUENCE_VERSION`, and `SEQUENCE_ROOT`, shared between the sequence generator and the experiment runner. Only change these when versioning a new sequence format.
+Removed.  The single shared constant `SEQUENCE_ROOT = "sequences/"` now lives
+inline in both ``stimgen/laser/config.py`` and ``laserTask/config.py``.
+Sequence version tags have been removed — filenames no longer embed version
+strings and MMN blocks are generated inline from the same config.
 
 ---
 

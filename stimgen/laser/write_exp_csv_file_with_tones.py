@@ -28,15 +28,15 @@ def write_exp_csv_file_with_tones(
         0-based volatility indices for tone conditions per block.
     tone_noise_indices : list of int
         0-based noise (stochasticity) indices for tone conditions per block.
-    tone_block_files : list of int
-        1-based MMN block file indices per block.
+    tone_block_files : list of str
+        MMN block filenames relative to project root, e.g.
+        ``["mmn/mmn_block1.csv", "mmn/mmn_block2.csv"]``.
     add_file_string : str
         Additional string for filename.
     root2file : str
         Output directory.
     """
     block_file_name_base = f'{sess_name}_block'
-    tone_file_name_base = 'mmn/mmn_block'
 
     # Derive dimension counts from design
     block_names = design['blockTypes']
@@ -77,5 +77,5 @@ def write_exp_csv_file_with_tones(
                 f'{block_file_name_base}{block_files[i_block]}.csv,'
                 f'{tone_vol_indices[i_block]},'
                 f'{tone_noise_indices[i_block]},'
-                f'{tone_file_name_base}{tone_block_files[i_block]}.csv\n'
+                f'{tone_block_files[i_block]}\n'
             )

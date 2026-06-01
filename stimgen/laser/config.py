@@ -18,22 +18,17 @@ Usage in setup.py:
 import os
 import sys
 
-# ---- shared values (single source of truth) ----
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../.."))
-from config_shared import SEQUENCE_VERSION, PRACTICE_SEQUENCE_VERSION, SEQUENCE_ROOT
+# Root directory for generated sequence CSV files (relative to stimgen/laser/).
+SEQUENCE_ROOT = "sequences/"
+
+# Output directory for generated sequences (relative to stimgen/laser/).
+OUTPUT_DIR = f"../../{SEQUENCE_ROOT}"
 
 
 # =============================================================================
 # Global Settings
 # =============================================================================
 SAMPLE_RATE = 60  # Hz — matches PsychoPy monitor refresh rate
-
-# Version strings (sourced from config_shared.py — change them there).
-VERSION = SEQUENCE_VERSION
-VERSION_PRACTICE = PRACTICE_SEQUENCE_VERSION
-
-# Output directory for generated sequences (relative to stimgen/laser/).
-OUTPUT_DIR = f"../../{SEQUENCE_ROOT}"
 
 
 # =============================================================================
@@ -105,6 +100,24 @@ JUMP_DURATION_MAX_SEC = 1.0
 # Allowed jump sizes for the true mean position (degrees).
 # When the true mean jumps, it changes by one of these values.
 JUMP_VALUE_SET = [-40, -30, -20, 20, 30, 40]
+
+
+# =============================================================================
+# MMN tone generation — coupled to laser blocks
+# =============================================================================
+
+# Tone timing (must match the values in laserTask/config.py).
+MMN_TONE_DURATION_MS = 50
+"""Tone length in milliseconds (standard tone for duration MMN)."""
+
+MMN_ISI_DURATION_MS = 400
+"""Inter-stimulus interval in ms (= 24 frames at 60 Hz for duration MMN)."""
+
+# Mapping from noise-preset label to MMN deviant probability.
+# "precise" blocks use fewer deviants (0.1), all others default to 0.2.
+MMN_DEVIANT_PROB_MAP = {
+    "precise": 0.1,
+}
 
 
 # ------------------------------------------------------------------ #

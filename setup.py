@@ -38,15 +38,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "stimgen" / "laser"))
 
-try:
-    from config_shared import (
-        SEQUENCE_VERSION,
-        PRACTICE_SEQUENCE_VERSION,
-        SEQUENCE_ROOT,
-    )
-except ImportError:
-    print("ERROR: Cannot find config_shared.py — run from project root.")
-    sys.exit(1)
+SEQUENCE_ROOT = "sequences/"
+"""Root directory for generated sequence CSV files (relative to project root)."""
 
 # ── minimal terminal helpers (zero dependencies) ────────────────────────────
 
@@ -2868,7 +2861,6 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
         items.append(("Tones", _c(C["dim"], "disabled"), "6"))
 
     items += [
-        ("Seq version", f"main={SEQUENCE_VERSION}, practice={PRACTICE_SEQUENCE_VERSION}", "8"),
         ("Visits", f"{', '.join(cfg.get('visits', ['?']))}", "8"),
         ("Sessions", f"{', '.join(cfg.get('sessions', ['?']))}", "8"),
         ("Orders", f"{', '.join(cfg.get('orders', ['?']))}", "8"),
@@ -2970,7 +2962,6 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
             ("  Main blocks", f"{_c(C['bold'], str(main_blocks))} blocks ({main_sessions} session{'s' if main_sessions != 1 else ''} @ {main_dur} min)"),
             ("Total time", f"{_c(C['bold'], str(total_time))} min" if total_time != "?" else "?"),
             ("Jump range", f"{jump_min}s – {jump_max}s (mean {jump_mean}s)"),
-            ("Seq versions", f"main={SEQUENCE_VERSION}, practice={PRACTICE_SEQUENCE_VERSION}"),
             ("Practice files", f"{prac_sessions} session{'s' if prac_sessions != 1 else ''} × 4 orders = {prac_sessions * 4 if isinstance(prac_sessions, int) else '?'} CSVs"),
             ("Main files", f"{main_sessions} session{'s' if main_sessions != 1 else ''} × 4 orders = {main_sessions * 4 if isinstance(main_sessions, int) else '?'} CSVs"),
         ]
@@ -3299,31 +3290,9 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
 
     csv_count = len(list(seq_dir.glob("*.csv"))) if seq_dir.is_dir() else 0
     order_count = len([d for d in seq_dir.iterdir() if d.is_dir() and d.name.startswith("coin_")]) if seq_dir.is_dir() else 0
+    mmn_count = len(list((seq_dir / "mmn").glob("*.csv"))) if (seq_dir / "mmn").exists() else 0
     print()
-    success(f"Laser sequences written ({csv_count} block CSVs, {order_count} order dirs)")
-
-    # MMN sequences
-    info("Generating MMN tone sequences …")
-    mmn_out = (PROJECT_ROOT / "sequences" / "mmn").as_posix()
-    result = subprocess.run(
-        [
-            sys.executable, "-c",
-            f"from stimgen.mmn.generate_all_peduks_sessions import generate_all_peduks_sessions; "
-            f"generate_all_peduks_sessions('{mmn_out}')",
-        ],
-        cwd=str(PROJECT_ROOT),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
-        timeout=60,
-    )
-    if result.returncode != 0:
-        fail("MMN sequence generation failed!")
-        print(_c(C["red"], result.stderr[-500:]))
-        return False
-    success("MMN tone sequences written to sequences/mmn/")
+    success(f"Laser sequences written ({csv_count} block CSVs, {order_count} order dirs, {mmn_count} MMN blocks)")
 
     # ── auto-sync dialog dropdowns with generated files ──
     derived_sessions, derived_orders = _derive_sessions_and_orders()
@@ -3346,11 +3315,6 @@ def print_report() -> None:
     header("Current Configuration Report")
 
     cfg = _read_laser_task_config()
-
-    section("config_shared.py")
-    print(_kv("SEQUENCE_VERSION", SEQUENCE_VERSION))
-    print(_kv("PRACTICE_SEQUENCE_VERSION", PRACTICE_SEQUENCE_VERSION))
-    print(_kv("SEQUENCE_ROOT", SEQUENCE_ROOT))
 
     show_summary(cfg)
 
