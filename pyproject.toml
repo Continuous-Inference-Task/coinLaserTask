@@ -3,6 +3,7 @@ name = "coin-laser-task"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
+    "dukpy>=0.4.0",
     "matplotlib>=3.4",
     "numpy>=1.26.0",
     "pandas>=2.0.0",
