@@ -67,7 +67,7 @@ def _ensure_monitor(monitor_name: str, fallback_resolution=(1920, 1080)) -> None
         mon.save()
         logging.warning(
             f"Auto-created monitor '{monitor_name}'. "
-            f"Edit in PsychoPy Monitor Centre or re-run setup.py for "
+            f"Edit in PsychoPy Monitor Centre or re-run wizard.py for "
             f"accurate dimensions."
         )
     except Exception as exc:
@@ -234,7 +234,7 @@ def run_experiment(
     if warnings:
         from psychopy import gui
         msg = "Dialog options may not match generated sequences:\n\n" + "\n".join(warnings)
-        msg += "\n\nRun 'python setup.py' and re-generate sequences to fix."
+        msg += "\n\nRun 'python wizard.py' and re-generate sequences to fix."
         logging.warning(msg)
         print("\n  ⚠  WARNING:")
         for w in warnings:

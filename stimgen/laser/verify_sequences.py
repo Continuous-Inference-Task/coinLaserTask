@@ -88,7 +88,7 @@ def _load_session(session_name: str) -> dict:
     if not pkl_path.exists():
         raise FileNotFoundError(
             f"Pickle not found: {pkl_path}\n"
-            f"  Generate sequences first:  python setup.py --generate"
+            f"  Generate sequences first:  python wizard.py --generate"
         )
     with open(pkl_path, "rb") as f:
         return pickle.load(f)
@@ -836,14 +836,14 @@ def run_verification(session_filter: str | None = None,
                       show: bool = False,
                       print_only: bool = False,
                       save_to_disk: bool = True) -> int:
-    """Programmatic entry point — usable from setup.py.
+    """Programmatic entry point — usable from wizard.py.
 
     Returns the number of sessions verified (0 = nothing found / error).
     """
     all_sessions = _discover_sessions()
     if not all_sessions:
         print("ERROR: No session pickle files found in sequences/")
-        print("  Generate sequences first:  python setup.py --generate")
+        print("  Generate sequences first:  python wizard.py --generate")
         return 0
 
     if session_filter:
