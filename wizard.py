@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """
-setup.py — Modern CLI onboarding & configuration wizard for the CoIn Laser Task.
+wizard.py — Modern CLI onboarding & configuration wizard for the CoIn Laser Task.
+
+NOTE: this file was previously named ``setup.py``. It was renamed to ``wizard.py``
+to avoid colliding with the well-known PEP 517/518 build-script filename.
+If any tool tries to invoke it as a packaging build script, that's a bug in
+the calling tool — this is a regular application script, not a ``setup()`` call.
 
 Walks you through machine setup, experiment design, shield/reward parameters,
 auditory MMN settings, and sequence generation.  You can configure everything
 at once or pick individual sections.
 
 Usage:
-    python setup.py              # interactive menu
-    python setup.py --full       # straight into full wizard (all sections)
-    python setup.py --preset NAME  # load a preset, configure machine only
-    python setup.py --report     # print current config without prompts
-    python setup.py --generate   # just regenerate sequences from current config
-    python setup.py --generate --verify  # regenerate + verify with plots
-    python setup.py --help       # show this message
+    python wizard.py              # interactive menu
+    python wizard.py --full       # straight into full wizard (all sections)
+    python wizard.py --preset NAME  # load a preset, configure machine only
+    python wizard.py --report     # print current config without prompts
+    python wizard.py --generate   # just regenerate sequences from current config
+    python wizard.py --generate --verify  # regenerate + verify with plots
+    python wizard.py --help       # show this message
 
 No dependencies beyond Python stdlib.  Works over SSH, in tmux, anywhere.
 """

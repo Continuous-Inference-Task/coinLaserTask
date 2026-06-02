@@ -88,7 +88,7 @@ def validate_dialog_options(
     if not seq_dir.is_dir():
         warnings.append(
             f"Sequence directory not found: {seq_dir}. "
-            "Run 'python setup.py --generate' first."
+            "Run 'python wizard.py --generate' first."
         )
         return warnings
 
@@ -101,7 +101,7 @@ def validate_dialog_options(
     if not main_dirs:
         warnings.append(
             "No main session sequence order directories found. "
-            "Run 'python setup.py --generate' first."
+            "Run 'python wizard.py --generate' first."
         )
         return warnings
 
