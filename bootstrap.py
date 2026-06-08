@@ -406,6 +406,19 @@ def bootstrap():
     _safe_print("Launching wizard...")
     _safe_print()
 
+    # ------------------------------------------------------------------ #
+    #  LINUX: wxPython's bundled libwx_*.so is not on the loader's        #
+    #  default search path. If a system-installed wxWidgets is also       #
+    #  present, the loader will prefer the (often older/mismatched) one  #
+    #  in /usr/lib, causing undefined-symbol errors when importing wx.   #
+    #  Pointing LD_LIBRARY_PATH at the venv's bundled libs fixes it.      #
+    #  This is a no-op on macOS and Windows.                              #
+    # ------------------------------------------------------------------ #
+    if CURRENT_OS == "linux":
+        venv_wx_dir = PROJECT_ROOT / ".venv" / "lib" / f"python{REQUIRED_MAJOR}.{REQUIRED_MINOR}" / "site-packages" / "wx"
+        if venv_wx_dir.is_dir():
+            env["LD_LIBRARY_PATH"] = f"{venv_wx_dir}{os.pathsep}{env.get('LD_LIBRARY_PATH', '')}"
+
     try:
         result = subprocess.run(
             ["uv", "run", "python", str(wizard_py)] + sys.argv[1:],
