@@ -35,7 +35,7 @@ def generate_tone_session(
     Parameters
     ----------
     sess_name : str
-        Base name for output files (e.g. ``"mmn_v1"``).
+        Base name for output files (e.g. ``"mmn"``).
     conditions : list of int
         Block-condition codes:
         ``1`` = stableNoisy, ``2`` = volatileNoisy, ``3`` = volatilePrecise.

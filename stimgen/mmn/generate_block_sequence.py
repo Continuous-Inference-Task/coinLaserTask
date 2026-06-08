@@ -37,8 +37,14 @@ def _generate_stable_sequence(
     Vectorisation makes this efficient (~50 ms per block) despite the
     ~1/25 000 acceptance rate.
     """
-    lo = n_deviants - design.max_dev_diff
-    hi = n_deviants + design.max_dev_diff
+    # Scale the acceptance window with n_tones: statistical fluctuation of
+    # the deviant count grows as sqrt(n_tones), so a fixed max_dev_diff
+    # becomes unreachable for long blocks (e.g. 4 min would loop forever
+    # because the expected deviant count is below the fixed lower bound).
+    # Use ~2.5% of n_tones, with a small floor of max_dev_diff.
+    scaled_diff = max(design.max_dev_diff, round(n_tones * 0.025))
+    lo = n_deviants - scaled_diff
+    hi = n_deviants + scaled_diff
     max_chunks = int(n_tones / (np.min(design.distances) + 1)) + 10
 
     while True:

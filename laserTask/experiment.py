@@ -33,7 +33,8 @@ from laserTask.io import (
     validate_dialog_options,
 )
 from laserTask.reward import BaseRewardTracker, RewardTracker
-from laserTask.stimuli import compute_shield_vertices, compute_progress_vertices, create_stimuli
+from laserTask.stimuli import compute_shield_vertices, create_stimuli
+#from laserTask.stimuli import compute_shield_vertices, compute_progress_vertices, create_stimuli
 from laserTask.triggers import TriggerManager
 
 _PACKAGE_DIR = Path(__file__).parent
@@ -67,7 +68,7 @@ def _ensure_monitor(monitor_name: str, fallback_resolution=(1920, 1080)) -> None
         mon.save()
         logging.warning(
             f"Auto-created monitor '{monitor_name}'. "
-            f"Edit in PsychoPy Monitor Centre or re-run setup.py for "
+            f"Edit in PsychoPy Monitor Centre or re-run wizard.py for "
             f"accurate dimensions."
         )
     except Exception as exc:
@@ -234,7 +235,7 @@ def run_experiment(
     if warnings:
         from psychopy import gui
         msg = "Dialog options may not match generated sequences:\n\n" + "\n".join(warnings)
-        msg += "\n\nRun 'python setup.py' and re-generate sequences to fix."
+        msg += "\n\nRun 'python wizard.py' and re-generate sequences to fix."
         logging.warning(msg)
         print("\n  ⚠  WARNING:")
         for w in warnings:
@@ -682,6 +683,9 @@ def run_experiment(
         
         active_keys = []
         last_movement_trigger = None
+        # if cfg.round_pbar:
+        #     S["progress_circle"].opacity = 0.0
+        #     S["progress_circle"].visibleWedge = (0.0, 0.001)
 
         # --- frame loop ------------------------------------------------ #
         while cur_frame <= n_frames:
@@ -721,8 +725,6 @@ def run_experiment(
                 # save_rows.append([
                 #     "laser_duration", block_id, cur_frame, laser_duration
                 # ])
-
-
 
             # ---- hit detection --------------------------------------- #
             hit = (shield_rot - laser_rot + sd) % 360 <= 2 * sd
@@ -958,24 +960,45 @@ def run_experiment(
                     log=False,
                 )
             else:
+                #prog_deg = 360.0 * (cur_frame / n_frames)
+
+                # S["progress_circle"].setVertices(
+                #     compute_progress_vertices(
+                #         prog_deg,
+                #         cfg.circle_radius,
+                #     ),
+                #     log=False,
+                # )
+                # S["progress_circle"].setLineWidth(
+                #     cfg.style.progress_circle_width,
+                #     log=False,
+                # )
+                # S["progress_circle"].setFillColor(cfg.style.progress_bar_color, log=False)
+                # S["progress_circle"].setLineColor(
+                #     cfg.style.progress_bar_edge_color,
+                #     log=False,
+                # )  
                 prog_deg = 360.0 * (cur_frame / n_frames)
 
-                S["progress_circle"].setVertices(
-                    compute_progress_vertices(
-                        prog_deg,
-                        cfg.circle_radius,
-                    ),
-                    log=False,
-                )
-                S["progress_circle"].setLineWidth(
-                    cfg.style.progress_circle_width,
-                    log=False,
-                )
-                S["progress_circle"].setFillColor(cfg.style.progress_bar_color, log=False)
-                S["progress_circle"].setLineColor(
-                    cfg.style.progress_bar_edge_color,
-                    log=False,
-                )                
+                #S["progress_circle"].opacity = 1.0
+                S["progress_circle"].visibleWedge = (0, prog_deg)
+
+
+                # Right now: Frame loop
+                # prog_deg = 360.0 * (cur_frame / n_frames)
+                # if prog_deg > 0.5:          # only show once visibly non-zero
+                #     S["progress_circle"].opacity = 1.0
+                #     S["progress_circle"].visibleWedge = (0.0, prog_deg)
+                # idx = int(cur_frame / n_frames * (cfg.style.wedge_resolution - 1))
+
+                # S["progress_circle"].setLineColor(
+                #     cfg.style.progress_bar_edge_color,
+                #     log=False,
+                # )  
+                # S["progress_circle"].setFillColor(
+                #     cfg.style.progress_bar_edge_color,
+                #     log=False,
+                # )                
 
             # ---- triggers (deferred to post-flip for frame sync) -- #
 

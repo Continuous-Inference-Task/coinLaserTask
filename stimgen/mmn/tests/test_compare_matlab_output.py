@@ -24,7 +24,7 @@ def _load_csv(path):
 
 
 @pytest.mark.parametrize("sess_name, n_blocks", [
-    ('mmn_v1', 12),
+    ('mmn', 12),
     ('sess1', 4),
     ('sess2', 4),
     ('sess3', 4),

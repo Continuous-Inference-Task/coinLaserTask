@@ -17,7 +17,7 @@ def generate_session_csv_files(seq_version, order_index, task_flag):
     order_index : int
         1-based index (1..3) for counterbalancing order.
     task_flag : str
-        One of 'online', 'onlineTrain', 'EEG', 'baseline'.
+        One of 'online', 'onlineTrain', 'EEG', 'main'.
     """
     # Available lists
     image_list = ['radioactive1.png', 'radioactive2.png',
@@ -89,7 +89,7 @@ def generate_session_csv_files(seq_version, order_index, task_flag):
                                           image_list, tone_cond_list, tone_block_list,
                                           add_file_string)
 
-    elif task_flag == 'baseline':
+    elif task_flag == 'main':
         # 2 sessions with tones
         bl_order = bl_orders[oi]
         t_order = tone_orders[oi]
@@ -98,7 +98,7 @@ def generate_session_csv_files(seq_version, order_index, task_flag):
             cond_list = bl_conditions[sess_idx]
             block_list = bl_blocks[sess_idx]
 
-            online_sess_name = f'baseline_{seq_version}'
+            online_sess_name = f'main_{seq_version}'
             add_file_string = f's{i_sess + 1}_'
 
             t_sess_idx = t_order[i_sess] - 1

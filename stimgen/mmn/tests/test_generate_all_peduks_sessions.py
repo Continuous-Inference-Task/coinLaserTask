@@ -18,11 +18,11 @@ def test_generate_all_peduks_sessions(tmp_path):
     )
 
     # Check file outputs
-    assert os.path.isfile('mmn_v1_session.mat')
+    assert os.path.isfile('mmn_session.mat')
     for i in range(1, 13):
-        assert os.path.isfile(f'mmn_v1_block{i}.csv')
+        assert os.path.isfile(f'mmn_block{i}.csv')
 
     # Load mat and verify basic structure
-    mat_data = loadmat('mmn_v1_session.mat', squeeze_me=True)
+    mat_data = loadmat('mmn_session.mat', squeeze_me=True)
     assert 'session' in mat_data
     os.chdir('/')

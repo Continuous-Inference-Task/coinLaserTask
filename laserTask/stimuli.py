@@ -4,6 +4,7 @@ import numpy as np
 from psychopy import visual
 
 from laserTask.config import ExperimentConfig
+from psychopy_visionscience.radial import RadialStim
 
 def compute_shield_vertices(
     shield_degrees: float,
@@ -40,32 +41,32 @@ def compute_shield_vertices(
     ys = np.cos(angles) * scale
     return [[0.0, 0.0]] + [[float(x), float(y)] for x, y in zip(xs, ys)]
 
-def compute_progress_vertices(
-    progress_degrees: float,
-    circle_radius: float,
-    *,
-    start_angle_deg: float = 0.0,
-    n_points: int = 360,
-    ring_fraction: float = 0.2,   # radial thickness as fraction of circle_radius
-) -> list:
-    if progress_degrees <= 0:
-        return [[0.0, 0.0]]        # ShapeStim needs ≥1 vertex; kept degenerate
+# def compute_progress_vertices(
+#     progress_degrees: float,
+#     circle_radius: float,
+#     *,
+#     start_angle_deg: float = 0.0,
+#     n_points: int = 360,
+#     ring_fraction: float = 0.2,   # radial thickness as fraction of circle_radius
+# ) -> list:
+#     if progress_degrees <= 0:
+#         return [[0.0, 0.0]]        # ShapeStim needs ≥1 vertex; kept degenerate
 
-    inner_r = circle_radius * 1.10
-    outer_r = circle_radius * (1.10 + ring_fraction)
+#     inner_r = circle_radius * 1.10
+#     outer_r = circle_radius * (1.10 + ring_fraction)
 
-    start = np.radians(start_angle_deg)
-    end   = np.radians(start_angle_deg + progress_degrees)
-    angles = np.linspace(start, end, n_points)
+#     start = np.radians(start_angle_deg)
+#     end   = np.radians(start_angle_deg + progress_degrees)
+#     angles = np.linspace(start, end, n_points)
 
-    outer = [[float(np.sin(a) * outer_r), float(np.cos(a) * outer_r)] for a in angles]
-    inner = [[float(np.sin(a) * inner_r), float(np.cos(a) * inner_r)] for a in reversed(angles)]
+#     outer = [[float(np.sin(a) * outer_r), float(np.cos(a) * outer_r)] for a in angles]
+#     inner = [[float(np.sin(a) * inner_r), float(np.cos(a) * inner_r)] for a in reversed(angles)]
 
-    return outer + inner
-    # NOTE: Tried to close it explicitly, but that did not help with filling
-    # verts = outer + inner
-    # verts.append(outer[0])
-    # return verts
+#     return outer + inner
+#     # NOTE: Tried to close it explicitly, but that did not help with filling
+#     # verts = outer + inner
+#     # verts.append(outer[0])
+#     # return verts
 
 # NOTE: adapted instructions specifically for Rob, need to make this modular
 def create_stimuli(
@@ -92,11 +93,11 @@ def create_stimuli(
     # Compute sield size vertices for default here
     default_deg = cfg.shield_sizes.default_degrees
     init_verts = compute_shield_vertices(default_deg, cfg.circle_radius)
-    if cfg.round_pbar:
-        init_progress = compute_progress_vertices(
-            progress_degrees=1.0,
-            circle_radius=cfg.circle_radius,
-        )
+    # if cfg.round_pbar:
+    #     init_progress = compute_progress_vertices(
+    #         progress_degrees=1.0,
+    #         circle_radius=cfg.circle_radius,
+    #     )
 
     # --- instruction / info screens ------------------------------------ #
     S["title"] = visual.TextStim(
@@ -573,17 +574,33 @@ def create_stimuli(
     # It uses a very thick line because I could not get the fillColour to be displayed
     # Next step might be to try RadialStim instead, but that has to be imported from psychopy-visionscience
     if cfg.round_pbar:
-        S["progress_circle"] = visual.ShapeStim(
+        # S["progress_circle"] = visual.ShapeStim(
+        #     win,
+        #     name="progress_circle",
+        #     vertices=init_progress,
+        #     size=s.progress_circle_size,
+        #     ori=0,
+        #     pos=s.center_pos,
+        #     lineWidth=s.progress_circle_width,
+        #     lineColor=s.progress_bar_color,
+        #     #fillColor=s.progress_bar_color,
+        #     #closeShape=True,
+        # )
+        # To show colour properly, need texture = +1 everywhere to replace default sin-grating
+        _uniform_tex = np.ones((64, 64), dtype=np.float32) 
+
+        S["progress_circle"] = RadialStim(
             win,
             name="progress_circle",
-            vertices=init_progress,
+            tex=_uniform_tex,
+            mask="circle",
+            color=cfg.style.progress_bar_color,
+            colorSpace="rgb255",      
+            radialCycles=0,
+            angularCycles=0,
+            visibleWedge=(0, 0.001),    # tiny non-zero start (see issue 3)
             size=s.progress_circle_size,
-            ori=0,
             pos=s.center_pos,
-            lineWidth=s.progress_circle_width,
-            lineColor=s.progress_bar_color,
-            #fillColor=s.progress_bar_color,
-            #closeShape=True,
         )
     else:
         S["pbar_edge"] = visual.Rect(

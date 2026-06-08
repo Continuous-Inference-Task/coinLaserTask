@@ -8,7 +8,7 @@ This guide aims to support you in connecting the task to your hardware and expla
 
 ## 1. Setting the Connection Type
 
-The experiment supports four ways of sending triggers. You can configure this interactively using the setup wizard (`python run.py`), or by editing `laserTask/config.json` directly.
+The experiment supports four ways of sending triggers. You can configure this interactively using the setup wizard (`python bootstrap.py`), or by editing `laserTask/config.json` directly.
 
 - **`parallel`**: Sends standard 8-bit TTL pulses over a parallel port (LPT port). Common for older EEG setups.
 - **`serial`**: Sends byte markers over a USB-to-Serial connection (e.g., to a BrainVision TriggerBox).
@@ -63,4 +63,4 @@ TRIGGER_CODES: Dict[str, int] = {
 
 - **Linux Parallel Port Permission Denied:** Run `sudo usermod -a -G lp $USER` (and log out/in) to grant your user account access to `/dev/parport0`.
 - **Linux Serial Port Permission Denied:** Run `sudo usermod -a -G dialout $USER`.
-- **Task crashes immediately on start:** If the port address is wrong, PsychoPy will crash when trying to open the connection. Run `python run.py` and set the trigger mode to `dummy` to test if the port configuration is the cause.
+- **Task crashes immediately on start:** If the port address is wrong, PsychoPy will crash when trying to open the connection. Run `python bootstrap.py` and set the trigger mode to `dummy` to test if the port configuration is the cause.
