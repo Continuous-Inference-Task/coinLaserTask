@@ -1,0 +1,28 @@
+[project]
+name = "coin-laser-task"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "dukpy>=0.4.0",
+    "gevent<24.3.0",
+    "matplotlib>=3.4",
+    "numpy>=1.26.0",
+    "pandas>=2.0.0",
+    "psychopy>=2025.1.1",
+    "psychopy-visionscience>=0.0.7",
+    "psychtoolbox>=3.0.19.14",
+    "pylsl>=1.18.2",
+    "pyqt6>=6.11.0",
+    "pytest>=7",
+    "scipy>=1.11.0",
+    "sounddevice>=0.5.5",
+]
+
+[project.scripts]
+coin-laser-wizard = "wizard:main"
+
+[tool.uv.pip]
+find-links = [
+    "https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-24.04",
+    "https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-22.04",
+]

@@ -9,7 +9,7 @@ MMN tone blocks are generated inline, one per main-session laser block,
 with the same block duration and volatility/noise coupling.
 
 Usage:  python coin_script_sequence_generation.py
-(typically called from setup.py, not directly)
+(typically called from wizard.py, not directly)
 """
 import os
 import sys
