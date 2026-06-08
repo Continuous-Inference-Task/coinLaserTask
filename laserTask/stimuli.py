@@ -154,42 +154,32 @@ def compute_shield_vertices(
     ys = np.cos(angles) * scale
     return [[0.0, 0.0]] + [[float(x), float(y)] for x, y in zip(xs, ys)]
 
-def compute_progress_vertices(
-    progress_degrees: float,
-    circle_radius: float,
-    *,
-    start_angle_deg: float = 0.0,
-    n_points: int = 360,
-    ring_fraction: float = 0.2,   # radial thickness as fraction of circle_radius
-) -> list:
-    if progress_degrees <= 0:
-        return [[0.0, 0.0]]        # ShapeStim needs ≥1 vertex; kept degenerate
+# def compute_progress_vertices(
+#     progress_degrees: float,
+#     circle_radius: float,
+#     *,
+#     start_angle_deg: float = 0.0,
+#     n_points: int = 360,
+#     ring_fraction: float = 0.2,   # radial thickness as fraction of circle_radius
+# ) -> list:
+#     if progress_degrees <= 0:
+#         return [[0.0, 0.0]]        # ShapeStim needs ≥1 vertex; kept degenerate
 
-    inner_r = circle_radius * 1.10
-    outer_r = circle_radius * (1.10 + ring_fraction)
+#     inner_r = circle_radius * 1.10
+#     outer_r = circle_radius * (1.10 + ring_fraction)
 
-    start = np.radians(start_angle_deg)
-    end   = np.radians(start_angle_deg + progress_degrees)
-    angles = np.linspace(start, end, n_points)
+#     start = np.radians(start_angle_deg)
+#     end   = np.radians(start_angle_deg + progress_degrees)
+#     angles = np.linspace(start, end, n_points)
 
-    outer = [[float(np.sin(a) * outer_r), float(np.cos(a) * outer_r)] for a in angles]
-    inner = [[float(np.sin(a) * inner_r), float(np.cos(a) * inner_r)] for a in reversed(angles)]
+#     outer = [[float(np.sin(a) * outer_r), float(np.cos(a) * outer_r)] for a in angles]
+#     inner = [[float(np.sin(a) * inner_r), float(np.cos(a) * inner_r)] for a in reversed(angles)]
 
-    return outer + inner
-    # NOTE: Tried to close it explicitly, but that did not help with filling
-    # verts = outer + inner
-    # verts.append(outer[0])
-    # return verts
-
-# def compute_progress_wedge(
-#         progress_degrees: float,
-#         circle_radius: float,
-#         cfg: ExperimentConfig
-#     ) -> list:
-#     wedge_table = [
-#         (0.0, 360.0 * i / (cfg.style.wedge_resolution - 1))
-#         for i in range(cfg.style.wedge_resolution) 
-#     ]
+#     return outer + inner
+#     # NOTE: Tried to close it explicitly, but that did not help with filling
+#     # verts = outer + inner
+#     # verts.append(outer[0])
+#     # return verts
 
 # NOTE: adapted instructions specifically for Rob, need to make this modular
 
@@ -217,11 +207,11 @@ def create_stimuli(
     # Compute sield size vertices for default here
     default_deg = cfg.shield_sizes.default_degrees
     init_verts = compute_shield_vertices(default_deg, cfg.circle_radius)
-    if cfg.round_pbar:
-        init_progress = compute_progress_vertices(
-            progress_degrees=1.0,
-            circle_radius=cfg.circle_radius,
-        )
+    # if cfg.round_pbar:
+    #     init_progress = compute_progress_vertices(
+    #         progress_degrees=1.0,
+    #         circle_radius=cfg.circle_radius,
+    #     )
 
     # --- instruction / info screens ------------------------------------ #
     S["title"] = visual.TextStim(
@@ -710,17 +700,21 @@ def create_stimuli(
         #     #fillColor=s.progress_bar_color,
         #     #closeShape=True,
         # )
+        # To show colour properly, need texture = +1 everywhere to replace default sin-grating
+        _uniform_tex = np.ones((64, 64), dtype=np.float32) 
+
         S["progress_circle"] = RadialStim(
             win,
             name="progress_circle",
-            size=s.progress_circle_size,
-            pos=s.center_pos,
+            tex=_uniform_tex,
+            mask="circle",
             color=cfg.style.progress_bar_color,
-            colorSpace="named",
-            visibleWedge=(0, 0),
+            colorSpace="rgb255",      
             radialCycles=0,
             angularCycles=0,
-            #mask='raisedCos',
+            visibleWedge=(0, 0.001),    # tiny non-zero start (see issue 3)
+            size=s.progress_circle_size,
+            pos=s.center_pos,
         )
     else:
         S["pbar_edge"] = visual.Rect(

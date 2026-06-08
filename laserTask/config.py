@@ -77,11 +77,8 @@ class StimulusStyle:
     )
 
     # -- Progress bar --
-    progress_bar_color: str = "green"
-    progress_bar_edge_color: str = "green"
-    # wedge_resolution: int = 720
-    # progress_bar_color: Tuple[float, float, float]= (0, 1, 0)
-    # progress_bar_edge_color: Tuple[float, float, float] = (0, 1, 0)
+    progress_bar_color = [0, 255, 0]
+    progress_bar_edge_color = [0, 255, 0]
     progress_bar_y: float = -0.45
     progress_bar_height: float = 0.05
     progress_bar_width: float = 0.8

@@ -33,7 +33,8 @@ from laserTask.io import (
     validate_dialog_options,
 )
 from laserTask.reward import BaseRewardTracker, RewardTracker
-from laserTask.stimuli import compute_shield_vertices, compute_progress_vertices, create_stimuli
+from laserTask.stimuli import compute_shield_vertices, create_stimuli
+#from laserTask.stimuli import compute_shield_vertices, compute_progress_vertices, create_stimuli
 from laserTask.triggers import TriggerManager
 
 _PACKAGE_DIR = Path(__file__).parent
@@ -682,6 +683,9 @@ def run_experiment(
         
         active_keys = []
         last_movement_trigger = None
+        # if cfg.round_pbar:
+        #     S["progress_circle"].opacity = 0.0
+        #     S["progress_circle"].visibleWedge = (0.0, 0.001)
 
         # --- frame loop ------------------------------------------------ #
         while cur_frame <= n_frames:
@@ -721,8 +725,6 @@ def run_experiment(
                 # save_rows.append([
                 #     "laser_duration", block_id, cur_frame, laser_duration
                 # ])
-
-
 
             # ---- hit detection --------------------------------------- #
             hit = (shield_rot - laser_rot + sd) % 360 <= 2 * sd
@@ -958,7 +960,7 @@ def run_experiment(
                     log=False,
                 )
             else:
-                # prog_deg = 360.0 * (cur_frame / n_frames)
+                #prog_deg = 360.0 * (cur_frame / n_frames)
 
                 # S["progress_circle"].setVertices(
                 #     compute_progress_vertices(
@@ -978,10 +980,16 @@ def run_experiment(
                 # )  
                 prog_deg = 360.0 * (cur_frame / n_frames)
 
+                #S["progress_circle"].opacity = 1.0
                 S["progress_circle"].visibleWedge = (0, prog_deg)
 
+
+                # Right now: Frame loop
+                # prog_deg = 360.0 * (cur_frame / n_frames)
+                # if prog_deg > 0.5:          # only show once visibly non-zero
+                #     S["progress_circle"].opacity = 1.0
+                #     S["progress_circle"].visibleWedge = (0.0, prog_deg)
                 # idx = int(cur_frame / n_frames * (cfg.style.wedge_resolution - 1))
-                # S["progress_circle"].visibleWedge = wedge_table[idx]
 
                 # S["progress_circle"].setLineColor(
                 #     cfg.style.progress_bar_edge_color,
