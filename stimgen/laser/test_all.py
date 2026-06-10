@@ -6,7 +6,7 @@ and internal consistency.
 import os
 import sys
 
-# Lock configuration variables to standard baseline for consistent unit tests
+# Lock configuration variables to standard defaults for consistent unit tests
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 config.MAIN_VOLATILITY = ['stable', 'volatile']
@@ -360,25 +360,30 @@ def test_generate_coin_session_csv_files():
     with tempfile.TemporaryDirectory() as tmpdir:
         main_design = design_vola_stocha(config.MAIN_VOLATILITY, config.MAIN_NOISE)
         main_block_seq = [1, 2, 3, 4] * 3
+        # Fake MMN filenames for the main session test
+        fake_mmn = [f"mmn/mmn_block{i}.csv" for i in range(1, 13)]
         # Test all task flags and all 4 orders
         for order in range(1, 5):
-            generate_coin_session_csv_files('v4', order, 'practice', tmpdir,
+            generate_coin_session_csv_files(order, 'practice', tmpdir,
                                             design=main_design, block_sequence=main_block_seq[:4],
                                             n_sessions=1, blocks_per_session=4)
-            generate_coin_session_csv_files('v4', order, 'onlineTrain', tmpdir,
+            generate_coin_session_csv_files(order, 'onlineTrain', tmpdir,
                                             design=main_design, block_sequence=main_block_seq[:4],
                                             n_sessions=1, blocks_per_session=4)
-            generate_coin_session_csv_files('v4', order, 'baseline', tmpdir,
+            generate_coin_session_csv_files(order, 'main', tmpdir,
                                             design=main_design, block_sequence=main_block_seq,
-                                            n_sessions=3, blocks_per_session=4)
-            generate_coin_session_csv_files('v4', order, 'infusion', tmpdir,
+                                            n_sessions=3, blocks_per_session=4,
+                                            mmn_filenames=fake_mmn,
+                                            tone_vol_list=[0, 1, 0, 1] * 3,
+                                            tone_noise_list=[1, 1, 0, 0] * 3)
+            generate_coin_session_csv_files(order, 'infusion', tmpdir,
                                             design=main_design, block_sequence=main_block_seq,
                                             n_sessions=3, blocks_per_session=4)
         # Verify orders 1 & 3 have same stability (stable first) vs orders 2 & 4
         # Order 1: stab_orders[0]=1, img_orders[0]=1
         # Order 2: stab_orders[1]=2, img_orders[1]=1
-        o1_path = os.path.join(tmpdir, 'coin_onlineTrain_v4_order1', 'session_s1_onlineTrain_v4.csv')
-        o2_path = os.path.join(tmpdir, 'coin_onlineTrain_v4_order2', 'session_s1_onlineTrain_v4.csv')
+        o1_path = os.path.join(tmpdir, 'coin_onlineTrain_order1', 'session_s1_onlineTrain.csv')
+        o2_path = os.path.join(tmpdir, 'coin_onlineTrain_order2', 'session_s1_onlineTrain.csv')
         with open(o1_path) as f:
             o1_lines = f.readlines()
         with open(o2_path) as f:
@@ -390,7 +395,7 @@ def test_generate_coin_session_csv_files():
         o2_first_vol = o2_lines[1].strip().split(',')[2]
         assert o2_first_vol == '1', f"Order 2 should start volatile, got vol={o2_first_vol}"
         # Check image counterbalancing: order1 vs order3
-        o3_path = os.path.join(tmpdir, 'coin_onlineTrain_v4_order3', 'session_s1_onlineTrain_v4.csv')
+        o3_path = os.path.join(tmpdir, 'coin_onlineTrain_order3', 'session_s1_onlineTrain.csv')
         with open(o3_path) as f:
             o3_lines = f.readlines()
         o1_first_img = o1_lines[1].strip().split(',')[1]

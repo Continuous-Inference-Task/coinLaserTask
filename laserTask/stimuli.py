@@ -416,6 +416,19 @@ def create_stimuli(
         height=s.text_size,
         color=s.text_color,
     )
+    S["stop_recording"] = visual.TextStim(
+        win,
+        name="stop_recording",
+        text=(
+            "Experimenter: Please stop the recording in LabRecorder now.\n\n"
+            "Press RETURN to close the experiment once recording is stopped."
+        ),
+        font=s.font,
+        pos=(0, 0),
+        height=s.text_size,
+        wrapWidth=1.5,
+        color=s.text_color,
+    )
 
     # --- trial components ---------------------------------------------- #
     S["harmless"] = visual.ShapeStim(

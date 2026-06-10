@@ -11,7 +11,7 @@ from .generate_tone_session import generate_tone_session
 
 
 def generate_all_peduks_sessions(output_dir: str = ".") -> Dict[str, Any]:
-    """Generate the standard 12-block ``mmn_v1`` session.
+    """Generate the standard 12-block MMN session.
 
     The block sequence is::
 
@@ -20,8 +20,8 @@ def generate_all_peduks_sessions(output_dir: str = ".") -> Dict[str, Any]:
     where ``1`` = stableNoisy, ``2`` = volatileNoisy,
     ``3`` = volatilePrecise.
 
-    Writes ``mmn_v1_session.mat`` and ``mmn_v1_block1.csv`` through
-    ``mmn_v1_block12.csv`` to *output_dir*.
+    Writes ``mmn_session.mat`` and ``mmn_block1.csv`` through
+    ``mmn_block12.csv`` to *output_dir*.
 
     Parameters
     ----------
@@ -36,4 +36,4 @@ def generate_all_peduks_sessions(output_dir: str = ".") -> Dict[str, Any]:
         Full session structure (see :func:`generate_tone_session`).
     """
     block_sequence = [1, 2, 3, 3, 1, 2, 3, 3, 1, 2, 3, 3]
-    return generate_tone_session("mmn_v1", block_sequence, output_dir)
+    return generate_tone_session("mmn", block_sequence, output_dir)
