@@ -1832,7 +1832,10 @@ def _pick_presets(
     noise_mode_holder: List[str] = None,
 ) -> List[str]:
     def _prompt_noise_mode():
-        if not (multiply_by and len(set(multiply_by)) > 1 and noise_mode_holder):
+        if not (multiply_by and noise_mode_holder):
+            return
+        if multiply_by and len(set(multiply_by)) <= 1:
+            noise_mode_holder[0] = "counterbalanced"
             return
         options = ["counterbalanced"]
         labels = {
@@ -2089,6 +2092,8 @@ def _pick_presets(
             max_num = len(preset_names) + 1 if allow_custom else len(preset_names)
             warn(f"Enter a number (1-{max_num}), '-' followed by position to remove, or ↵ to finish")
 
+    if noise_mode_holder and multiply_by and len(set(multiply_by)) <= 1:
+        noise_mode_holder[0] = "counterbalanced"
     print()
     return selected
 

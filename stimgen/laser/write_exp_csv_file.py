@@ -29,13 +29,8 @@ def write_exp_csv_file(
         Output directory.
     """
     block_file_name_base = f'{sess_name}_block'
-    n_vol = len(design['blocks']) // len(design['blockTypes']) if design['blockTypes'] else 0
-
-    # Determine the number of noise levels from the design structure.
-    # All block types share the same volatility dimension ordering,
-    # so n_noise = total blocks / n_volatility_levels.
-    # We can detect this from the block types ordering.
     block_names = design['blockTypes']
+
     # Extract unique volatility and noise labels from block type names ("vol+noise")
     vol_labels = []
     noise_labels = []
@@ -47,10 +42,12 @@ def write_exp_csv_file(
             if n not in noise_labels:
                 noise_labels.append(n)
 
-    if not vol_labels or not noise_labels:
-        # Fallback: derive from block count
+    if not vol_labels:
+        n_vol = len(block_names)
         vol_labels = [f'vol{i}' for i in range(n_vol)]
-        noise_labels = [f'noise{i}' for i in range(len(block_names) // max(n_vol, 1))]
+        noise_labels = ['fixed']
+    if not noise_labels:
+        noise_labels = ['fixed']
 
     n_noise = len(noise_labels)
 
@@ -62,8 +59,13 @@ def write_exp_csv_file(
         f.write('blockID,sourceImage,volatility,stochasticity,blockFileName\n')
         for i_block in range(len(cond_indices)):
             cond_idx = cond_indices[i_block] - 1  # 0-based
-            vol_idx = cond_idx // n_noise
-            noise_idx = cond_idx % n_noise
+            bt_name = block_names[cond_idx] if cond_idx < len(block_names) else block_names[-1]
+            if '+' in bt_name:
+                v, n = bt_name.split('+', 1)
+            else:
+                v, n = bt_name, noise_labels[0] if noise_labels else ''
+            vol_idx = vol_labels.index(v) if v in vol_labels else 0
+            noise_idx = noise_labels.index(n) if n in noise_labels else 0
             img_idx = cond_idx % len(image_list)  # wrap if more types than images
             f.write(
                 f'{i_block + 1},'
