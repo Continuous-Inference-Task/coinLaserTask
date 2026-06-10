@@ -906,8 +906,6 @@ def run_experiment(
                 log=False,
             )
 
-            # ---- triggers (deferred to post-flip for frame sync) -- #
-
             # ---- audio ------------------------------------------------ #
             tone_trig = audio.update_frame() if block_audio_enabled else 0
 
@@ -937,16 +935,16 @@ def run_experiment(
                 ]
             )
 
-            cur_frame += 1
-            win.flip()
-
-            # ---- triggers (after flip: constant ~1 ms offset) -------- #
+            # ---- triggers (frame-synced via callOnFlip) --------------- #
             if partial_release_trig:
-                trig.send(partial_release_trig)
+                win.callOnFlip(trig.send, partial_release_trig)
             if size_trig_val:
-                trig.send(size_trig_val)
+                win.callOnFlip(trig.send, size_trig_val)
             if do_send:
-                trig.send(trig_val)
+                win.callOnFlip(trig.send, trig_val)
+
+            cur_frame += 1
+            win.flip()   # callbacks fire at buffer swap
 
         # --- end trial ------------------------------------------------- #
         for stim in trial_stims:
@@ -1004,6 +1002,23 @@ def run_experiment(
 
     S["exp_end"].setAutoDraw(False)
     S["final_reward"].setAutoDraw(False)
+
+    # ------------------------------------------------------------------ #
+    #  STOP RECORDING SCREEN                                              #
+    #  Keep the LSL stream alive until LabRecorder has been stopped.     #
+    # ------------------------------------------------------------------ #
+    S["stop_recording"].setAutoDraw(True)
+    win.flip()
+    default_kb.clearEvents()
+    while True:
+        keys = default_kb.getKeys(keyList=["return"], waitRelease=False)
+        if keys:
+            break
+        if default_kb.getKeys(keyList=["escape"]):
+            break
+        win.flip()
+    S["stop_recording"].setAutoDraw(False)
+    win.flip()
 
     # ------------------------------------------------------------------ #
     #  CLEANUP                                                            #
