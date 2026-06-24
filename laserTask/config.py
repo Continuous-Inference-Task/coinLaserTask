@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Dict
 
 from laserTask.shield import ShieldSizeConfig
+#from laserTask.instructions import InstructionSet
 
 @dataclass
 class StimulusStyle:
@@ -76,12 +77,14 @@ class StimulusStyle:
     )
 
     # -- Progress bar --
-    progress_bar_color: str = "green"
-    progress_bar_edge_color: str = "green"
+    progress_bar_color = [0, 255, 0]
+    progress_bar_edge_color = [0, 255, 0]
     progress_bar_y: float = -0.45
     progress_bar_height: float = 0.05
     progress_bar_width: float = 0.8
-
+    #progress_circle_size: Tuple[float, float] = (0.015, 0.015)
+    progress_circle_size: Tuple[float, float] = (0.12, 0.12)
+    progress_circle_width: float = 23.5
 
 @dataclass
 class ExperimentConfig:
@@ -112,6 +115,7 @@ class ExperimentConfig:
     # -- Keyboard controls --
     key_right: str = "j"
     key_left: str = "f"
+    key_next: str = "space"
     # controls instruction screen -- other option is "response_box"
     # if set to response_box, instruction do not name the keys
     # NOTE: must still set key mappings to code the device sends! 
@@ -170,8 +174,8 @@ class ExperimentConfig:
     # -- Reward --
     loss_factor: float = 0.003
     currency_symbol: str = "€"
+    neutral_practice: bool = False # Whether to show reward feedback during practice mode
 
-    flash_feedback: bool = False
 
     # -- Trigger settings --
     trigger_mode: str = "parallel"
@@ -205,15 +209,15 @@ class ExperimentConfig:
     the same pitch.
     """
     tone_freq_standard: float = 440.0
-    tone_freq_deviant: float = 440.0
-    tone_duration: float = 0.05
+    tone_freq_deviant: float = 528.0
+    tone_duration: float = 0.07
     """Duration of each tone (seconds)."""
-    tone_duration_standard: float = 0.05
+    tone_duration_standard: float = 0.07
     """Duration of standard tones (seconds). If negative, falls back to tone_duration."""
-    tone_duration_deviant: float = 0.1
+    tone_duration_deviant: float = 0.07
     """Duration of deviant tones (seconds). If negative, falls back to tone_duration."""
     tone_volume: float = 1.0
-    tone_isi_frames: int = 24
+    tone_isi_frames: int = 26
     """Inter-stimulus interval between successive tones (in frames).
     
     PEDUKS MMN default: 26 frames = ~433 ms at 60 Hz (matches MATLAB's 430 ms).
@@ -221,8 +225,16 @@ class ExperimentConfig:
 
     # -- Visual style --
     show_earth_background: bool = True
-    """Whether to show the earth/world picture as the background during trials."""
+    """Whether to show the earth/world picture as the background during main trials. 
+    As of right now it is always visible during practice trials."""
+    # Potentially conflicting visual stimuli -- EEG
+    show_rbar: bool = True
+    show_source: bool = True
+    round_pbar: bool = False
+    flash_feedback: bool = False
+
     style: StimulusStyle = field(default_factory=StimulusStyle)
+    #instruction_set: InstructionSet = InstructionSet.COGPSY
 
     # -- Session structure --
     enable_practice: bool = True

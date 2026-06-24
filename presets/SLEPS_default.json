@@ -1,8 +1,8 @@
 {
-    "name": "PEDUKS_default",
-    "description": "PEDUKS study replication — fixed 20° shield, duration MMN, loss/win framing",
+    "name": "SLEPS_default",
+    "description": "SLEPS study — fixed 20° shield, duration MMN, loss/win framing, EEG-friendly",
     "experiment": {
-        "target_os": "linux",
+        "target_os": "windows",
         "window_size": [
             1512,
             982
@@ -22,18 +22,18 @@
         "fixed_shield_degrees": 20.0,
         "loss_factor": 0.003,
         "currency_symbol": "€",
-        "neutral_practice": false,
-        "trigger_mode": "parallel",
+        "neutral_practice": true,
+        "trigger_mode": "lsl",
         "serial_port": "/dev/ttyUSB0",
         "serial_baud_rate": 115200,
         "parallel_address": "/dev/parport0",
         "enable_audio": true,
         "mmn_type": "frequency",
-        "show_earth_background": true,
-        "show_rbar": true,
-        "show_source": true,
-        "round_pbar": false,
-        "flash_feedback": false,
+        "show_earth_background": false,
+        "show_rbar": false,
+        "show_source": false,
+        "round_pbar": true,
+        "flash_feedback": true,
         "tone_freq_standard": 440.0,
         "tone_freq_deviant": 528.0,
         "tone_duration": 0.07,
@@ -67,50 +67,52 @@
             "session",
             "order",
             "framing",
-            "practice_mode"
+            "practice_mode",
+            "trigger_mode"
         ]
     },
     "stimgen": {
         "SAMPLE_RATE": 60,
         "VOLATILITY_PRESETS": {
             "stable": [
-                10,
-                1.5,
                 8,
-                15
+                1.5,
+                5,
+                10
             ],
             "volatile": [
                 3,
                 1.5,
                 2,
-                6
+                5
             ],
             "medium": [
                 5,
                 1.5,
                 3,
-                12
+                10
             ]
         },
         "NOISE_PRESETS": {
             "precise": 15,
-            "noisy": 20
+            "noisy": 25
         },
         "PRACTICE_VOLATILITY": [
             "stable",
-            "volatile"
+            "medium"
         ],
         "PRACTICE_NOISE": [
-            "noisy"
+            "precise"
         ],
         "PRACTICE_NOISE_MODE": "counterbalanced",
         "PRACTICE_N_SESSIONS": 1,
-        "PRACTICE_BLOCK_DURATION_MIN": 1,
+        "PRACTICE_BLOCK_DURATION_MIN": 2,
         "MAIN_VOLATILITY": [
             "stable",
             "volatile"
         ],
         "MAIN_NOISE": [
+            "precise",
             "noisy"
         ],
         "MAIN_NOISE_MODE": "counterbalanced",
@@ -127,6 +129,7 @@
             20,
             30,
             40
-        ]
+        ],
+        "SHOW_SOURCE": false
     }
 }

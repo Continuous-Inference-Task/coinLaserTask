@@ -190,6 +190,7 @@ def main():
             block_sequence=main_block_seq,
             n_sessions=config.MAIN_N_SESSIONS,
             blocks_per_session=blocks_per_session,
+            show_source=config.SHOW_SOURCE,
             mmn_filenames=mmn_filenames,
             tone_vol_list=tone_vol_list,
             tone_noise_list=tone_noise_list,
@@ -205,6 +206,7 @@ def main():
             block_sequence=practice_block_seq,
             n_sessions=config.PRACTICE_N_SESSIONS,
             blocks_per_session=n_practice_types,
+            show_source=config.SHOW_SOURCE,
         )
     print(f'Session CSV files generated for practice ({n_practice_blocks} blocks, {n_practice_types}/session)')
 

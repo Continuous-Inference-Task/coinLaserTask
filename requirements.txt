@@ -7,11 +7,16 @@
 # ============================================================
 # Core experiment dependencies (PsychoPy-based laser task)
 # ============================================================
-psychopy
+psychopy==2026.1.3
 psychtoolbox
-PyQt6
-pylsl
+
+# LSL streaming
+pylsl>=1.16.0
+
+# GUI (if not already satisfied by psychopy)
+PyQt6>=6.7.0
 sounddevice
+psychopy-visionscience
 
 # ============================================================
 # Scientific computing

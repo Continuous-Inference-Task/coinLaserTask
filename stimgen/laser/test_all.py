@@ -366,19 +366,19 @@ def test_generate_coin_session_csv_files():
         for order in range(1, 5):
             generate_coin_session_csv_files(order, 'practice', tmpdir,
                                             design=main_design, block_sequence=main_block_seq[:4],
-                                            n_sessions=1, blocks_per_session=4)
+                                            n_sessions=1, blocks_per_session=4, show_source=config.SHOW_SOURCE)
             generate_coin_session_csv_files(order, 'onlineTrain', tmpdir,
                                             design=main_design, block_sequence=main_block_seq[:4],
-                                            n_sessions=1, blocks_per_session=4)
+                                            n_sessions=1, blocks_per_session=4, show_source=config.SHOW_SOURCE)
             generate_coin_session_csv_files(order, 'main', tmpdir,
                                             design=main_design, block_sequence=main_block_seq,
-                                            n_sessions=3, blocks_per_session=4,
+                                            n_sessions=3, blocks_per_session=4, show_source=config.SHOW_SOURCE,
                                             mmn_filenames=fake_mmn,
                                             tone_vol_list=[0, 1, 0, 1] * 3,
                                             tone_noise_list=[1, 1, 0, 0] * 3)
             generate_coin_session_csv_files(order, 'infusion', tmpdir,
                                             design=main_design, block_sequence=main_block_seq,
-                                            n_sessions=3, blocks_per_session=4)
+                                            n_sessions=3, blocks_per_session=4, show_source=config.SHOW_SOURCE)
         # Verify orders 1 & 3 have same stability (stable first) vs orders 2 & 4
         # Order 1: stab_orders[0]=1, img_orders[0]=1
         # Order 2: stab_orders[1]=2, img_orders[1]=1
@@ -401,8 +401,12 @@ def test_generate_coin_session_csv_files():
         o1_first_img = o1_lines[1].strip().split(',')[1]
         o3_first_img = o3_lines[1].strip().split(',')[1]
         # Order 1 uses imgAssignment1, order 3 uses imgAssignment2
-        assert o1_first_img == 'radioactive1.png', f"Order 1 first img: {o1_first_img}"
-        assert o3_first_img == 'radioactive4.png', f"Order 3 first img: {o3_first_img}"
+        if config.SHOW_SOURCE:
+            assert o1_first_img == 'radioactive1.png', f"Order 1 first img: {o1_first_img}"
+            assert o3_first_img == 'radioactive4.png', f"Order 3 first img: {o3_first_img}"
+        else:
+            assert o1_first_img == 'not_so_radioactive1.png', f"Order 1 first img: {o1_first_img}"
+            assert o3_first_img == 'not_so_radioactive4.png', f"Order 3 first img: {o3_first_img}"
     print("✓ generate_coin_session_csv_files (all orders, all task flags)")
 
 def test_generate_mean_stimulus():

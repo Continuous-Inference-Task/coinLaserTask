@@ -1,9 +1,12 @@
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+from PIL import Image
 from psychopy import visual
 
+
 from laserTask.config import ExperimentConfig
+from psychopy_visionscience.radial import RadialStim
 
 # TODO: in long run want to make instruction screen easily adaptable
 def build_shield_instructions(cfg: ExperimentConfig, winds_cond: int) -> str:
@@ -169,7 +172,7 @@ def create_stimuli(
     S["title"] = visual.TextStim(
         win,
         name="title",
-        text="Are you ready to save the world?",
+        text="Save-the-world task",
         font=s.font,
         pos=(0, 0.35),
         height=s.title_size,
@@ -195,16 +198,15 @@ def create_stimuli(
         win,
         name="instr1",
         text=(
-            "You will now play 1 session of the save-the-world game, "
-            "where you protect our planet Earth by shielding it from "
-            "harmful radiation.\n\n"
-            f"This session will have {n_main_blocks if n_main_blocks is not None else cfg.n_blocks} blocks. "
-            f"Each block lasts {_dur_str}.\n\n"
-            f"{_move_blurb}\n\n"
-            "Pay attention to the different sources and "
-            "catch as many beams as you can!\n\n"
-            "Press any key to continue."
+            "Welcome to the Save-the-world game!\n\n"
+            "Mysterious radioactive sources have just landed on Earth and are emitting radiation that"
+            " is harmful to our planet.\n\n"
+            "Your task is to catch the radiation beams with an absorbing shield. " 
+            "You will have to navigate the shield and position it wisely to minimise the damage "
+            "caused by these sources. Help us save the world!"
+            "\n\nPress any key to continue."
         ),
+
         font=s.font,
         pos=(0, -0.08),
         height=s.small_text_size,
@@ -217,10 +219,17 @@ def create_stimuli(
         win,
         name="shield_instr",
         text=(
-            build_shield_instructions(cfg, wins_cond)
-            if cfg.allow_shield_adjustment
-            else ""
+            "Your shield can be positioned anywhere on a circle around the harmful radiation source.\n"
+            f"To navigate the shield, press {cfg.key_right.upper()} and {cfg.key_left.upper()} on your {cfg.input_device} with your left and right pointer fingers.\n\n"
+            #"Try moving the shield now! \n\n"
+            "If you have understood how to move the shield, \n"
+            f"press '{cfg.key_next.upper()}' to advance to the next screen." 
         ),
+        # text=(
+        #     build_shield_instructions(cfg, wins_cond)
+        #     if cfg.allow_shield_adjustment
+        #     else ""
+        # ),
         font=s.font,
         pos=(0, 0),
         height=s.small_text_size,
@@ -265,11 +274,14 @@ def create_stimuli(
             "As in the real game, the source will emit radiation, but the main angle "
             "of attack might change over time, so that you have to keep monitoring "
             "the beams and decide when to re-position your shield.\n\n"
-            "You will see a reward bar on the right of the screen, which shows you how "
-            "you lose money whenever a beam remains uncaught, but you will not actually "
-            f"earn any money during this practice. Remember to use the {_practice_keys} "
+            "During this practice, you will not receive any reward, but during the actual game,  "
+            "you will receive an in-game reward based on how well you catch the beams. "
+            #"You will see a reward bar on the right of the screen, which shows you how "
+            #"you lose money whenever a beam remains uncaught, but you will not actually "
+            #f"earn any money during this practice. " 
+            f"Remember to use the {_practice_keys} "
             "to navigate your shield.\n\n"
-            "Press any key to start the practice block."
+            f"Press '{cfg.key_next.upper()}' to start the practice block."
         ),
         font=s.font,
         pos=(0, 0),
@@ -290,6 +302,147 @@ def create_stimuli(
             "Moving your shield also costs energy, which will be subtracted from your reward. "
             "It is thus important that you only move your shield when you think that the main "
             "direction of attack has changed.\n\n"
+            "Press any key to continue."
+        ),
+        font=s.font,
+        pos=(0, 0),
+        height=s.small_text_size,
+        wrapWidth=1.5,
+        color=s.text_color,
+    )
+
+    S["main_task_instr"] = visual.TextStim(
+        win,
+        name="main_task_instr",
+        text=(
+            "Are you ready to start the game?\n\n"
+            "In the actual game:\n\n"
+            "1. You will now see reward information in the centre of the screen - the money you "
+            "receive is based on your performance, and you will receive feedback about your "
+            "reward after every block.\n\n"
+            "2. Please focus your eyes on the centre of the radioactive "
+            "source and do not follow the beams with your eyes. This is to "
+            "minimise eye-movement artefacts in the EEG data.\n\n"
+            "3. You will hear tones through your headphones while you play "
+            "the game. These tones are completely unrelated to the task - "
+            "you can ignore them and focus on catching the beams.\n\n"
+            "Press any key to continue."
+        ),
+        font=s.font,
+        pos=(0, 0),
+        height=s.small_text_size,
+        wrapWidth=1.5,
+        color=s.text_color,
+    )
+
+    # S["reward_instr"] = visual.TextStim(
+    #     win,
+    #     name="reward_instr",
+    #     text=(
+    #         "In every block of this game, your reward for saving the world "
+    #         "from this radiation starts off at £1. The more radiation you let "
+    #         "through, the more reward you lose.\n\n"
+    #         "Try to keep as much of that £1 as you can by catching as many "
+    #         "beams as you can. After every block, you will receive feedback "
+    #         "about how much reward you have earned in the previous block.\n\n"
+    #         f"Each block will last {_dur_str}. A green circle will grow around "
+    #         "the radioactive source, indicating how much time has passed. "
+    #         "When the green circle is complete, the block is over.\n\n"
+    #         "Press any key to continue."
+    #     ),
+    #     font=s.font,
+    #     pos=(0, 0),
+    #     height=s.small_text_size,
+    #     wrapWidth=1.5,
+    #     color=s.text_color,
+    # )
+
+    if wins_cond == 0:
+        # --- loss framing ---
+        _reward_text = (
+            "In every block of this game, your reward for saving the world "
+            "from this radiation starts off at €2.0. The more radiation you let "
+            "through, the more reward you lose.\n\n"
+            "Try to keep as much of that €2.0 as you can by catching as many "
+            "beams as you can."
+        )
+    else:
+        # --- win framing ---
+        _reward_text = (
+            "In every block of this game, you start with €0 reward for saving "
+            "the world from this radiation. The more radiation you catch, "
+            "the more reward you win.\n\n"
+            "Try to earn as much of the €2.0 as possible by catching as many "
+            "beams as you can."
+        )
+
+    # Common instructions that apply to both conditions
+    _common_instr = (
+        "\n\nAfter every block, you will receive feedback "
+        "about how much reward you have earned in the previous block.\n\n"
+        f"Each block will last {_dur_str}. A green circle will grow around "
+        "the radioactive source, indicating how much time has passed. "
+        "When the green circle is complete, the block is over.\n\n"
+        "Press any key to continue."
+    )
+
+    S["reward_instr"] = visual.TextStim(
+        win,
+        name="reward_instr",
+        text=_reward_text + _common_instr,
+        font=s.font,
+        pos=(0, 0),
+        height=s.small_text_size,
+        wrapWidth=1.5,
+        color=s.text_color,
+    )
+
+    # Get dimensions for source images right
+    img_path = cfg.image_root + "SLEPS_radioactive_colours_spaced.png"
+    with Image.open(img_path) as img:
+        pixel_w, pixel_h = img.size
+    aspect_ratio = pixel_w / pixel_h
+
+    # Set the height in 'height' units (e.g., 0.1 = 10% of screen height)
+    desired_height = 0.1 
+    desired_width = desired_height * aspect_ratio
+
+    S["radioactive_colours"] = visual.ImageStim(
+        win,
+        name="radioactive_colours",
+        image=img_path,
+        pos=(0.0, 0.11),
+        size=(desired_width, desired_height),
+        color=[1, 1, 1],
+        colorSpace="rgb",
+        interpolate=True,
+    )
+
+
+    # S["radioactive_colours"] = visual.ImageStim(
+    #     win,
+    #     name="radioactive_colours",
+    #     image=cfg.image_root + "SLEPS_radioactive_colours.png",
+    #     pos=(0.0, 0.11),
+    #     size=(0.2,),
+    #     color=[1, 1, 1],
+    #     colorSpace="rgb",
+    #     interpolate=True,
+    # )
+
+    S["source_colours"] = visual.TextStim(
+        win,
+        name="source_colours",
+        text=(
+            "You will encounter different radioactive sources.\n"
+            "The sources are marked with different colours:\n\n\n\n\n\n\n\n"
+            "The difference between these sources is how often they change "
+            "their emission angle over time, and therefore how often you "
+            "will have to adjust your shield position."
+            "Some of the sources will change their main angle of attack more "
+            "often, whereas others will remain stable for longer.\n\n"
+            f"This game has {n_main_blocks if n_main_blocks is not None else cfg.n_blocks} blocks. "
+            "You will encounter each source once.\n\n"
             "Press any key to continue."
         ),
         font=s.font,
@@ -325,10 +478,10 @@ def create_stimuli(
         win,
         name="block_start_text",
         text=(
-            "New source ahead:\n\n\n\n\n\n\n\n\n"
-            "!!Please try to keep your eyes focussed on the source "
-            "throughout the block!!\n\n"
-            "Press any key if you're ready to start."
+            "Please try to keep your eyes as fixed as possible on the centre "
+            "of the screen.\n\n"
+            "New source ahead:\n\n\n\n\n\n\n\n"
+            f"Press '{cfg.key_next.upper()}' if you're ready to start."
         ),
         font=s.font,
         pos=(0, 0),
@@ -365,7 +518,9 @@ def create_stimuli(
     S["pause"] = visual.TextStim(
         win,
         name="pause",
-        text="If you wish, you can now take a short break.\n",
+        text=("Please take a short break now.\n"
+              f"Press '{cfg.key_next.upper()}' if you're ready to continue."
+        ),
         font=s.font,
         pos=(0, -0.2),
         height=s.text_size,
@@ -396,11 +551,11 @@ def create_stimuli(
     # --- experiment end ------------------------------------------------- #
     S["exp_end"] = visual.TextStim(
         win,
-        name="expermiment_end",
+        name="experiment_end",
         text=(
-            "Well done. You completed all blocks of this session.\n\n"
-            "In this session, you have earned:\n\n\n\n\n\n"
-            "Thank you"
+            "Well done. You completed this task.\n"
+            "Your total reward for saving the world is:\n\n\n\n\n"
+            "Take a break."
         ),
         font=s.font,
         pos=(0, 0),
@@ -464,7 +619,7 @@ def create_stimuli(
     S["shield_centre"] = visual.ShapeStim(
         win,
         name="shield_centre",
-        vertices=[[0, 0], [0, cfg.circle_radius * 1.2]],
+        vertices=[[0, 0], [0, cfg.circle_radius * 1.21]],
         size=s.shield_size_inner,
         ori=360,
         pos=s.center_pos,
@@ -525,27 +680,65 @@ def create_stimuli(
         lineColor=s.reward_bar_color,
         fillColor=s.reward_bar_color,
     )
-    S["pbar_edge"] = visual.Rect(
-        win,
-        name="progress_bar_edge",
-        width=s.progress_bar_width,
-        height=s.progress_bar_height,
-        pos=(0, s.progress_bar_y),
-        anchor="center",
-        lineWidth=2.0,
-        lineColor=s.progress_bar_edge_color,
-        fillColor=cfg.background_color,
-    )
-    S["pbar"] = visual.Rect(
-        win,
-        name="progress_bar",
-        width=0.001,
-        height=s.progress_bar_height,
-        pos=(-0.4, s.progress_bar_y),
-        anchor="center",
-        lineColor=s.progress_bar_color,
-        fillColor=s.progress_bar_color,
-    )
+    
+    if cfg.round_pbar:
+        # To show colour properly, need texture = +1 everywhere to replace default sin-grating
+        _uniform_tex = np.ones((64, 64), dtype=np.float32) 
+
+        S["progress_circle"] = RadialStim(
+            win,
+            name="progress_circle",
+            tex=_uniform_tex,
+            mask="circle",
+            color=cfg.style.progress_bar_color,
+            colorSpace="rgb255",      
+            radialCycles=0,
+            angularCycles=0,
+            visibleWedge=(0, 0.001),    # tiny non-zero start (see issue 3)
+            size=s.progress_circle_size,
+            pos=s.center_pos,
+        )
+    else:
+        S["pbar_edge"] = visual.Rect(
+            win,
+            name="progress_bar_edge",
+            width=s.progress_bar_width,
+            height=s.progress_bar_height,
+            pos=(0, s.progress_bar_y),
+            anchor="center",
+            lineWidth=2.0,
+            lineColor=s.progress_bar_edge_color,
+            fillColor=cfg.background_color,
+        )
+        S["pbar"] = visual.Rect(
+            win,
+            name="progress_bar",
+            width=0.001,
+            height=s.progress_bar_height,
+            pos=(-0.4, s.progress_bar_y),
+            anchor="center",
+            lineColor=s.progress_bar_color,
+            fillColor=s.progress_bar_color,
+        )
+        S["start_lbl"] = visual.TextStim(
+            win,
+            name="start_label",
+            text="Start",
+            font=s.font,
+            pos=(-0.47, s.progress_bar_y),
+            height=s.small_text_size,
+            color=s.text_color,
+        )
+        S["end_lbl"] = visual.TextStim(
+            win,
+            name="end_label",
+            text="End",
+            font=s.font,
+            pos=(0.47, s.progress_bar_y),
+            height=s.small_text_size,
+            color=s.text_color,
+        )
+
     S["rtxt_top"] = visual.TextStim(
         win,
         name="reward_text_top",
@@ -564,23 +757,26 @@ def create_stimuli(
         height=s.text_size,
         color=s.text_color,
     )
-    S["start_lbl"] = visual.TextStim(
-        win,
-        name="start_label",
-        text="Start",
-        font=s.font,
-        pos=(-0.47, s.progress_bar_y),
-        height=s.small_text_size,
-        color=s.text_color,
-    )
-    S["end_lbl"] = visual.TextStim(
-        win,
-        name="end_label",
-        text="End",
-        font=s.font,
-        pos=(0.47, s.progress_bar_y),
-        height=s.small_text_size,
-        color=s.text_color,
-    )
-
+    
+    if not cfg.show_source:
+        S["reward_center"]=visual.TextStim(
+            win,
+            name="reward_center",
+            text="test",
+            font=s.font,
+            pos=(0, -0.025),
+            height=s.text_size * 0.6,
+            color=s.text_color,
+        )
+        # Rectangle
+        # S["reward_center_fill"]=visual.Rect(
+        #     win,
+        #     name="reward_center_fill",
+        #     width=0.15, # changed value from 0.5 ~Carlotta
+        #     height=0.1, #changed value from 0.2 ~Carlotta
+        #     pos=(0,-0.025), #changed value from 0,0 ~Carlotta
+        #     anchor="center",
+        #     lineColor=s.reward_bar_color,
+        #     fillColor=s.reward_bar_color,
+        # )
     return S

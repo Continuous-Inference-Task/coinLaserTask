@@ -85,9 +85,47 @@ def _build_counterbalanced_orders(design, block_sequence):
     return [cond_order0, cond_order1], [block_order0, block_order1]
 
 
+def _get_image_list(task_flag, show_source, n_types, image_order_index):
+    """Pick the source-image set for a session, with a forward/reversed variant.
+
+    - ``practice`` always uses the ``radioactive5-8`` images.
+    - ``main`` (and other non-practice flags) uses ``radioactive1-4`` when
+      *show_source* is True, else the neutral ``not_so_radioactive1-4`` images.
+
+    Returns the image list selected by *image_order_index* (0 = forward, 1 = reversed).
+    """
+    if task_flag == "practice":
+        # Practice always uses the radioactive5-8 images.
+        base_images = [
+            "radioactive5.png",
+            "radioactive6.png",
+            "radioactive7.png",
+            "radioactive8.png",
+        ]
+    else:  # main (and other non-practice flags)
+        if show_source:
+            base_images = [
+                "radioactive1.png",
+                "radioactive2.png",
+                "radioactive3.png",
+                "radioactive4.png",
+            ]
+        else:
+            base_images = [
+                "not_so_radioactive1.png",
+                "not_so_radioactive2.png",
+                "not_so_radioactive3.png",
+                "not_so_radioactive4.png",
+            ]
+
+    img_forward = base_images[:n_types]
+    img_reversed = list(reversed(img_forward))
+    return [img_forward, img_reversed][image_order_index]
+
+
 def generate_coin_session_csv_files(
     order_index, task_flag, output_root,
-    design, block_sequence, n_sessions, blocks_per_session,
+    design, block_sequence, n_sessions, blocks_per_session, show_source=True,
     mmn_filenames=None, tone_vol_list=None, tone_noise_list=None,
 ):
     """Generate session CSV files with counterbalanced orders and image assignments.
@@ -131,17 +169,12 @@ def generate_coin_session_csv_files(
     )
 
     # ── Image assignments (2 variants: forward and reversed) ──
-    all_images = [
-        'radioactive1.png', 'radioactive2.png',
-        'radioactive3.png', 'radioactive4.png',
-    ]
-    img_forward = all_images[:n_types]
-    img_reversed = list(reversed(all_images[:n_types]))
-    img_lists = [img_forward, img_reversed]
+    # Practice always uses radioactive5-8; main uses radioactive1-4 when
+    # show_source is True, else the neutral not_so_radioactive1-4 images.
+    image_list = _get_image_list(task_flag, show_source, n_types, ioi)
 
     cond_list = cond_orders[soi]
     block_list = block_orders[soi]
-    image_list = img_lists[ioi]
 
     session_prefix = f'{task_flag}'
     root2file = os.path.join(output_root, f'coin_{session_prefix}_order{order_index}')

@@ -497,7 +497,7 @@ def prompt_select(
         sys.stdout.flush()
         return options[cursor]
 
-    except (ImportError, termios.error, AttributeError):
+    except (ImportError, termios.error, AttributeError, OSError):
         pass
 
     # ── fallback: simple numbered prompt ──
@@ -787,6 +787,7 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "fixed_shield_degrees": c.fixed_shield_degrees,
         "loss_factor": c.loss_factor,
         "currency_symbol": c.currency_symbol,
+        "neutral_practice": c.neutral_practice,
         "trigger_mode": c.trigger_mode,
         "serial_port": c.serial_port,
         "serial_baud_rate": c.serial_baud_rate,
@@ -794,6 +795,10 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "enable_audio": c.enable_audio,
         "mmn_type": c.mmn_type,
         "show_earth_background": c.show_earth_background,
+        "show_rbar": c.show_rbar,
+        "show_source": c.show_source,
+        "round_pbar": c.round_pbar,
+        "flash_feedback": c.flash_feedback,
         "tone_freq_standard": c.tone_freq_standard,
         "tone_freq_deviant": c.tone_freq_deviant,
         "tone_duration": c.tone_duration,

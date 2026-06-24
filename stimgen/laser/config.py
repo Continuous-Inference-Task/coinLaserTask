@@ -119,6 +119,8 @@ MMN_DEVIANT_PROB_MAP = {
     "precise": 0.1,
 }
 
+SHOW_SOURCE = True
+
 
 # ------------------------------------------------------------------ #
 #  CONFIG LOADING                                                     #
