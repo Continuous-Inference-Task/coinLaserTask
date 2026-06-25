@@ -18,6 +18,7 @@ Usage:
     python wizard.py --report     # print current config without prompts
     python wizard.py --generate   # just regenerate sequences from current config
     python wizard.py --generate --verify  # regenerate + verify with plots
+    python wizard.py --pack       # prepare offline package for lab machine
     python wizard.py --help       # show this message
 
 No dependencies beyond Python stdlib.  Works over SSH, in tmux, anywhere.
@@ -3433,6 +3434,7 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
         print(f"  {_c(C['cyan'], 'g')})  Generate sequences")
         print(f"  {_c(C['cyan'], 'v')})  Verify generated sequences")
         print(f"  {_c(C['cyan'], 'r')})  Run experiment" + _c(C["dim"], "  (python main.py)"))
+        print(f"  {_c(C['cyan'], 'o')})  Prepare offline package")
         print(f"  {_c(C['dim'], 'b')})  Back to main menu")
 
         print()
@@ -3496,6 +3498,9 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
                             print()
                             subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
                             return dirty
+        elif choice == "o":
+            from offline import prepare_offline_package
+            prepare_offline_package(cfg)
         elif choice in SECTION_MAP:
             desc, fn = SECTION_MAP[choice]
             try:
@@ -3611,6 +3616,7 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
         print(f"  {_c(C['cyan'], 'g')})  Generate sequences")
         print(f"  {_c(C['cyan'], 'v')})  Verify generated sequences")
         print(f"  {_c(C['cyan'], 'r')})  Run experiment" + _c(C["dim"], "  (python main.py)"))
+        print(f"  {_c(C['cyan'], 'o')})  Prepare offline package")
         print(f"  {_c(C['dim'], 'q')})  Quit & save")
 
         print()
@@ -3680,6 +3686,9 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
             print()
             subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
             return
+        elif choice == "o":
+            from offline import prepare_offline_package
+            prepare_offline_package(cfg)
         elif choice == "v":
             print()
             info("Running sequence verification …")
@@ -3755,6 +3764,12 @@ def main() -> None:
         else:
             print()
             fail("Sequence generation had errors — check output above.")
+        return
+
+    if "--pack" in sys.argv:
+        cfg = _read_laser_task_config()
+        from offline import prepare_offline_package
+        prepare_offline_package(cfg)
         return
 
     # ── interactive ──
