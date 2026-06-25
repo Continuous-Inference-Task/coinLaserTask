@@ -320,8 +320,11 @@ def _download_wheels(pack_dir: Path, target_platform: str,
     wheels_dir.mkdir(parents=True, exist_ok=True)
     req_file = pack_dir / "requirements.txt"
 
-    # Build the pip download command
-    cmd = [sys.executable, "-m", "pip", "download",
+    # Build the pip download command.
+    # uv-managed venvs don't include pip, so we use `uv run --with pip`
+    # to temporarily add pip to the environment (same approach as uv-pack).
+    cmd = ["uv", "run", "--with", "pip",
+           "python", "-m", "pip", "download",
            "--no-deps",
            "--disable-pip-version-check",
            "-r", str(req_file),
@@ -346,10 +349,11 @@ def _download_wheels(pack_dir: Path, target_platform: str,
             if url:
                 cmd += ["--find-links", url]
 
-    _info(f"Running: {' '.join(cmd[:6])}... (this may take several minutes)")
+    _info(f"Running: uv run --with pip python -m pip download ... (this may take several minutes)")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                  cwd=PROJECT_ROOT)
         if result.returncode != 0:
             _fail("pip download had errors")
             # Print last few lines of stderr for diagnosis
