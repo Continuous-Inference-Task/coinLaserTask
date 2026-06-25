@@ -323,40 +323,52 @@ def _download_wheels(pack_dir: Path, target_platform: str,
     # Build the pip download command.
     # uv-managed venvs don't include pip, so we use `uv run --with pip`
     # to temporarily add pip to the environment (same approach as uv-pack).
-    cmd = ["uv", "run", "--with", "pip",
-           "python", "-m", "pip", "download",
-           "--no-deps",
-           "--disable-pip-version-check",
-           "-r", str(req_file),
-           "-d", str(wheels_dir)]
+    base_cmd = ["uv", "run", "--with", "pip",
+                "python", "-m", "pip", "download",
+                "--no-deps",
+                "--disable-pip-version-check",
+                "-r", str(req_file),
+                "-d", str(wheels_dir)]
 
     # Determine if this is cross-platform
     current_platform = "windows" if sys.platform == "win32" else "linux"
     is_cross = (target_platform != current_platform)
 
     if is_cross:
-        cmd += ["--platform", PIP_PLATFORM[target_platform],
-                "--python-version", PYTHON_VERSION_SHORT,
-                "--only-binary", ":all:"]
+        # --platform requires --only-binary, but some packages only have
+        # sdists (pure Python). We use a two-pass approach:
+        #   1. Download with --only-binary :all: (gets all wheels)
+        #   2. Retry with --no-binary for packages that only have sdists
+        cmd = base_cmd + ["--platform", PIP_PLATFORM[target_platform],
+                          "--python-version", PYTHON_VERSION_SHORT,
+                          "--only-binary", ":all:"]
     else:
-        cmd += ["--prefer-binary"]
+        cmd = base_cmd + ["--prefer-binary"]
 
     # wxPython find-links for Linux targets
     if target_platform == "linux":
-        # Include both Ubuntu versions to maximize wheel availability
         for uv_ver in ["ubuntu-22.04", "ubuntu-24.04"]:
             url = WXPYTHON_FIND_LINKS.get(uv_ver)
             if url:
                 cmd += ["--find-links", url]
 
-    _info(f"Running: uv run --with pip python -m pip download ... (this may take several minutes)")
+    _info("Running: uv run --with pip python -m pip download ... (this may take several minutes)")
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True,
                                   cwd=PROJECT_ROOT)
+
+        # ── Two-pass: retry with --no-binary for sdist-only packages ──
+        if result.returncode != 0 and is_cross:
+            failed = _parse_failed_packages(result.stderr)
+            if failed:
+                _info(f"{len(failed)} package(s) have no wheels — downloading as sdist")
+                retry_cmd = cmd + ["--no-binary", ",".join(failed)]
+                result = subprocess.run(retry_cmd, capture_output=True, text=True,
+                                          cwd=PROJECT_ROOT)
+
         if result.returncode != 0:
             _fail("pip download had errors")
-            # Print last few lines of stderr for diagnosis
             for line in result.stderr.strip().splitlines()[-10:]:
                 _info(f"  {line}")
             return False
@@ -368,6 +380,21 @@ def _download_wheels(pack_dir: Path, target_platform: str,
     except Exception as e:
         _fail(str(e))
         return False
+
+
+def _parse_failed_packages(stderr: str) -> List[str]:
+    """Extract package names that couldn't be found as wheels from pip stderr."""
+    import re
+    failed = []
+    for line in stderr.splitlines():
+        match = re.search(r"Could not find a version that satisfies the requirement (\S+)", line)
+        if match:
+            pkg_spec = match.group(1)
+            # Extract package name from "package==version ; markers"
+            pkg_name = re.match(r'^([a-zA-Z0-9_.-]+)', pkg_spec)
+            if pkg_name:
+                failed.append(pkg_name.group(1))
+    return failed
 
 
 # ── Step 3: Download portable Python ────────────────────────────────────────
@@ -576,21 +603,10 @@ def prepare_offline_package(cfg: Dict[str, Any]) -> None:
     Called from wizard.py when the user selects "Prepare offline package".
     """
     print()
-    print(_c(_C.bold, "  ┌─ Prepare Offline Package "
-          + "─" * 38 + "┐"))
-    print(_c(_C.bold, "  │                                              "
-          + "             │"))
-    print(_c(_C.bold, "  │  This bundles your current configuration,     "
-          + "             │"))
-    print(_c(_C.bold, "  │  sequences, and all dependencies into a      "
-          + "             │"))
-    print(_c(_C.bold, "  │  self-contained directory for a lab machine   "
-          + "             │"))
-    print(_c(_C.bold, "  │  without internet access.                    "
-          + "             │"))
-    print(_c(_C.bold, "  │                                              "
-          + "             │"))
-    print(_c(_C.bold, "  └" + "─" * 48 + "┘"))
+    print("  " + _c(_C.bold, "Prepare Offline Package"))
+    print("  " + _c(_C.dim, "Bundles your configuration, sequences, and all"))
+    print("  " + _c(_C.dim, "dependencies into a self-contained directory for"))
+    print("  " + _c(_C.dim, "a lab machine without internet access."))
     print()
 
     # ── Pre-flight check ──
