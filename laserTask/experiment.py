@@ -546,12 +546,9 @@ def run_experiment(
                 the_exp,
                 label="main_start",
             )
-            # Finalise the main_start row only when a follow-up instruction
-            # screen (main_task_instr) will write to a new entry.  Without an
-            # override dir there is no follow-up screen, so we keep main's
-            # behaviour of leaving main_start.key/rt on the block's row.
+            the_exp.nextEntry()
+
             if "main_task_instr" in S:
-                the_exp.nextEntry()
                 wait_for_key(
                     win,
                     trig,
