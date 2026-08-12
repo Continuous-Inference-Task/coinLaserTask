@@ -34,7 +34,6 @@ from laserTask.io import (
 )
 from laserTask.reward import BaseRewardTracker, RewardTracker
 from laserTask.stimuli import compute_shield_vertices, create_stimuli
-#from laserTask.stimuli import compute_shield_vertices, compute_progress_vertices, create_stimuli
 from laserTask.triggers import TriggerManager
 
 _PACKAGE_DIR = Path(__file__).parent
@@ -472,31 +471,48 @@ def run_experiment(
     logging.exp("Participant completed instruction screen 1.")
     the_exp.nextEntry()
 
-    # SCREEN 2 -- Shield-size instructions only if shield adjustments allowed
-    # NOTE: adapted instructions specifically for Rob, need to make this modular
-    #if cfg.allow_shield_adjustment:
-    wait_for_key(
-        win,
-        trig,
-        [S["shield_instr"]],
-        default_kb,
-        the_exp,
-        label="shield_instr",
-    )
-    logging.exp("Participant completed instruction screen 2.")
-    the_exp.nextEntry()
+    # SCREEN 2 -- Shield instructions:
+    #   - Default (no override): only when allow_shield_adjustment is True
+    #   - With override dir: shown when shield_instr.txt exists (even if
+    #     allow_shield_adjustment is False)
+    from laserTask.stimuli import _has_instruction_override
+    if cfg.allow_shield_adjustment or _has_instruction_override(cfg, "shield_instr"):
+        wait_for_key(
+            win,
+            trig,
+            [S["shield_instr"]],
+            default_kb,
+            the_exp,
+            label="shield_instr",
+        )
+        logging.exp("Participant completed instruction screen 2.")
+        the_exp.nextEntry()
 
-    # SCREEN 3 -- Reward instructions
-    wait_for_key(
-        win,
-        trig,
-        [S["reward_instr"]],
-        default_kb,
-        the_exp,
-        label="reward_instr",
-    )
-    logging.exp("Participant completed instruction screen 2.")
-    the_exp.nextEntry()
+    # SCREEN 3 -- Reward instructions (optional, only with override file)
+    if "reward_instr" in S:
+        wait_for_key(
+            win,
+            trig,
+            [S["reward_instr"]],
+            default_kb,
+            the_exp,
+            label="reward_instr",
+        )
+        logging.exp("Participant completed reward instruction screen.")
+        the_exp.nextEntry()
+
+    # SCREEN 4 -- Main task instructions (optional, only with override file)
+    if "main_task_instr" in S:
+        wait_for_key(
+            win,
+            trig,
+            [S["main_task_instr"]],
+            default_kb,
+            the_exp,
+            label="main_task_instr",
+        )
+        logging.exp("Participant completed main task instruction screen.")
+        the_exp.nextEntry()
 
     # ================================================================== #
     #  BLOCK LOOP                                                         #
@@ -530,17 +546,21 @@ def run_experiment(
                 the_exp,
                 label="main_start",
             )
-            the_exp.nextEntry()
-
-            wait_for_key(
-                win,
-                trig,
-                [S["main_task_instr"]],
-                default_kb,
-                the_exp,
-                label="main_task_instr",
-            )
-            the_exp.nextEntry()
+            # Finalise the main_start row only when a follow-up instruction
+            # screen (main_task_instr) will write to a new entry.  Without an
+            # override dir there is no follow-up screen, so we keep main's
+            # behaviour of leaving main_start.key/rt on the block's row.
+            if "main_task_instr" in S:
+                the_exp.nextEntry()
+                wait_for_key(
+                    win,
+                    trig,
+                    [S["main_task_instr"]],
+                    default_kb,
+                    the_exp,
+                    label="main_task_instr",
+                )
+                the_exp.nextEntry()
 
             wait_for_key(
                 win,
@@ -616,6 +636,11 @@ def run_experiment(
         size_idx = sds.default_index  # reset to middle each block
         sd = sds.size_degrees[size_idx]
         shield_verts = compute_shield_vertices(sd, cfg.circle_radius)
+        # Set shield vertices once at block start — calling setVertices()
+        # every frame triggers GLU tessellation which can cause memory
+        # corruption under certain pyglet versions (see commit c452505).
+        S["shield"].setVertices(shield_verts, log=False)
+        S["shield_bg"].setVertices(shield_verts, log=False)
         shield_rot = 360.0  # start at 12 o'clock
 
         stream = _preloaded_streams[block_file]
@@ -631,7 +656,9 @@ def run_experiment(
 
         reward_tracker.reset_block()
         S["source"].setImage(src_path)
-        if cfg.show_earth_background or phase_n == PHASE_PRACTICE:
+        if cfg.show_earth_background or (
+            phase_n == PHASE_PRACTICE and cfg.show_earth_background_practice
+        ):
             S["earth_background"].setImage(earth_path)
 
         block_audio_enabled = bool(
@@ -657,7 +684,9 @@ def run_experiment(
             S["laser_long"],
             
         ]
-        if cfg.show_earth_background or phase_n == PHASE_PRACTICE:
+        if cfg.show_earth_background or (
+            phase_n == PHASE_PRACTICE and cfg.show_earth_background_practice
+        ):
             trial_stims.insert(0, S["earth_background"])
         if cfg.show_rbar or phase_n == PHASE_PRACTICE:
             trial_stims.insert(5, S["rbar"])
@@ -683,9 +712,6 @@ def run_experiment(
         
         active_keys = []
         last_movement_trigger = None
-        # if cfg.round_pbar:
-        #     S["progress_circle"].opacity = 0.0
-        #     S["progress_circle"].visibleWedge = (0.0, 0.001)
 
         # --- frame loop ------------------------------------------------ #
         while cur_frame <= n_frames:
@@ -760,6 +786,9 @@ def run_experiment(
                         size_trig_val = TRIGGER_CODES["shield_grow"]
                     sd = sds.size_degrees[size_idx]
                     shield_verts = compute_shield_vertices(sd, cfg.circle_radius)
+                    # Re-set vertices only when shield size actually changes
+                    S["shield"].setVertices(shield_verts, log=False)
+                    S["shield_bg"].setVertices(shield_verts, log=False)
 
                     if size_trig_val:
                         pass  # trigger deferred to post-flip (frame-synced)
@@ -882,7 +911,10 @@ def run_experiment(
             reward_tracker.update(hit, is_new, size_index=size_idx)
 
             # ---- update visuals --------------------------------------- #
-            shield_verts = compute_shield_vertices(sd, cfg.circle_radius)
+            # Vertices are constant per block (set at block init / size change);
+            # only orientation, colour, and opacity change per frame.
+            # Calling setVertices() every frame triggers GLU tessellation which
+            # can corrupt memory under certain pyglet versions.
 
             if hit:
                 s_col = cfg.style.shield_hit_color
@@ -892,7 +924,6 @@ def run_experiment(
                 ll_opacity = 1.0
 
             S["shield"].setOri(shield_rot, log=False)
-            S["shield"].setVertices(shield_verts, log=False)
             S["shield"].setFillColor(s_col, log=False)
             S["shield"].setLineColor(
                 cfg.style.shield_line_color,
@@ -900,27 +931,14 @@ def run_experiment(
             )
 
             S["shield_bg"].setOri(shield_rot, log=False)
-            S["shield_bg"].setVertices(shield_verts, log=False)
 
             S["shield_centre"].setOri(shield_rot, log=False)
-            S["shield_centre"].setVertices(
-                [[0, 0], [0, cfg.circle_radius * 1.21]],
-                log=False,
-            )
 
-            cr = cfg.circle_radius
             S["laser"].setOri(laser_rot, log=False)
             S["laser"].setOpacity(1.0 if show_laser else 0.0, log=False)
-            S["laser"].setVertices(
-                [[0, 0], [0, cr * cfg.style.laser_radius_factor]],
-                log=False,
-            )
+
             S["laser_long"].setOri(laser_rot, log=False)
             S["laser_long"].setOpacity(ll_opacity if (show_laser and first_hit_occurred) else 0.0, log=False)
-            S["laser_long"].setVertices(
-                [[0, 0], [0, cr * cfg.style.laser_long_radius_factor]],
-                log=False,
-            )
 
             if cfg.show_rbar or phase_n == PHASE_PRACTICE:
                 S["rbar"].setPos(
@@ -960,45 +978,8 @@ def run_experiment(
                     log=False,
                 )
             else:
-                #prog_deg = 360.0 * (cur_frame / n_frames)
-
-                # S["progress_circle"].setVertices(
-                #     compute_progress_vertices(
-                #         prog_deg,
-                #         cfg.circle_radius,
-                #     ),
-                #     log=False,
-                # )
-                # S["progress_circle"].setLineWidth(
-                #     cfg.style.progress_circle_width,
-                #     log=False,
-                # )
-                # S["progress_circle"].setFillColor(cfg.style.progress_bar_color, log=False)
-                # S["progress_circle"].setLineColor(
-                #     cfg.style.progress_bar_edge_color,
-                #     log=False,
-                # )  
                 prog_deg = 360.0 * (cur_frame / n_frames)
-
-                #S["progress_circle"].opacity = 1.0
                 S["progress_circle"].visibleWedge = (0, prog_deg)
-
-
-                # Right now: Frame loop
-                # prog_deg = 360.0 * (cur_frame / n_frames)
-                # if prog_deg > 0.5:          # only show once visibly non-zero
-                #     S["progress_circle"].opacity = 1.0
-                #     S["progress_circle"].visibleWedge = (0.0, prog_deg)
-                # idx = int(cur_frame / n_frames * (cfg.style.wedge_resolution - 1))
-
-                # S["progress_circle"].setLineColor(
-                #     cfg.style.progress_bar_edge_color,
-                #     log=False,
-                # )  
-                # S["progress_circle"].setFillColor(
-                #     cfg.style.progress_bar_edge_color,
-                #     log=False,
-                # )                
 
             # ---- triggers (deferred to post-flip for frame sync) -- #
 

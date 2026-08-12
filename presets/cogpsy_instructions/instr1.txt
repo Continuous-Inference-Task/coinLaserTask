@@ -1,0 +1,7 @@
+Welcome to the Save-the-world game!
+
+Mysterious radioactive sources have just landed on Earth and are emitting radiation that is harmful to our planet.
+
+Your task is to catch the radiation beams with an absorbing shield. You will have to navigate the shield and position it wisely to minimise the damage caused by these sources. Help us save the world!
+
+Press any key to continue.

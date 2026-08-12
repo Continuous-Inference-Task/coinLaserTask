@@ -1,0 +1,11 @@
+Are you ready to start the game?
+
+In the actual game:
+
+1. You will not see the reward bar - but the rules for earning money remain the same, and you will receive feedback about your reward after every block.
+
+2. Please focus your eyes on the centre of the radioactive source and do not follow the beams with your eyes. This is to minimise eye-movement artefacts in the MEG data.
+
+3. You will hear tones through your headphones while you play the game. These tones are completely unrelated to the task - you can ignore them and focus on catching the beams.
+
+Press any key to continue.

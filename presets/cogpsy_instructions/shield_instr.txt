@@ -1,0 +1,5 @@
+Your shield can be positioned anywhere on a circle around the harmful radiation source.
+To navigate the shield, press J and F on your keyboard. Try moving the shield now!
+
+If you have understood how to move the shield,
+press space to advance to the next screen.

@@ -225,13 +225,31 @@ class ExperimentConfig:
 
     # -- Visual style --
     show_earth_background: bool = True
-    """Whether to show the earth/world picture as the background during main trials. 
-    As of right now it is always visible during practice trials."""
+    """Whether to show the earth/world picture as the background during main trials."""
+    show_earth_background_practice: bool = False
+    """Whether to force the earth/world background during practice trials.
+
+    When True, the earth background is always shown during practice blocks
+    regardless of ``show_earth_background`` (cogpsy behaviour).
+    When False (default / main behaviour), the earth background during
+    practice follows ``show_earth_background``."""
     show_rbar: bool = True
     show_source: bool = True
     round_pbar: bool = False
     style: StimulusStyle = field(default_factory=StimulusStyle)
-    #instruction_set: InstructionSet = InstructionSet.COGPSY
+
+    # -- Instruction overrides --
+    instruction_override_dir: str = ""
+    """Path to a directory containing .txt files that override default instruction text.
+
+    When set, the experiment looks for files like ``title.txt``, ``instr1.txt``,
+    ``shield_instr.txt``, ``reward_instr.txt``, ``main_task_instr.txt`` in this
+    directory.  If a file exists, its content replaces the hardcoded default text
+    for that instruction screen.  Optional screens (reward_instr, main_task_instr)
+    are only shown when their override file exists.
+
+    When empty (default), all instruction text uses the built-in defaults and
+    the instruction screen flow matches the original PEDUKS/main behaviour."""
 
     # -- Session structure --
     enable_practice: bool = True

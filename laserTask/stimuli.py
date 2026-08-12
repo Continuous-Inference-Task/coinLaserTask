@@ -4,7 +4,10 @@ import numpy as np
 from psychopy import visual
 
 from laserTask.config import ExperimentConfig
-from psychopy_visionscience.radial import RadialStim
+
+# NOTE: RadialStim is imported lazily inside create_stimuli() only when
+# cfg.round_pbar is True, so psychopy-visionscience remains an optional
+# runtime dependency for studies that don't use the circular progress bar.
 
 # TODO: in long run want to make instruction screen easily adaptable
 def build_shield_instructions(cfg: ExperimentConfig, winds_cond: int) -> str:
@@ -154,34 +157,44 @@ def compute_shield_vertices(
     ys = np.cos(angles) * scale
     return [[0.0, 0.0]] + [[float(x), float(y)] for x, y in zip(xs, ys)]
 
-# def compute_progress_vertices(
-#     progress_degrees: float,
-#     circle_radius: float,
-#     *,
-#     start_angle_deg: float = 0.0,
-#     n_points: int = 360,
-#     ring_fraction: float = 0.2,   # radial thickness as fraction of circle_radius
-# ) -> list:
-#     if progress_degrees <= 0:
-#         return [[0.0, 0.0]]        # ShapeStim needs ≥1 vertex; kept degenerate
-
-#     inner_r = circle_radius * 1.10
-#     outer_r = circle_radius * (1.10 + ring_fraction)
-
-#     start = np.radians(start_angle_deg)
-#     end   = np.radians(start_angle_deg + progress_degrees)
-#     angles = np.linspace(start, end, n_points)
-
-#     outer = [[float(np.sin(a) * outer_r), float(np.cos(a) * outer_r)] for a in angles]
-#     inner = [[float(np.sin(a) * inner_r), float(np.cos(a) * inner_r)] for a in reversed(angles)]
-
-#     return outer + inner
-#     # NOTE: Tried to close it explicitly, but that did not help with filling
-#     # verts = outer + inner
-#     # verts.append(outer[0])
-#     # return verts
-
 # NOTE: adapted instructions specifically for Rob, need to make this modular
+
+# ------------------------------------------------------------------ #
+#  Instruction text override helper                                   #
+# ------------------------------------------------------------------ #
+
+def _load_instruction_text(cfg: ExperimentConfig, name: str, default: str) -> str:
+    """Return override text from instruction_override_dir if available.
+
+    Parameters
+    ----------
+    cfg : ExperimentConfig
+    name : str
+        Screen name (e.g. ``"title"``, ``"instr1"``, ``"shield_instr"``).
+    default : str
+        Fallback text used when no override file exists.
+
+    Returns
+    -------
+    str
+        The instruction text to display.
+    """
+    if not cfg.instruction_override_dir:
+        return default
+    from pathlib import Path
+    override_path = Path(__file__).resolve().parent.parent / cfg.instruction_override_dir / f"{name}.txt"
+    if override_path.is_file():
+        return override_path.read_text(encoding="utf-8").strip()
+    return default
+
+
+def _has_instruction_override(cfg: ExperimentConfig, name: str) -> bool:
+    """Check whether an override file exists for *name*."""
+    if not cfg.instruction_override_dir:
+        return False
+    from pathlib import Path
+    override_path = Path(__file__).resolve().parent.parent / cfg.instruction_override_dir / f"{name}.txt"
+    return override_path.is_file()
 
 def create_stimuli(
     win: visual.Window,
@@ -204,21 +217,15 @@ def create_stimuli(
     s = cfg.style  # shorthand
     S: Dict[str, Any] = {}
 
-    # Compute sield size vertices for default here
+    # Compute default shield-size vertices here (set once at block start)
     default_deg = cfg.shield_sizes.default_degrees
     init_verts = compute_shield_vertices(default_deg, cfg.circle_radius)
-    # if cfg.round_pbar:
-    #     init_progress = compute_progress_vertices(
-    #         progress_degrees=1.0,
-    #         circle_radius=cfg.circle_radius,
-    #     )
 
     # --- instruction / info screens ------------------------------------ #
     S["title"] = visual.TextStim(
         win,
         name="title",
-        #text="Are you ready to save the world?",
-        text="Save-the-world task",
+        text=_load_instruction_text(cfg, "title", "Are you ready to save the world?"),
         font=s.font,
         pos=(0, 0.35),
         height=s.title_size,
@@ -240,45 +247,24 @@ def create_stimuli(
     _dur_val = int(block_duration_min) if block_duration_min.is_integer() else round(block_duration_min, 1)
     _dur_str = f"{_dur_val} min"
 
-    # S["title"] = visual.TextBox2(
-    #     win, text='Save-the-world task', placeholder='Type here...', font='Open Sans',
-    #     pos=(0, 0.35),     letterHeight=0.05,
-    #     size=(None, None), borderWidth=2.0,
-    #     color='white', colorSpace='rgb',
-    #     opacity=None,
-    #     bold=True, italic=False,
-    #     lineSpacing=1.0, speechPoint=None,
-    #     padding=0.0, alignment='center',
-    #     anchor='center', overflow='visible',
-    #     fillColor=None, borderColor=None,
-    #     flipHoriz=False, flipVert=False, languageStyle='LTR',
-    #     editable=False,
-    #     name='title',
-    #     depth=-1, autoLog=True,
-    # )
     S["instr1"] = visual.TextStim(
         win,
         name="instr1",
-        text=(
-            "Welcome to the Save-the-world game!\n\n"
-            "Mysterious radioactive sources have just landed on Earth and are emitting radiation that"
-            " is harmful to our planet.\n\n"
-            "Your task is to catch the radiation beams with an absorbing shield. " 
-            "You will have to navigate the shield and position it wisely to minimise the damage "
-            "caused by these sources. Help us save the world!"
-            "\n\nPress any key to continue."
+        text=_load_instruction_text(
+            cfg,
+            "instr1",
+            (
+                "You will now play 1 session of the save-the-world game, "
+                "where you protect our planet Earth by shielding it from "
+                "harmful radiation.\n\n"
+                f"This session will have {n_main_blocks if n_main_blocks is not None else cfg.n_blocks} blocks. "
+                f"Each block lasts {_dur_str}.\n\n"
+                f"{_move_blurb}\n\n"
+                "Pay attention to the different sources and "
+                "catch as many beams as you can!\n\n"
+                "Press any key to continue."
+            ),
         ),
-        # text=(
-        #     "You will now play 1 session of the save-the-world game, "
-        #     "where you protect our planet Earth by shielding it from "
-        #     "harmful radiation.\n\n"
-        #     f"This session will have {n_main_blocks if n_main_blocks is not None else cfg.n_blocks} blocks. "
-        #     f"Each block lasts {_dur_str}.\n\n"
-        #     f"{_move_blurb}\n\n"
-        #     "Pay attention to the different sources and "
-        #     "catch as many beams as you can!\n\n"
-        #     "Press any key to continue."
-        # ),
         font=s.font,
         pos=(0, -0.08),
         height=s.small_text_size,
@@ -286,22 +272,19 @@ def create_stimuli(
         color=s.text_color,
     )
 
-    # Shield instruction only if adjustments allowed
+    # Shield instruction: default uses build_shield_instructions() when
+    # allow_shield_adjustment is True, otherwise empty text.  An override
+    # file (shield_instr.txt) replaces the text and forces the screen to
+    # show even when allow_shield_adjustment is False.
+    _shield_instr_default = (
+        build_shield_instructions(cfg, wins_cond)
+        if cfg.allow_shield_adjustment
+        else ""
+    )
     S["shield_instr"] = visual.TextStim(
         win,
         name="shield_instr",
-        text=(
-            "Your shield can be positioned anywhere on a circle around the harmful radiation source.\n"
-            f"To navigate the shield, press {cfg.key_right.upper()} and {cfg.key_left.upper()} on your {cfg.input_device}. "
-            "Try moving the shield now! \n\n"
-            "If you have understood how to move the shield, \n"
-            f"press {cfg.key_next} to advance to the next screen." 
-        ),
-        # text=(
-        #     build_shield_instructions(cfg, wins_cond)
-        #     if cfg.allow_shield_adjustment
-        #     else ""
-        # ),
+        text=_load_instruction_text(cfg, "shield_instr", _shield_instr_default),
         font=s.font,
         pos=(0, 0),
         height=s.small_text_size,
@@ -309,27 +292,19 @@ def create_stimuli(
         color=s.text_color,
     )
 
-    S["reward_instr"] = visual.TextStim(
-        win,
-        name="reward_instr",
-        text=(
-            "In every block of this game, your reward for saving the world "
-            "from this radiation starts off at £1. The more radiation you let "
-            "through, the more reward you lose.\n\n"
-            "Try to keep as much of that £1 as you can by catching as many "
-            "beams as you can. After every block, you will receive feedback "
-            "about how much reward you have earned in the previous block.\n\n"
-            f"Each block will last {_dur_str}. A green circle will grow around "
-            "the radioactive source, indicating how much time has passed. "
-            "When the green circle is complete, the block is over.\n\n"
-            "Press any key to continue."
-        ),
-        font=s.font,
-        pos=(0, 0),
-        height=s.small_text_size,
-        wrapWidth=1.5,
-        color=s.text_color,
-    )
+    # reward_instr is an optional screen — only created when an override
+    # file (reward_instr.txt) exists in instruction_override_dir.
+    if _has_instruction_override(cfg, "reward_instr"):
+        S["reward_instr"] = visual.TextStim(
+            win,
+            name="reward_instr",
+            text=_load_instruction_text(cfg, "reward_instr", ""),
+            font=s.font,
+            pos=(0, 0),
+            height=s.small_text_size,
+            wrapWidth=1.5,
+            color=s.text_color,
+        )
 
     _tone_blurb = (
         "While playing the game, you will also hear tones through "
@@ -402,29 +377,19 @@ def create_stimuli(
         color=s.text_color,
     )
 
-    S["main_task_instr"] = visual.TextStim(
-        win,
-        name="main_task_instr",
-        text=(
-            "Are you ready to start the game?\n\n"
-            "In the actual game:\n\n"
-            "1. You will not see the reward bar - but the rules for earning "
-            "money remain the same, and you will receive feedback about your "
-            "reward after every block.\n\n"
-            "2. Please focus your eyes on the centre of the radioactive "
-            "source and do not follow the beams with your eyes. This is to "
-            "minimise eye-movement artefacts in the MEG data.\n\n"
-            "3. You will hear tones through your headphones while you play "
-            "the game. These tones are completely unrelated to the task - "
-            "you can ignore them and focus on catching the beams.\n\n"
-            "Press any key to continue."
-        ),
-        font=s.font,
-        pos=(0, 0),
-        height=s.small_text_size,
-        wrapWidth=1.5,
-        color=s.text_color,
-    )
+    # main_task_instr is an optional screen — only created when an override
+    # file (main_task_instr.txt) exists in instruction_override_dir.
+    if _has_instruction_override(cfg, "main_task_instr"):
+        S["main_task_instr"] = visual.TextStim(
+            win,
+            name="main_task_instr",
+            text=_load_instruction_text(cfg, "main_task_instr", ""),
+            font=s.font,
+            pos=(0, 0),
+            height=s.small_text_size,
+            wrapWidth=1.5,
+            color=s.text_color,
+        )
 
     S["radioactive_colour1"] = visual.ImageStim(
         win,
@@ -684,24 +649,13 @@ def create_stimuli(
         fillColor=s.reward_bar_color,
     )
     
-    # NOTE: This is not a clean implementation
-    # It uses a very thick line because I could not get the fillColour to be displayed
-    # Next step might be to try RadialStim instead, but that has to be imported from psychopy-visionscience
+    # Circular progress indicator uses RadialStim (from psychopy-visionscience,
+    # imported lazily so it remains an optional runtime dependency).
     if cfg.round_pbar:
-        # S["progress_circle"] = visual.ShapeStim(
-        #     win,
-        #     name="progress_circle",
-        #     vertices=init_progress,
-        #     size=s.progress_circle_size,
-        #     ori=0,
-        #     pos=s.center_pos,
-        #     lineWidth=s.progress_circle_width,
-        #     lineColor=s.progress_bar_color,
-        #     #fillColor=s.progress_bar_color,
-        #     #closeShape=True,
-        # )
-        # To show colour properly, need texture = +1 everywhere to replace default sin-grating
-        _uniform_tex = np.ones((64, 64), dtype=np.float32) 
+        from psychopy_visionscience.radial import RadialStim
+        # Uniform texture overrides RadialStim's default sin-grating so the
+        # wedge renders as a solid colour fill.
+        _uniform_tex = np.ones((64, 64), dtype=np.float32)
 
         S["progress_circle"] = RadialStim(
             win,

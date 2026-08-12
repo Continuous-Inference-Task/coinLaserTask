@@ -1,0 +1,7 @@
+In every block of this game, your reward for saving the world from this radiation starts off at £1. The more radiation you let through, the more reward you lose.
+
+Try to keep as much of that £1 as you can by catching as many beams as you can. After every block, you will receive feedback about how much reward you have earned in the previous block.
+
+Each block will last 4 min. A green circle will grow around the radioactive source, indicating how much time has passed. When the green circle is complete, the block is over.
+
+Press any key to continue.
