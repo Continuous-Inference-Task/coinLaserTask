@@ -3241,7 +3241,7 @@ def _show_preflight_warnings(
 
 # ── sequence generation ─────────────────────────────────────────────────────
 
-def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
+def run_sequence_generation(cfg: Dict[str, Any], auto_verify: bool = False) -> bool:
     section("Generating Sequences")
 
     if prompt_yn("Delete existing sequence files before generating new ones?", default=False):
@@ -3308,7 +3308,9 @@ def run_sequence_generation(cfg: Dict[str, Any]) -> bool:
     info(f"Dialog sessions auto-synced: {', '.join(derived_sessions)}  |  orders: {', '.join(derived_orders)}")
 
     # ── offer to run verification ──
-    if prompt_yn("View verification plots for generated sequences?", True):
+    # When auto_verify is set (--generate --verify), the caller runs
+    # verification itself — skip the prompt to avoid double verification.
+    if not auto_verify and prompt_yn("View verification plots for generated sequences?", True):
         from stimgen.laser.verify_sequences import run_verification
         run_verification(show=True)
 
@@ -3754,13 +3756,13 @@ def main() -> None:
 
     if "--generate" in sys.argv:
         cfg = _read_laser_task_config()
-        if run_sequence_generation(cfg):
+        if run_sequence_generation(cfg, auto_verify="--verify" in sys.argv):
             print()
             success("All sequences regenerated.")
             if "--verify" in sys.argv:
                 print()
                 from stimgen.laser.verify_sequences import run_verification
-                run_verification()
+                run_verification(show=True)
         else:
             print()
             fail("Sequence generation had errors — check output above.")
