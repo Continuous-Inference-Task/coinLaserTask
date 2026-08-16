@@ -595,6 +595,185 @@ def _write_launchers(pack_dir: Path, include_wizard: bool,
     return True
 
 
+# ── Removable Drive Detection ──────────────────────────────────────────────
+
+def _discover_removable_drives() -> List[Dict[str, Any]]:
+    """Detect mounted USB flash drives and removable media cross-platform."""
+    drives: List[Dict[str, Any]] = []
+
+    # 1. Linux: use lsblk JSON + udisks2 auto-mount
+    if sys.platform.startswith("linux"):
+        try:
+            res = subprocess.run(
+                ["lsblk", "-J", "-o", "NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINTS,MODEL,TRAN,RM"],
+                capture_output=True, text=True, check=True
+            )
+            data = json.loads(res.stdout)
+
+            def scan_devices(dev_list, parent_model=None, parent_tran=None):
+                for dev in dev_list:
+                    name = dev.get("name", "")
+                    model = (dev.get("model") or parent_model or "USB Drive").strip()
+                    tran = dev.get("tran") or parent_tran
+                    rm = dev.get("rm") or False
+                    fstype = dev.get("fstype")
+                    label = dev.get("label") or name
+                    mountpoints = [m for m in dev.get("mountpoints", []) if m]
+
+                    is_removable = (tran == "usb") or rm or any("/media" in m for m in mountpoints)
+
+                    # If removable partition with filesystem is unmounted, try auto-mount
+                    if is_removable and fstype and not mountpoints and name:
+                        dev_path = f"/dev/{name}"
+                        m_res = subprocess.run(["udisksctl", "mount", "-b", dev_path], capture_output=True, text=True)
+                        if m_res.returncode == 0:
+                            for line in m_res.stdout.splitlines():
+                                if "Mounted" in line and " at " in line:
+                                    m_path = line.split(" at ")[-1].strip().rstrip(".")
+                                    if m_path:
+                                        mountpoints.append(m_path)
+
+                    if mountpoints and is_removable:
+                        for m in mountpoints:
+                            try:
+                                usage = shutil.disk_usage(m)
+                                free_gb = usage.free / (1024**3)
+                                drives.append({
+                                    "path": Path(m),
+                                     "label": label or Path(m).name,
+                                    "model": model,
+                                    "free_gb": free_gb,
+                                    "device": f"/dev/{name}"
+                                })
+                            except Exception:
+                                pass
+
+                    if "children" in dev:
+                        scan_devices(dev["children"], parent_model=model, parent_tran=tran)
+
+            scan_devices(data.get("blockdevices", []))
+        except Exception:
+            user = os.environ.get("USER", "")
+            search_paths = [Path(f"/run/media/{user}"), Path(f"/media/{user}"), Path("/media"), Path("/mnt")]
+            for sp in search_paths:
+                if sp.is_dir():
+                    for entry in sp.iterdir():
+                        if entry.is_dir() and not entry.is_symlink():
+                            try:
+                                usage = shutil.disk_usage(entry)
+                                drives.append({
+                                    "path": entry,
+                                    "label": entry.name,
+                                    "model": "Removable Drive",
+                                    "free_gb": usage.free / (1024**3),
+                                    "device": str(entry)
+                                })
+                            except Exception:
+                                pass
+
+    # 2. macOS: check /Volumes
+    elif sys.platform == "darwin":
+        volumes = Path("/Volumes")
+        if volumes.is_dir():
+            for v in volumes.iterdir():
+                if v.is_dir() and not v.is_symlink() and v.name not in ("Macintosh HD", "Macintosh HD - Data"):
+                    try:
+                        usage = shutil.disk_usage(v)
+                        drives.append({
+                            "path": v,
+                            "label": v.name,
+                            "model": "External Drive",
+                            "free_gb": usage.free / (1024**3),
+                            "device": str(v)
+                        })
+                    except Exception:
+                        pass
+
+    # 3. Windows: iterate drive letters with GetDriveTypeW
+    elif sys.platform == "win32":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
+                drive = f"{letter}:\\"
+                if os.path.exists(drive):
+                    dtype = kernel32.GetDriveTypeW(drive)
+                    if dtype in (2, 3):
+                        try:
+                            usage = shutil.disk_usage(drive)
+                            vol_name_buf = ctypes.create_unicode_buffer(1024)
+                            kernel32.GetVolumeInformationW(
+                                drive, vol_name_buf, 1024, None, None, None, None, 0
+                            )
+                            label = vol_name_buf.value or f"Drive ({letter}:)"
+                            drives.append({
+                                "path": Path(drive),
+                                "label": label,
+                                "model": "Removable Disk" if dtype == 2 else "Drive",
+                                "free_gb": usage.free / (1024**3),
+                                "device": drive
+                            })
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+    return drives
+
+
+def _ask_destination(default_dir: str = "./offline-package") -> Tuple[Path, bool]:
+    """Ask destination directory, presenting auto-detected USB drives if available.
+
+    Returns (resolved_pack_dir, is_usb_destination).
+    """
+    print()
+    drives = _discover_removable_drives()
+
+    if not drives:
+        out_dir = _prompt("Output directory", default_dir)
+        return Path(out_dir).resolve(), False
+
+    print("  Where would you like to save the offline package?")
+    options: List[Tuple[str, str, Path]] = []
+
+    # 1. Local folder option
+    options.append(("local", f"Local directory  ({default_dir})", Path(default_dir).resolve()))
+
+    # 2+. Discovered USB drives
+    for d in drives:
+        label = d["label"]
+        model = d["model"]
+        free_str = f"{d['free_gb']:.1f} GB free"
+        target_path = d["path"] / "coin-laser-task-offline"
+        desc = f"{model} ({label})  —  {target_path}  [{free_str}]"
+        options.append(("usb", desc, target_path))
+
+    # Last: Custom path
+    options.append(("custom", "Custom path …", Path(default_dir).resolve()))
+
+    for idx, (_, desc, _) in enumerate(options, 1):
+        print(f"    {_c(_C.green, str(idx))})  {desc}")
+    print()
+
+    default_choice = "2" if len(drives) >= 1 else "1"
+    while True:
+        choice = input(f"  {_c(_C.magenta, '❯ ')}").strip()
+        if not choice:
+            choice = default_choice
+
+        if choice.isdigit() and 1 <= int(choice) <= len(options):
+            idx = int(choice) - 1
+            kind, _, target_path = options[idx]
+            if kind == "local":
+                return target_path, False
+            elif kind == "usb":
+                return target_path, True
+            elif kind == "custom":
+                custom_str = _prompt("Output directory", default_dir)
+                return Path(custom_str).resolve(), False
+        print(_c(_C.yellow, f"  Please enter a number 1–{len(options)}."))
+
+
 # ── Main entry point ────────────────────────────────────────────────────────
 
 def prepare_offline_package(cfg: Dict[str, Any]) -> None:
@@ -629,10 +808,21 @@ def prepare_offline_package(cfg: Dict[str, Any]) -> None:
         "Include the wizard for machine-local adjustments on the lab machine?",
         default=True)
 
-    # ── Ask output directory ──
-    print()
-    out_dir = _prompt("Output directory", "./offline-package")
-    pack_dir = Path(out_dir).resolve()
+    # ── Ask output directory with USB auto-detection ──
+    pack_dir, is_usb = _ask_destination("./offline-package")
+
+    # Check free space
+    try:
+        parent_dir = pack_dir if pack_dir.exists() else pack_dir.parent
+        usage = shutil.disk_usage(parent_dir)
+        free_gb = usage.free / (1024**3)
+        if free_gb < 1.5:
+            _warn(f"Low disk space on destination: {free_gb:.1f} GB available. Package requires ~1.5 GB.")
+            if not _prompt_yn("Proceed anyway?", default=False):
+                print("  Cancelled.")
+                return
+    except Exception:
+        pass
 
     if pack_dir.exists() and pack_dir != PROJECT_ROOT:
         print()
@@ -682,10 +872,14 @@ def prepare_offline_package(cfg: Dict[str, Any]) -> None:
     print(f"  {_c(_C.green, '✓ Package ready')}: {pack_dir}  ({size_str})")
     print()
     print("  Next steps:")
-    print(f"    1. Copy to USB:  {_c(_C.cyan, f'cp -r {pack_dir}/ /media/your-usb/')}")
-    print(f"    2. On lab machine:  {_c(_C.cyan, './run.sh')}")
+    launcher_cmd = "run.bat" if target_platform == "windows" else "./run.sh"
+    if is_usb:
+        print(f"    1. Eject USB drive safely.")
+        print(f"    2. On lab machine: insert USB and run {_c(_C.cyan, launcher_cmd)}")
+    else:
+        print(f"    1. Copy to USB:     {_c(_C.cyan, f'cp -r {pack_dir}/ /media/your-usb/')}")
+        print(f"    2. On lab machine:  {_c(_C.cyan, launcher_cmd)}")
     print()
-
     if include_wizard:
         print("  On the lab machine, the wizard is available for")
         print("  machine-local adjustments (serial port, display, etc.):")
