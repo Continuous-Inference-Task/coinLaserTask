@@ -793,12 +793,35 @@ def prepare_offline_package(cfg: Dict[str, Any]) -> None:
     ok, issues = _preflight()
     if not ok:
         print()
-        for issue in issues:
-            _fail(issue)
-        print()
-        print("  Please resolve the issues above before packaging.")
-        return
+        seq_dir = PROJECT_ROOT / "sequences"
+        has_seqs = seq_dir.exists() and any(seq_dir.glob("**/*.csv"))
+        config_exists = (PROJECT_ROOT / "laserTask" / "config.json").exists()
 
+        # If sequences are missing but config is ready, offer to generate right now
+        if not has_seqs and config_exists:
+            _warn("No stimulus sequences found in sequences/.")
+            print("  The offline package needs generated sequences to run on the lab machine.")
+            print()
+            if _prompt_yn("Generate sequences now from your current configuration?", default=True):
+                try:
+                    import wizard
+                    cfg_to_use = cfg.copy() if cfg else wizard._read_laser_task_config()
+                    if wizard.run_sequence_generation(cfg_to_use):
+                        print()
+                        _done("Sequences generated successfully.")
+                        print()
+                        print("  Re-checking state:")
+                        ok, issues = _preflight()
+                except Exception as exc:
+                    _fail(f"Sequence generation failed: {exc}")
+
+        if not ok:
+            print()
+            for issue in issues:
+                _fail(issue)
+            print()
+            print("  Please resolve the issues above before packaging.")
+            return
     # ── Ask target platform ──
     target_platform, ubuntu_ver = _ask_platform()
 
