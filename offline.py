@@ -260,53 +260,52 @@ def _filter_requirements_for_platform(lines: List[str], target_platform: str) ->
         "platform_python_implementation": "CPython",
         "extra": "",
     })
-
     try:
         from packaging.requirements import Requirement
         from packaging.markers import Marker
     except ImportError:
-        # Fallback: simple heuristic — keep lines without sys_platform markers
-        # or with matching platform
+        # Fallback: simple heuristic — keep lines matching platform and strip markers
         keep_target = "win32" if target_platform == "windows" else "linux"
         skip_targets = {"win32", "linux", "darwin"} - {keep_target}
         result = []
         for line in lines:
             stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                result.append(line)
+            if not stripped or stripped.startswith("#") or line.startswith(" "):
                 continue
-            if not line.startswith(" "):  # package line (not comment continuation)
-                skip = False
-                for skip_target in skip_targets:
-                    if f"sys_platform == '{skip_target}'" in stripped:
-                        # Check it's not an OR with our target
-                        if f"sys_platform == '{keep_target}'" not in stripped:
-                            skip = True
-                            break
-                if skip:
-                    continue
-            result.append(line)
+            skip = False
+            for skip_target in skip_targets:
+                if f"sys_platform == '{skip_target}'" in stripped:
+                    if f"sys_platform == '{keep_target}'" not in stripped:
+                        skip = True
+                        break
+            if not skip:
+                # Strip marker so host pip download does not evaluate against host OS
+                base = stripped.split(";")[0].strip()
+                if base:
+                    result.append(base)
         return result
 
     result = []
     for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or line.startswith(" "):
-            # Comment or continuation line — keep it
-            result.append(line)
             continue
 
-        # Parse the requirement
+        # Parse the requirement and evaluate against target platform environment
         try:
             req = Requirement(stripped)
             if req.marker is None or req.marker.evaluate(env):
-                result.append(line)
+                # Strip marker so pip download on host machine does not evaluate
+                # against the host platform and skip target-platform dependencies
+                clean_spec = f"{req.name}{req.specifier}"
+                result.append(clean_spec)
         except Exception:
-            # If we can't parse, keep the line to be safe
-            result.append(line)
+            # If parsing fails, strip marker after semicolon
+            base = stripped.split(";")[0].strip()
+            if base:
+                result.append(base)
 
     return result
-
 
 # ── Step 2: Download wheels ─────────────────────────────────────────────────
 
