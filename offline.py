@@ -104,6 +104,8 @@ def _fail(msg: str) -> None:
 def _info(msg: str) -> None:
     print(f"    {_c(_C.dim, msg)}")
 
+def _warn(msg: str) -> None:
+    print(f"    {_c(_C.yellow, '⚠')} {msg}")
 def _prompt(text: str, default: str = "") -> str:
     """Prompt with optional default, return stripped input or default."""
     if default:
@@ -211,13 +213,10 @@ def _export_requirements(pack_dir: Path, target_platform: Optional[str] = None) 
 
         raw_lines = result.stdout.splitlines()
 
-        # Filter for target platform if cross-packaging
-        if target_platform:
-            current_os = "windows" if sys.platform == "win32" else "linux"
-            if target_platform != current_os:
-                raw_lines = _filter_requirements_for_platform(raw_lines, target_platform)
-                _info(f"Filtered for {target_platform} platform")
-
+        # Always filter requirements for target platform to strip markers and keep only target packages
+        target = target_platform or ("windows" if sys.platform == "win32" else "linux")
+        raw_lines = _filter_requirements_for_platform(raw_lines, target)
+        _info(f"Filtered for {target} platform")
         req_file = pack_dir / "requirements.txt"
         req_file.write_text("\n".join(raw_lines) + "\n", encoding="utf-8")
 
@@ -330,21 +329,10 @@ def _download_wheels(pack_dir: Path, target_platform: str,
                 "-d", str(wheels_dir)]
 
     # Determine if this is cross-platform
-    current_platform = "windows" if sys.platform == "win32" else "linux"
-    is_cross = (target_platform != current_platform)
-
-    if is_cross:
-        # --platform requires --only-binary, but some packages only have
-        # sdists (pure Python). We use a two-pass approach:
-        #   1. Download with --only-binary :all: (gets all wheels)
-        #   2. Retry with --no-binary for packages that only have sdists
-        cmd = base_cmd + ["--platform", PIP_PLATFORM[target_platform],
-                          "--python-version", PYTHON_VERSION_SHORT,
-                          "--only-binary", ":all:"]
-    else:
-        cmd = base_cmd + ["--prefer-binary"]
-
-    # wxPython find-links for Linux targets
+    # Always specify target platform and python-version so downloads match target CPython 3.10
+    cmd = base_cmd + ["--platform", PIP_PLATFORM[target_platform],
+                      "--python-version", PYTHON_VERSION_SHORT,
+                      "--only-binary", ":all:"]
     if target_platform == "linux":
         for uv_ver in ["ubuntu-22.04", "ubuntu-24.04"]:
             url = WXPYTHON_FIND_LINKS.get(uv_ver)
@@ -1063,12 +1051,9 @@ def _is_removable_media(path):
         try:
             import ctypes
             drive_letter = drive[0] if drive else "C"
-            flags = ctypes.c_uint()
-            ctypes.windll.kernel32.GetDriveInformationW(
-                ctypes.c_wchar_p(f"{drive_letter}:\\"), None, None,
-                ctypes.byref(flags), None, None, None, None, None, None)
+            dtype = ctypes.windll.kernel32.GetDriveTypeW(f"{drive_letter}:\\")
             # DRIVE_REMOVABLE = 2
-            if flags.value == 2:
+            if dtype == 2:
                 return True
         except Exception:
             pass
@@ -1306,8 +1291,9 @@ def main():
     check_mode = "--check" in args
     if check_mode:
         args.remove("--check")
-    _check_config(force=check_mode)
-
+        _check_config(force=True)
+        sys.exit(0)
+    _check_config(force=False)
     # ── 5. Launch ──
     print()
     if args and args[0] == "wizard":
@@ -1337,10 +1323,10 @@ set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ── Extract Python on first run ──
-if [ ! -x "$DIR/.python/bin/python3" ]; then
+if [ ! -x "$DIR/.python/bin/python3" ] && [ ! -x "$DIR/.python/python/bin/python3" ]; then
     PY_TGZ=$(ls "$DIR"/python/cpython-*.tar.gz 2>/dev/null | head -1)
     if [ -n "$PY_TGZ" ]; then
-        printf "  Extracting Python 3.10 (first run only)..."
+        printf "  Extracting Python 3.10..."
         mkdir -p "$DIR/.python"
         tar -C "$DIR/.python" -xzf "$PY_TGZ"
         printf " done\n"
@@ -1348,8 +1334,12 @@ if [ ! -x "$DIR/.python/bin/python3" ]; then
 fi
 
 # ── Find the Python binary ──
-PY="$DIR/.python/bin/python3"
-if [ ! -x "$PY" ]; then
+PY=""
+if [ -x "$DIR/.python/bin/python3" ]; then
+    PY="$DIR/.python/bin/python3"
+elif [ -x "$DIR/.python/python/bin/python3" ]; then
+    PY="$DIR/.python/python/bin/python3"
+else
     PY=$(find "$DIR/.python" -name python3 -type f -perm -u+x 2>/dev/null | head -1)
 fi
 if [ -z "$PY" ] || [ ! -x "$PY" ]; then
@@ -1357,7 +1347,6 @@ if [ -z "$PY" ] || [ ! -x "$PY" ]; then
     echo "Expected archive in $DIR/python/cpython-*.tar.gz"
     exit 1
 fi
-
 exec "$PY" "$DIR/_launcher.py" "$@"
 '''
 

@@ -138,8 +138,10 @@ def _wrap_degrees(values: np.ndarray | float) -> np.ndarray | float:
 
 def _make_step_wrapped(t: np.ndarray, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Create a step-interpolated circular trajectory wrapped to [0, 360) with NaNs at boundary jumps."""
-    t_step = np.repeat(t, 2)[1:]
-    y_step = np.repeat(values, 2)[:-1]
+    t_float = np.asarray(t, dtype=float)
+    y_float = np.asarray(values, dtype=float)
+    t_step = np.repeat(t_float, 2)[1:]
+    y_step = np.repeat(y_float, 2)[:-1]
     y_wrapped = np.mod(y_step, 360.0)
     diff = np.abs(np.diff(y_wrapped))
     jump_indices = np.where(diff > 180.0)[0]
@@ -467,7 +469,7 @@ def build_figure_errors(session, session_name, cfg, fig=None):
     fig = _prepare_fig(fig, FIG_SPECS[2][1], FIG_SPECS[2][2], FIG_SPECS[2][3], session_name)
     _add_config_header(fig, cfg, session_name)
 
-    noise_groups: dict[tuple[str, float], dict[str, np.ndarray]] = {}
+    noise_groups: dict[tuple[str, float], dict[str, list[np.ndarray]]] = {}
     for blk in session["blocks"]:
         stim = blk["stim"]
         bt = blk["blockType"]
@@ -477,7 +479,9 @@ def build_figure_errors(session, session_name, cfg, fig=None):
         key = (n_label or f"σ={noise_cfg:.0f}°", noise_cfg)
         if key not in noise_groups:
             noise_groups[key] = {}
-        noise_groups[key][bt] = errors
+        if bt not in noise_groups[key]:
+            noise_groups[key][bt] = []
+        noise_groups[key][bt].append(errors)
 
     n_groups = max(1, len(noise_groups))
     gs = fig.add_gridspec(1, n_groups, hspace=0.35, wspace=0.25,
@@ -486,7 +490,7 @@ def build_figure_errors(session, session_name, cfg, fig=None):
 
     for j, ((n_name, n_cfg), bt_dict) in enumerate(noise_groups.items()):
         ax = axes[j]
-        all_errs = np.concatenate(list(bt_dict.values()))
+        all_errs = np.concatenate([np.concatenate(err_list) for err_list in bt_dict.values()])
         actual_std = float(np.std(all_errs))
         actual_mean = float(np.mean(all_errs))
         sk = float(skew(all_errs))
@@ -494,12 +498,12 @@ def build_figure_errors(session, session_name, cfg, fig=None):
         dev_pct = abs(actual_std - n_cfg) / n_cfg * 100
         is_pass = dev_pct <= 10.0
 
-        for bt, errs in bt_dict.items():
+        for bt, err_list in bt_dict.items():
+            errs = np.concatenate(err_list)
             bt_color = COND_PALETTE.get(bt, "#666666")
             ax.hist(errs, bins=70, density=True, alpha=0.45,
                     color=bt_color, edgecolor="white", linewidth=0.3,
                     label=f"{bt} (n={len(errs):,}, σ={np.std(errs):.1f}°)")
-
         x = np.linspace(-3.8 * n_cfg, 3.8 * n_cfg, 300)
         ax.plot(x, scipy_norm.pdf(x, 0, n_cfg), color="#111111",
                 linewidth=2.2, linestyle="--",
@@ -629,19 +633,21 @@ def build_figure_epochs(session, session_name, cfg, fig=None):
     fig = _prepare_fig(fig, FIG_SPECS[4][1], FIG_SPECS[4][2], FIG_SPECS[4][3], session_name)
     _add_config_header(fig, cfg, session_name)
 
-    vol_groups: dict[tuple[str, tuple], dict[str, np.ndarray]] = {}
+    vol_groups: dict[tuple[str, tuple], dict[str, list[np.ndarray]]] = {}
     for blk in session["blocks"]:
         stim = blk["stim"]
         bt = blk["blockType"]
         v_label, n_label = _parse_block_type(bt)
         v_params = cfg["volatility_presets"].get(v_label, [])
-        durs = np.array(stim["meanDurations"]) / session["sampleRate"]
+        durs = np.array(stim["meanDurations"], dtype=float) / session["sampleRate"]
         durs_untruncated = durs[:-1] if len(durs) > 1 else durs
 
         key = (v_label or bt, tuple(v_params) if v_params else ())
         if key not in vol_groups:
             vol_groups[key] = {}
-        vol_groups[key][bt] = durs_untruncated
+        if bt not in vol_groups[key]:
+            vol_groups[key][bt] = []
+        vol_groups[key][bt].append(durs_untruncated)
 
     n_groups = max(1, len(vol_groups))
     gs = fig.add_gridspec(1, n_groups, hspace=0.35, wspace=0.25,
@@ -650,7 +656,7 @@ def build_figure_epochs(session, session_name, cfg, fig=None):
 
     for j, ((v_name, v_params), bt_dict) in enumerate(vol_groups.items()):
         ax = axes[j]
-        all_durs = np.concatenate(list(bt_dict.values())) if bt_dict else np.array([])
+        all_durs = np.concatenate([np.concatenate(d_list) for d_list in bt_dict.values()]) if bt_dict else np.array([])
         actual_mean = float(np.mean(all_durs)) if len(all_durs) > 0 else 0.0
         actual_std = float(np.std(all_durs)) if len(all_durs) > 0 else 0.0
         actual_min = float(np.min(all_durs)) if len(all_durs) > 0 else 0.0
@@ -664,12 +670,12 @@ def build_figure_epochs(session, session_name, cfg, fig=None):
         dev_pct = abs(actual_mean - cfg_mean) / cfg_mean * 100 if cfg_mean else 0.0
         is_pass = dev_pct <= 15.0
 
-        for bt, durs in bt_dict.items():
+        for bt, d_list in bt_dict.items():
+            durs = np.concatenate(d_list)
             bt_color = COND_PALETTE.get(bt, "#666666")
             ax.hist(durs, bins=25, alpha=0.50, color=bt_color,
                     edgecolor="white", linewidth=0.3,
                     label=f"{bt} (n={len(durs)}, μ={np.mean(durs):.1f}s)")
-
         if cfg_mean is not None:
             ax.axvline(x=cfg_mean, color="#111111", linewidth=2.0, linestyle="--",
                        label=f"Config Target μ={cfg_mean}s")
@@ -707,7 +713,7 @@ def build_figure_boxplot(session, session_name, cfg, fig=None):
     _add_config_header(fig, cfg, session_name)
 
     ax = fig.add_subplot(1, 1, 1)
-    block_types = session["blockTypes"]
+    block_labels = [f"B{i+1}: {blk['blockType']}" for i, blk in enumerate(session["blocks"])]
     data = []
     config_stds = []
     for blk in session["blocks"]:
@@ -722,14 +728,15 @@ def build_figure_boxplot(session, session_name, cfg, fig=None):
                          linestyle="--", linewidth=1.2, zorder=1)
         ax.add_patch(rect)
 
-    bp = ax.boxplot(data, tick_labels=block_types, patch_artist=True,
+    bp = ax.boxplot(data, tick_labels=block_labels, patch_artist=True,
                     showfliers=False, widths=0.50, zorder=3,
                     medianprops={"color": "#111111", "linewidth": 1.5})
 
-    n_bt = len(block_types)
+    n_blocks = len(session["blocks"])
     cmap = plt.cm.Set2
-    for i, (patch, bt) in enumerate(zip(bp["boxes"], block_types)):
-        color = COND_PALETTE.get(bt, cmap(i / max(n_bt, 1)))
+    for i, (patch, blk) in enumerate(zip(bp["boxes"], session["blocks"])):
+        bt = blk["blockType"]
+        color = COND_PALETTE.get(bt, cmap(i / max(n_blocks, 1)))
         patch.set_facecolor(color)
         patch.set_alpha(0.60)
         patch.set_edgecolor("#222222")
@@ -1049,6 +1056,14 @@ def _show_interactive_viewer(session_names: list[str], cfg: dict, initial_sessio
     plot_idx = [0]
     is_wrapped = [False]  # Default to clean Unwrapped Continuous view
     fig = plt.figure(figsize=(15, 9), facecolor="white")
+
+    # Unbind default 's' key from matplotlib's save hotkey to avoid dialog popups on session toggle
+    try:
+        if "s" in plt.rcParams.get("keymap.save", []):
+            save_keys = [k for k in plt.rcParams["keymap.save"] if k != "s"]
+            plt.rcParams["keymap.save"] = save_keys or ["ctrl+s"]
+    except Exception:
+        pass
 
     if hasattr(fig.canvas, "manager") and fig.canvas.manager:
         try:
