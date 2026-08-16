@@ -562,10 +562,10 @@ def _write_launchers(pack_dir: Path, include_wizard: bool,
     run_sh.write_text(_RUN_SH, encoding="utf-8")
     run_sh.chmod(0o755)
 
-    # run.bat — thin wrapper for Windows
+    # run.bat — thin wrapper for Windows (ensure CRLF line endings)
     run_bat = pack_dir / "run.bat"
-    run_bat.write_text(_RUN_BAT, encoding="utf-8")
-
+    bat_content = _RUN_BAT.replace("\r\n", "\n").replace("\n", "\r\n")
+    run_bat.write_bytes(bat_content.encode("utf-8"))
     # README.txt — quick instructions
     readme = pack_dir / "README.txt"
     readme.write_text(
@@ -1004,24 +1004,26 @@ def _prompt(text, default=""):
     return input(f"  {text}: ").strip()
 
 def _find_bundled_python():
-    """Find the bundled Python binary, extracting the archive if needed."""
-    if _BUNDLED_PY.exists() and os.access(_BUNDLED_PY, os.X_OK):
-        return str(_BUNDLED_PY)
+    """Find the bundled Python binary, checking all standard standalone paths."""
+    candidates = [
+        PYTHON_DIR / "python.exe",
+        PYTHON_DIR / "python" / "python.exe",
+        PYTHON_DIR / "install" / "python.exe",
+        PYTHON_DIR / "bin" / "python3",
+        PYTHON_DIR / "python" / "bin" / "python3",
+        PYTHON_DIR / "bin" / "python",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return str(c)
 
-    # On Windows, the python.exe might be at a different path
-    if IS_WINDOWS:
-        alt = PYTHON_DIR / "python.exe"
-        if alt.exists():
-            return str(alt)
-
-    # Try finding any python3/python.exe in the extracted dir
-    for name in ("python3", "python.exe", "python"):
+    # Fallback recursive search
+    for name in ("python.exe", "python3", "python"):
         for p in PYTHON_DIR.rglob(name):
-            if os.access(p, os.X_OK):
+            if p.is_file():
                 return str(p)
 
     return None
-
 def _extract_python():
     """Extract the bundled python-build-standalone archive."""
     if PYTHON_DIR.exists() and any(PYTHON_DIR.iterdir()):
@@ -1364,25 +1366,47 @@ exec "$PY" "$DIR/_launcher.py" "$@"
 _RUN_BAT = r'''@echo off
 setlocal
 set "DIR=%~dp0"
-set "DIR=%DIR:~0,-1%"
+if "%DIR:~-1%"=="\" set "DIR=%DIR:~0,-1%"
 
-if not exist "%DIR%\.python\python.exe" (
-    for %%f in ("%DIR%\python\cpython-*.tar.gz") do (
-        echo   Extracting Python 3.10 (first run only)...
-        if not exist "%DIR%\.python" mkdir "%DIR%\.python"
-        tar -C "%DIR%\.python" -xzf "%%f"
+:: Check if Python is already extracted
+if exist "%DIR%\.python\python.exe" goto :have_python
+if exist "%DIR%\.python\python\python.exe" goto :have_python
+if exist "%DIR%\.python\install\python.exe" goto :have_python
+
+:: Extract Python archive
+echo   Extracting Python 3.10...
+if not exist "%DIR%\.python" mkdir "%DIR%\.python"
+
+for %%F in ("%DIR%\python\cpython-*.tar.gz") do (
+    tar -C "%DIR%\.python" -xzf "%%~fF"
+)
+
+:have_python
+set "PY="
+if exist "%DIR%\.python\python.exe" set "PY=%DIR%\.python\python.exe"
+if not defined PY if exist "%DIR%\.python\python\python.exe" set "PY=%DIR%\.python\python\python.exe"
+if not defined PY if exist "%DIR%\.python\install\python.exe" set "PY=%DIR%\.python\install\python.exe"
+
+:: Fallback search if extracted in non-standard subfolder
+if not defined PY (
+    for /f "delims=" %%F in ('dir /b /s "%DIR%\.python\python.exe" 2^>nul') do (
+        set "PY=%%F"
     )
 )
 
-set "PY=%DIR%\.python\python.exe"
-if not exist "%PY%" (
-    for /r "%DIR%\.python" %%f in (python.exe) do set "PY=%%f"
-)
-
-if not exist "%PY%" (
-    echo ERROR: Python not found in %DIR%\.python\
+if not defined PY (
+    echo.
+    echo ERROR: Python 3.10 not found in %DIR%\.python\
+    echo Expected archive in %DIR%\python\cpython-*.tar.gz
+    echo.
+    pause
     exit /b 1
 )
 
+:: Run launcher with all arguments
 "%PY%" "%DIR%\_launcher.py" %*
+if errorlevel 1 (
+    echo.
+    pause
+)
 '''
