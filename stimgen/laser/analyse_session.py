@@ -29,13 +29,19 @@ def analyse_session(session):
     cond_labels = session['blockTypes']
 
     n_blocks = session['nBlocks']
-    n_cols = 4  # blocks per "session" group
-    n_ses = max(1, (n_blocks + n_cols - 1) // n_cols)  # ceil division
+    n_types = len(session['blockTypes'])
+    n_cols = n_types
+    n_ses = max(1, (n_blocks + n_cols - 1) // n_cols)
     blocks_per_ses = [min(n_cols, n_blocks - i * n_cols) for i in range(n_ses)]
+
+    # Generate enough colors by cycling the base palette
+    while len(cond_colors) < n_types:
+        cond_colors.extend(cond_colors)
+    cond_colors = cond_colors[:n_types]
 
     # Figure 1: Sum of overall mean movement
     fig1, ax1 = plt.subplots()
-    offset = [-0.1, -0.05, 0.05, 0.1]
+    offset = np.linspace(-0.2, 0.2, n_cols) if n_cols > 1 else [0.0]
     ph = [None] * n_cols
     for i_ses in range(n_ses):
         n_this_ses = blocks_per_ses[i_ses]

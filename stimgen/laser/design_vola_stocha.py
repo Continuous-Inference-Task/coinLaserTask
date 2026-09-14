@@ -44,11 +44,7 @@ def design_vola_stocha(volatility=None, noise=None, noise_mode=None,
     if noise is None:
         noise = config.MAIN_NOISE
     if noise_mode is None:
-        # Determine based on whether volatility matches practice
-        if volatility == config.PRACTICE_VOLATILITY:
-            noise_mode = getattr(config, "PRACTICE_NOISE_MODE", "counterbalanced")
-        else:
-            noise_mode = getattr(config, "MAIN_NOISE_MODE", "counterbalanced")
+        noise_mode = "counterbalanced"
 
     # Use provided presets if given, otherwise fall back to config
     _vol_presets = volatility_presets if volatility_presets is not None else config.VOLATILITY_PRESETS

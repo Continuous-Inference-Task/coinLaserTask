@@ -37,9 +37,9 @@ def write_exp_csv_file_with_tones(
         Output directory.
     """
     block_file_name_base = f'{sess_name}_block'
-
-    # Derive dimension counts from design
     block_names = design['blockTypes']
+
+    # Derive dimension labels from actual block type names
     vol_labels = []
     noise_labels = []
     for name in block_names:
@@ -50,10 +50,12 @@ def write_exp_csv_file_with_tones(
             if n not in noise_labels:
                 noise_labels.append(n)
 
-    if not vol_labels or not noise_labels:
-        n_vol = len(design['blocks']) // len(block_names) if block_names else 0
-        vol_labels = [f'vol{i}' for i in range(max(n_vol, 1))]
-        noise_labels = [f'noise{i}' for i in range(len(block_names) // max(n_vol, 1))]
+    if not vol_labels:
+        n_vol = len(block_names)
+        vol_labels = [f'vol{i}' for i in range(n_vol)]
+        noise_labels = ['fixed']
+    if not noise_labels:
+        noise_labels = ['fixed']
 
     n_noise = len(noise_labels)
 
@@ -66,8 +68,13 @@ def write_exp_csv_file_with_tones(
                 'toneVolatility,toneStochasticity,toneSeqFileName\n')
         for i_block in range(len(cond_indices)):
             cond_idx = cond_indices[i_block] - 1  # 0-based
-            vol_idx = cond_idx // n_noise
-            noise_idx = cond_idx % n_noise
+            bt_name = block_names[cond_idx] if cond_idx < len(block_names) else block_names[-1]
+            if '+' in bt_name:
+                v, n = bt_name.split('+', 1)
+            else:
+                v, n = bt_name, noise_labels[0] if noise_labels else ''
+            vol_idx = vol_labels.index(v) if v in vol_labels else 0
+            noise_idx = noise_labels.index(n) if n in noise_labels else 0
             img_idx = cond_idx % len(image_list)
             f.write(
                 f'{i_block + 1},'

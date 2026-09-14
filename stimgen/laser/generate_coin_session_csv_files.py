@@ -36,48 +36,53 @@ def _derive_dimensions(design):
     return vol_labels, noise_labels, len(vol_labels), len(noise_labels)
 
 
-def _build_counterbalanced_orders(design, block_sequence, n_vol, n_noise):
+def _build_counterbalanced_orders(design, block_sequence):
     """Build condition and block file orderings for two counterbalance variants.
 
     Order 0 (stable-first): blocks in generation order.
     Order 1 (volatile-first): blocks with volatility dimension reversed.
 
+    Works for any block design, including non-rectangular (_only) designs.
+
     Returns (cond_orders, block_orders) — each is a list of two lists.
     """
-    n_types = n_vol * n_noise
+    block_types = design['blockTypes']
+    n_types = len(block_types)
     n_blocks = len(block_sequence)
+
+    # Build lookup: type ID -> volatility index
+    type_vol_idx = {}
+    vol_labels = []
+    for i, bt in enumerate(block_types):
+        v = bt.split('+', 1)[0] if '+' in bt else bt
+        if v not in vol_labels:
+            vol_labels.append(v)
+        type_vol_idx[i + 1] = vol_labels.index(v)
 
     # Order 0: blocks as generated (design order)
     cond_order0 = list(block_sequence)
-
-    # Simple block file numbers: 1, 2, 3, ... (they were generated sequentially)
     block_order0 = list(range(1, n_blocks + 1))
 
-    # Order 1: reverse the volatility dimension within each group of n_types
+    # Order 1: reverse the volatility dimension within each session-sized group
     cond_order1 = []
+    block_order1 = []
     for group_start in range(0, n_blocks, n_types):
-        group = list(block_sequence[group_start:group_start + n_types])
-        half = n_types // n_vol
-        reordered = []
-        for vol_idx in reversed(range(n_vol)):
-            start = vol_idx * n_noise
-            reordered.extend(group[start:start + n_noise])
-        cond_order1.extend(reordered)
+        group = block_sequence[group_start:group_start + n_types]
+        group_files = list(range(group_start + 1, group_start + len(group) + 1))
 
-    # Block file order 1: reorder the file indices the same way
-    reordered_files = []
-    for group_start in range(0, n_blocks, n_types):
-        group_files = list(range(group_start + 1, group_start + n_types + 1))
-        reordered_group = []
-        for vol_idx in reversed(range(n_vol)):
-            start = vol_idx * n_noise
-            reordered_group.extend(group_files[start:start + n_noise])
-        reordered_files.extend(reordered_group)
-    block_order1 = reordered_files
+        # Group by volatility index, preserving intra-group order
+        vol_groups = {}
+        for t, f in zip(group, group_files):
+            v_idx = type_vol_idx[t]
+            vol_groups.setdefault(v_idx, []).append((t, f))
 
-    cond_orders = [cond_order0, cond_order1]
-    block_orders = [block_order0, block_order1]
-    return cond_orders, block_orders
+        # Reverse volatility order
+        for v_idx in reversed(sorted(vol_groups.keys())):
+            for t, f in vol_groups[v_idx]:
+                cond_order1.append(t)
+                block_order1.append(f)
+
+    return [cond_order0, cond_order1], [block_order0, block_order1]
 
 
 def generate_coin_session_csv_files(
@@ -112,8 +117,7 @@ def generate_coin_session_csv_files(
     tone_noise_list : list of int or None
         0-based noise (stochasticity) indices for each MMN block.
     """
-    vol_labels, noise_labels, n_vol, n_noise = _derive_dimensions(design)
-    n_types = n_vol * n_noise
+    n_types = len(design['blockTypes'])
     n_blocks = len(block_sequence)
 
     # ── Counterbalance orders ──
@@ -123,7 +127,7 @@ def generate_coin_session_csv_files(
     ioi = img_orders[order_index - 1]
 
     cond_orders, block_orders = _build_counterbalanced_orders(
-        design, block_sequence, n_vol, n_noise
+        design, block_sequence
     )
 
     # ── Image assignments (2 variants: forward and reversed) ──

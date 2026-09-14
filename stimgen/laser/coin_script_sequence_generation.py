@@ -58,13 +58,25 @@ def _generate_mmn_for_main(main_design, main_block_seq, output_root, n_main_bloc
         for i in range(n_main_blocks)
     ]
 
+    # Build a complete deviant-probability map from actual noise presets.
+    # Explicit overrides in MMN_DEVIANT_PROB_MAP are preserved.
+    # Any unmapped noise preset gets 0.1 if it has the smallest σ
+    # (the "precise" analogue), 0.2 otherwise.
+    _noise_presets = getattr(config, "NOISE_PRESETS", {})
+    _deviant_map = dict(config.MMN_DEVIANT_PROB_MAP)
+    if _noise_presets:
+        _min_label = min(_noise_presets.keys(), key=lambda k: _noise_presets[k])
+        for _lbl in _noise_presets:
+            if _lbl not in _deviant_map:
+                _deviant_map[_lbl] = 0.1 if _lbl == _min_label else 0.2
+
     mmn_filenames = generate_mmn_blocks(
         block_types=block_type_names,
         block_duration_min=config.MAIN_BLOCK_DURATION_MIN,
         output_dir=mmn_dir,
         tone_duration_ms=config.MMN_TONE_DURATION_MS,
         isi_duration_ms=config.MMN_ISI_DURATION_MS,
-        deviant_prob_map=config.MMN_DEVIANT_PROB_MAP,
+        deviant_prob_map=_deviant_map,
     )
 
     # Build per-block (vol, noise) indices matching the MMN condition
@@ -170,7 +182,8 @@ def main():
     blocks_per_session = n_main_types
 
     # Main session CSVs (with MMN tone info)
-    for order_index in range(1, 5):
+    n_main_orders = 2 if n_main_types <= 1 else 4
+    for order_index in range(1, n_main_orders + 1):
         generate_coin_session_csv_files(
             order_index, 'main', output_root,
             design=main_design,
@@ -184,7 +197,8 @@ def main():
     print(f'\nSession CSV files generated for main ({n_main_blocks} blocks, {blocks_per_session}/session, + MMN)')
 
     # Practice session CSVs (no MMN)
-    for order_index in range(1, 5):
+    n_practice_orders = 2 if n_practice_types <= 1 else 4
+    for order_index in range(1, n_practice_orders + 1):
         generate_coin_session_csv_files(
             order_index, 'practice', output_root,
             design=practice_design,

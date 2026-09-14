@@ -6,6 +6,19 @@ from laserTask/config.py are used.
 
 Usage:  python main.py
 """
+# ── Linux wx guard ─────────────────────────────────────────────────────────
+# PsychoPy forces `import wx` on import (via psychopy.localization), even
+# though this task never uses wx (the GUI is PyQt6).  On Linux the venv's
+# bundled wxPython .so is often off the loader's search path when running
+# `python main.py` directly (bootstrap.py only fixes LD_LIBRARY_PATH for the
+# wizard), causing:
+#   ImportError: libwx_gtk3u_core-3.2.so.0: cannot open shared object file
+# Stubbing the module before any psychopy import sidesteps this entirely
+# and is harmless on macOS/Windows (sys.modules is only checked on import).
+import sys
+from unittest.mock import MagicMock
+sys.modules.setdefault('wx', MagicMock())
+
 from laserTask.config import get_config
 from laserTask.experiment import run_experiment
 
