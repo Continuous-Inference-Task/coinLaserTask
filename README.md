@@ -79,6 +79,7 @@ python bootstrap.py                            # setup venv, then launch interac
 uv run python wizard.py                        # run wizard directly (skip bootstrap)
 uv run python wizard.py --preset PEDUKS_default   # load a preset, configure machine only
 uv run python wizard.py --generate --verify       # regenerate sequences and verify with plots
+uv run python wizard.py --pack                     # prepare offline package for a lab machine
 uv run python wizard.py --report                  # print current config
 python bootstrap.py --reinstall               # force reinstall of dependencies
 ```
