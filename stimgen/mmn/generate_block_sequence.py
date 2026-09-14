@@ -120,7 +120,7 @@ def generate_block_sequence(
     n_tones = int(np.ceil(block_duration * 60 * 1000 / tone_unit))
     n_deviants = round(n_tones * design.dev_prob)
 
-    if design.condition == "stable":
+    if design.condition.lower() == "stable":
         seq = _generate_stable_sequence(n_tones, n_deviants, design)
 
         if plot:
@@ -139,7 +139,8 @@ def generate_block_sequence(
 
         sta_dev = _build_sta_dev(seq)
 
-    elif design.condition == "volatile":
+    else:
+        # Treat any non-stable condition as volatile (fast reversals)
         stable_design = copy.deepcopy(design)
         stable_design.condition = "stable"
         seed_seq, seed_sta_dev = generate_block_sequence(block_duration, stable_design, plot=plot)
@@ -157,8 +158,5 @@ def generate_block_sequence(
         # encode the original role assignment; mismatches with seq indicate
         # where reversals occurred.
         sta_dev = seed_sta_dev
-
-    else:
-        raise ValueError(f"Unknown condition: {design.condition}")
 
     return seq, sta_dev

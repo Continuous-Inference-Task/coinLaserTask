@@ -1576,11 +1576,32 @@ def _derive_sessions_and_orders() -> Tuple[List[str], List[str]]:
     """Derive session and order dropdown values from stimgen config.
 
     Sessions = MAIN_N_SESSIONS (how many full balanced sets to run).
-    Orders   = always ["1","2","3","4"] (all counterbalance orders).
+    Orders   = 2 when only 1 block type exists (only image reversal matters),
+               otherwise 4.
     """
     stimgen = _read_stimgen_config()
     n_sessions = stimgen.get("MAIN_N_SESSIONS", 3)
-    return [str(i) for i in range(1, n_sessions + 1)], ["1", "2", "3", "4"]
+
+    main_vol = stimgen.get("MAIN_VOLATILITY", ["stable", "volatile"])
+    main_noise = stimgen.get("MAIN_NOISE", ["precise", "noisy"])
+    main_mode = stimgen.get("MAIN_NOISE_MODE", "counterbalanced")
+    v_presets = stimgen.get("VOLATILITY_PRESETS", {})
+    n_presets = stimgen.get("NOISE_PRESETS", {})
+    try:
+        from stimgen.laser.design_vola_stocha import design_vola_stocha
+        design = design_vola_stocha(main_vol, main_noise, main_mode,
+                                    volatility_presets=v_presets,
+                                    noise_presets=n_presets)
+        n_types = len(design['blockTypes'])
+    except Exception:
+        n_types = len(main_vol) * len(main_noise)
+
+    if n_types <= 1:
+        n_orders = 2
+    else:
+        n_orders = 4
+
+    return [str(i) for i in range(1, n_sessions + 1)], [str(i) for i in range(1, n_orders + 1)]
 
 
 def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -1611,7 +1632,11 @@ def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
     stimgen = _read_stimgen_config()
     main_vol = stimgen.get("MAIN_VOLATILITY", ["stable", "volatile"])
     main_noise = stimgen.get("MAIN_NOISE", ["precise", "noisy"])
-    main_types = len(main_vol) * len(main_noise)
+    main_noise_mode = stimgen.get("MAIN_NOISE_MODE", "counterbalanced")
+    from stimgen.laser.design_vola_stocha import get_block_count
+    main_types = get_block_count(main_vol, main_noise, main_noise_mode,
+                                 volatility_presets=stimgen.get("VOLATILITY_PRESETS", {}),
+                                 noise_presets=stimgen.get("NOISE_PRESETS", {}))
     main_n_sessions = stimgen.get("MAIN_N_SESSIONS", 3)
 
     print()
@@ -1832,7 +1857,10 @@ def _pick_presets(
     noise_mode_holder: List[str] = None,
 ) -> List[str]:
     def _prompt_noise_mode():
-        if not (multiply_by and len(set(multiply_by)) > 1 and noise_mode_holder):
+        if not (multiply_by and noise_mode_holder):
+            return
+        if multiply_by and len(set(multiply_by)) <= 1:
+            noise_mode_holder[0] = "counterbalanced"
             return
         options = ["counterbalanced"]
         labels = {
@@ -2089,6 +2117,8 @@ def _pick_presets(
             max_num = len(preset_names) + 1 if allow_custom else len(preset_names)
             warn(f"Enter a number (1-{max_num}), '-' followed by position to remove, or ↵ to finish")
 
+    if noise_mode_holder and multiply_by and len(set(multiply_by)) <= 1:
+        noise_mode_holder[0] = "counterbalanced"
     print()
     return selected
 
@@ -2558,7 +2588,14 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
     stimgen_snap = _read_stimgen_config()
     main_vol_quick = stimgen_snap.get("MAIN_VOLATILITY", ["stable", "volatile"])
     main_noise_quick = stimgen_snap.get("MAIN_NOISE", ["precise", "noisy"])
-    main_types_quick = len(main_vol_quick) * len(main_noise_quick)
+    main_mode_quick = stimgen_snap.get("MAIN_NOISE_MODE", "counterbalanced")
+    from stimgen.laser.design_vola_stocha import get_block_count
+    try:
+        main_types_quick = get_block_count(main_vol_quick, main_noise_quick, main_mode_quick,
+                                           volatility_presets=stimgen_snap.get("VOLATILITY_PRESETS", {}),
+                                           noise_presets=stimgen_snap.get("NOISE_PRESETS", {}))
+    except Exception:
+        main_types_quick = "?"
     main_n_sessions_quick = stimgen_snap.get("MAIN_N_SESSIONS", 3)
 
     print()
@@ -2795,7 +2832,7 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
                                      volatility_presets=_v_presets,
                                      noise_presets=_n_presets)
     except Exception:
-        prac_types = len(prac_vol) * len(prac_noise)
+        prac_types = "?"
 
     prac_sessions = stimgen_updates.get("PRACTICE_N_SESSIONS", stimgen.get("PRACTICE_N_SESSIONS", "?"))
     prac_dur = stimgen_updates.get("PRACTICE_BLOCK_DURATION_MIN", stimgen.get("PRACTICE_BLOCK_DURATION_MIN", "?"))
@@ -2809,7 +2846,7 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
                                      volatility_presets=_v_presets,
                                      noise_presets=_n_presets)
     except Exception:
-        main_types = len(main_vol) * len(main_noise)
+        main_types = "?"
 
     main_sessions = stimgen_updates.get("MAIN_N_SESSIONS", stimgen.get("MAIN_N_SESSIONS", "?"))
     main_dur = stimgen_updates.get("MAIN_BLOCK_DURATION_MIN", stimgen.get("MAIN_BLOCK_DURATION_MIN", "?"))
@@ -2917,7 +2954,7 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
                                      volatility_presets=_v_presets,
                                      noise_presets=_n_presets)
     except Exception:
-        prac_types = len(prac_vol) * len(prac_noise)
+        prac_types = "?"
         
     prac_sessions = stimgen_updates.get("PRACTICE_N_SESSIONS", stimgen.get("PRACTICE_N_SESSIONS", "?"))
     prac_dur = stimgen_updates.get("PRACTICE_BLOCK_DURATION_MIN", stimgen.get("PRACTICE_BLOCK_DURATION_MIN", "?"))
@@ -2931,7 +2968,7 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
                                      volatility_presets=_v_presets,
                                      noise_presets=_n_presets)
     except Exception:
-        main_types = len(main_vol) * len(main_noise)
+        main_types = "?"
         
     main_sessions = stimgen_updates.get("MAIN_N_SESSIONS", stimgen.get("MAIN_N_SESSIONS", "?"))
     main_dur = stimgen_updates.get("MAIN_BLOCK_DURATION_MIN", stimgen.get("MAIN_BLOCK_DURATION_MIN", "?"))
