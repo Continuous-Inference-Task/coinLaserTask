@@ -575,6 +575,8 @@ def run_experiment(
         size_idx = sds.default_index  # reset to middle each block
         sd = sds.size_degrees[size_idx]
         shield_verts = compute_shield_vertices(sd, cfg.circle_radius)
+        S["shield"].setVertices(shield_verts, log=False)
+        S["shield_bg"].setVertices(shield_verts, log=False)
         shield_rot = 360.0  # start at 12 o'clock
 
         stream = _preloaded_streams[block_file]
@@ -708,6 +710,8 @@ def run_experiment(
                         size_trig_val = TRIGGER_CODES["shield_grow"]
                     sd = sds.size_degrees[size_idx]
                     shield_verts = compute_shield_vertices(sd, cfg.circle_radius)
+                    S["shield"].setVertices(shield_verts, log=False)
+                    S["shield_bg"].setVertices(shield_verts, log=False)
 
                     if size_trig_val:
                         pass  # trigger deferred to post-flip (frame-synced)
@@ -830,8 +834,6 @@ def run_experiment(
             reward_tracker.update(hit, is_new, size_index=size_idx)
 
             # ---- update visuals --------------------------------------- #
-            shield_verts = compute_shield_vertices(sd, cfg.circle_radius)
-
             if hit:
                 s_col = cfg.style.shield_hit_color
                 ll_opacity = 0.0
@@ -840,7 +842,6 @@ def run_experiment(
                 ll_opacity = 1.0
 
             S["shield"].setOri(shield_rot, log=False)
-            S["shield"].setVertices(shield_verts, log=False)
             S["shield"].setFillColor(s_col, log=False)
             S["shield"].setLineColor(
                 cfg.style.shield_line_color,
@@ -848,27 +849,13 @@ def run_experiment(
             )
 
             S["shield_bg"].setOri(shield_rot, log=False)
-            S["shield_bg"].setVertices(shield_verts, log=False)
 
             S["shield_centre"].setOri(shield_rot, log=False)
-            S["shield_centre"].setVertices(
-                [[0, 0], [0, cfg.circle_radius * 1.2]],
-                log=False,
-            )
 
-            cr = cfg.circle_radius
             S["laser"].setOri(laser_rot, log=False)
             S["laser"].setOpacity(1.0 if show_laser else 0.0, log=False)
-            S["laser"].setVertices(
-                [[0, 0], [0, cr * cfg.style.laser_radius_factor]],
-                log=False,
-            )
             S["laser_long"].setOri(laser_rot, log=False)
             S["laser_long"].setOpacity(ll_opacity if (show_laser and first_hit_occurred) else 0.0, log=False)
-            S["laser_long"].setVertices(
-                [[0, 0], [0, cr * cfg.style.laser_long_radius_factor]],
-                log=False,
-            )
 
             S["rbar"].setPos(
                 (cfg.style.reward_bar_x, reward_tracker.bar_position),
