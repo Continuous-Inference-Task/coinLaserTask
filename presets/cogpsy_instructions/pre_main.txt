@@ -1,0 +1,25 @@
+While playing the game, you will also hear tones through your headphones. These tones are completely unrelated to the game. We are using them to examine how you passively process auditory events. You can ignore the tones and focus on playing the game.
+
+{continue_prompt}
+---
+Are you ready to start the game?
+
+In the actual game:
+
+1. You will not see the reward bar - but the rules for earning money remain the same, and you will receive feedback about your reward after every block.
+
+2. Please focus your eyes on the centre of the radioactive source and do not follow the beams with your eyes. This is to minimise eye-movement artefacts in the MEG data.
+
+3. You will hear tones through your headphones while you play the game. These tones are completely unrelated to the task - you can ignore them and focus on catching the beams.
+
+{continue_prompt}
+---
+@image: images/radioactive1.png, images/radioactive2.png
+You will encounter two different radioactive sources:
+A yellow and a blue source.
+
+The difference between these sources is how often they change their emission angle over time, and therefore how often you will have to adjust your shield position. One of the sources will change its main angle of attack more often, whereas the other will remain stable for longer.
+
+This game has {n_main_blocks} blocks. You will encounter each source once.
+
+{continue_prompt}

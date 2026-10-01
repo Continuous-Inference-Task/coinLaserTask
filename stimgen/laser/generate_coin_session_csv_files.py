@@ -84,10 +84,57 @@ def _build_counterbalanced_orders(design, block_sequence):
 
     return [cond_order0, cond_order1], [block_order0, block_order1]
 
+def _get_image_list(task_flag, show_source, n_types, image_order_index, extended_practice=False):
+    """Pick the source-image set for a session, with a forward/reversed variant.
+
+    - ``practice`` uses the ``radioactive5-8`` images when *extended_practice* is True
+      (SLEPS design), else ``radioactive1-4`` (standard PEDUKS / CogPsy design).
+    - ``main`` (and other non-practice flags) uses ``radioactive1-4`` when
+      *show_source* is True, else the neutral ``not_so_radioactive1-4`` images.
+
+    Returns the image list selected by *image_order_index* (0 = forward, 1 = reversed).
+    """
+    if task_flag == "practice":
+        if extended_practice:
+            base_images = [
+                "radioactive5.png",
+                "radioactive6.png",
+                "radioactive7.png",
+                "radioactive8.png",
+            ]
+        else:
+            base_images = [
+                "radioactive1.png",
+                "radioactive2.png",
+                "radioactive3.png",
+                "radioactive4.png",
+            ]
+    else:  # main (and other non-practice flags)
+        if show_source:
+            base_images = [
+                "radioactive1.png",
+                "radioactive2.png",
+                "radioactive3.png",
+                "radioactive4.png",
+            ]
+        else:
+            base_images = [
+                "not_so_radioactive1.png",
+                "not_so_radioactive2.png",
+                "not_so_radioactive3.png",
+                "not_so_radioactive4.png",
+            ]
+
+    if n_types > len(base_images):
+        repeats = (n_types // len(base_images)) + 1
+        base_images = (base_images * repeats)[:n_types]
+    img_forward = base_images[:n_types]
+    img_reversed = list(reversed(img_forward))
+    return [img_forward, img_reversed][image_order_index]
 
 def generate_coin_session_csv_files(
     order_index, task_flag, output_root,
-    design, block_sequence, n_sessions, blocks_per_session,
+    design, block_sequence, n_sessions, blocks_per_session, show_source=True, extended_practice=False,
     mmn_filenames=None, tone_vol_list=None, tone_noise_list=None,
 ):
     """Generate session CSV files with counterbalanced orders and image assignments.
@@ -131,18 +178,12 @@ def generate_coin_session_csv_files(
     )
 
     # ── Image assignments (2 variants: forward and reversed) ──
-    all_images = [
-        'radioactive1.png', 'radioactive2.png',
-        'radioactive3.png', 'radioactive4.png',
-    ]
-    img_forward = all_images[:n_types]
-    img_reversed = list(reversed(all_images[:n_types]))
-    img_lists = [img_forward, img_reversed]
+    # Practice uses radioactive5-8 when extended_practice is True, else radioactive1-4;
+    # main uses radioactive1-4 when show_source is True, else the neutral not_so_radioactive1-4 images.
+    image_list = _get_image_list(task_flag, show_source, n_types, ioi, extended_practice=extended_practice)
 
     cond_list = cond_orders[soi]
     block_list = block_orders[soi]
-    image_list = img_lists[ioi]
-
     session_prefix = f'{task_flag}'
     root2file = os.path.join(output_root, f'coin_{session_prefix}_order{order_index}')
 

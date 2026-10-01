@@ -42,7 +42,12 @@ class MmnDesign:
     block_durations: np.ndarray = field(default_factory=lambda: np.array([]))
 
 
-def mmn_design(condition: str, deviant_probability: float) -> MmnDesign:
+def mmn_design(
+    condition: str,
+    deviant_probability: float,
+    tone_duration: int = 70,
+    isi_duration: int = 430,
+) -> MmnDesign:
     """Create a design configuration for a PEDUKS MMN block.
 
     Parameters
@@ -52,6 +57,10 @@ def mmn_design(condition: str, deviant_probability: float) -> MmnDesign:
         ``"volatile"`` — roles reverse at random intervals.
     deviant_probability : float
         Target proportion of deviants.  Must be ``0.1`` or ``0.2``.
+    tone_duration : int
+        Tone length in milliseconds.
+    isi_duration : int
+        Inter-stimulus interval in milliseconds.
 
     Returns
     -------
@@ -66,8 +75,9 @@ def mmn_design(condition: str, deviant_probability: float) -> MmnDesign:
     design = MmnDesign(
         condition=condition,
         dev_prob=deviant_probability,
+        tone_duration=tone_duration,
+        isi_duration=isi_duration,
     )
-
     if design.dev_prob == 0.2:
         design.distances = np.array([3, 4, 4, 5, 5, 6, 6, 7])
         design.max_dev_diff = 5

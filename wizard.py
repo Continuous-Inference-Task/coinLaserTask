@@ -498,7 +498,7 @@ def prompt_select(
         sys.stdout.flush()
         return options[cursor]
 
-    except (ImportError, termios.error, AttributeError):
+    except (ImportError, termios.error, AttributeError, OSError):
         pass
 
     # ── fallback: simple numbered prompt ──
@@ -587,6 +587,9 @@ def prompt_multiselect(
     """
     if defaults is None:
         defaults = []
+    extra_defaults = [d for d in defaults if d not in options]
+    if extra_defaults:
+        options = list(options) + extra_defaults
     selected: List[str] = [o for o in options if o in defaults]
 
     # ── Unix raw-terminal path ──
@@ -699,7 +702,7 @@ def prompt_multiselect(
         sys.stdout.flush()
         return sorted(selected, key=lambda o: options.index(o)), None
 
-    except (ImportError, termios.error, AttributeError):
+    except Exception:
         pass
 
     # ── fallback: simple numbered prompt ──
@@ -779,15 +782,18 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "screen_index": c.screen_index,
         "monitor_name": c.monitor_name,
         "target_refresh_rate": c.target_refresh_rate,
+        "input_device": c.input_device,
         "key_right": c.key_right,
         "key_left": c.key_left,
-        "input_device": c.input_device,
+        "key_next": c.key_next,
         "rotation_speed": c.rotation_speed,
         "circle_radius": c.circle_radius,
         "allow_shield_adjustment": c.allow_shield_adjustment,
         "fixed_shield_degrees": c.fixed_shield_degrees,
         "loss_factor": c.loss_factor,
         "currency_symbol": c.currency_symbol,
+        "neutral_practice": c.neutral_practice,
+        "initial_reward": c.initial_reward,
         "trigger_mode": c.trigger_mode,
         "serial_port": c.serial_port,
         "serial_baud_rate": c.serial_baud_rate,
@@ -795,6 +801,13 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "enable_audio": c.enable_audio,
         "mmn_type": c.mmn_type,
         "show_earth_background": c.show_earth_background,
+        "show_earth_background_practice": c.show_earth_background_practice,
+        "show_rbar": c.show_rbar,
+        "show_source": c.show_source,
+        "round_pbar": c.round_pbar,
+        "flash_feedback": c.flash_feedback,
+        "instruction_override_dir": c.instruction_override_dir,
+        "instruction_profile": c.instruction_profile,
         "tone_freq_standard": c.tone_freq_standard,
         "tone_freq_deviant": c.tone_freq_deviant,
         "tone_duration": c.tone_duration,
@@ -861,6 +874,10 @@ def _read_stimgen_config() -> Dict[str, Any]:
         "MAIN_NOISE_MODE": _cfg.MAIN_NOISE_MODE,
         "MAIN_N_SESSIONS": _cfg.MAIN_N_SESSIONS,
         "MAIN_BLOCK_DURATION_MIN": _cfg.MAIN_BLOCK_DURATION_MIN,
+        "SHOW_SOURCE": getattr(_cfg, "SHOW_SOURCE", True),
+        "EXTENDED_PRACTICE_IMAGES": getattr(_cfg, "EXTENDED_PRACTICE_IMAGES", False),
+        "MMN_TONE_DURATION_MS": getattr(_cfg, "MMN_TONE_DURATION_MS", 50),
+        "MMN_ISI_DURATION_MS": getattr(_cfg, "MMN_ISI_DURATION_MS", 400),
     }
 
 
@@ -897,11 +914,17 @@ def _write_laser_task_config(cfg: Dict[str, Any]) -> None:
     cfg_path.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _write_stimgen_config(updates: Dict[str, Any]) -> None:
+def _write_stimgen_config(updates: Dict[str, Any], merge: bool = False) -> None:
     """Write stimgen config to stimgen/laser/config.json."""
     cfg_path = PROJECT_ROOT / "stimgen" / "laser" / "config.json"
 
     data: Dict[str, Any] = {}
+    if merge and cfg_path.is_file():
+        try:
+            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+
     for key, value in updates.items():
         if key.startswith("_"):
             continue
@@ -924,7 +947,7 @@ def _save_stimgen_from_cfg(cfg: Dict[str, Any]) -> bool:
     if not stimgen_updates:
         return True
     try:
-        _write_stimgen_config(stimgen_updates)
+        _write_stimgen_config(stimgen_updates, merge=True)
         success("stimgen/laser/config.json updated")
         return True
     except Exception as exc:
@@ -1047,10 +1070,15 @@ SECTION_FIELDS: Dict[str, Dict[str, Any]] = {
         "fields": {"dialog_fields", "visits", "framings"},
         "label": "Startup dialog",
     },
+    "9": {
+        "namespace": "experiment",
+        "fields": {"instruction_profile", "instruction_override_dir"},
+        "label": "Instructions & text profiles",
+    },
 }
 
 # Sections that are "study design" (selected by default when saving a preset).
-STUDY_DESIGN_SECTIONS = {"4", "5", "6", "7", "8"}
+STUDY_DESIGN_SECTIONS = {"4", "5", "6", "7", "8", "9"}
 # Sections that are "machine-local" (off by default when saving a preset).
 MACHINE_LOCAL_SECTIONS = {"1", "2", "3"}
 
@@ -1186,7 +1214,15 @@ def _show_preset_summary(preset: Dict[str, Any]) -> None:
 def _validate_preset(preset: Dict[str, Any]) -> List[str]:
     """Validate a preset before applying. Returns a list of error messages."""
     errors = []
+    exp = preset.get("experiment", {})
     sti = preset.get("stimgen", {})
+
+    from laserTask.config import ExperimentConfig
+    import dataclasses
+    valid_fields = {f.name for f in dataclasses.fields(ExperimentConfig)}
+    for key in exp:
+        if key not in valid_fields:
+            errors.append(f"experiment.{key} is not a recognised ExperimentConfig field")
 
     # Check that referenced volatility/noise names exist in their presets
     vol_presets = sti.get("VOLATILITY_PRESETS", sti.get("volatility_presets", {}))
@@ -1220,13 +1256,43 @@ def _apply_preset(preset: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]
     exp = preset.get("experiment", {})
     sti = preset.get("stimgen", {})
 
+    # Study-specific flags default reset so sequential preset switching doesn't leak
+    study_defaults = {
+        "instruction_profile": "default",
+        "instruction_override_dir": "",
+        "show_source": True,
+        "round_pbar": False,
+        "show_rbar": True,
+        "neutral_practice": False,
+        "show_earth_background_practice": False,
+        "flash_feedback": False,
+        "initial_reward": 1.0,
+        "key_next": "",
+    }
+    for k, default_val in study_defaults.items():
+        if k not in exp:
+            cfg[k] = default_val
+
     for key, val in exp.items():
         cfg[key] = val
+    prof = exp.get("instruction_profile", cfg.get("instruction_profile", "default"))
+    if "instruction_override_dir" in exp:
+        cfg["instruction_override_dir"] = exp["instruction_override_dir"]
+    elif prof == "cogpsy":
+        cfg["instruction_override_dir"] = "presets/cogpsy_instructions/"
+    elif prof == "sleps":
+        cfg["instruction_override_dir"] = "presets/sleps_instructions/"
+    else:
+        cfg["instruction_override_dir"] = ""
+    cfg["instruction_profile"] = prof
 
-    stimgen_updates = cfg.get("_stimgen_updates", {})
-    for key, val in sti.items():
-        stimgen_updates[key] = val
+    # Stimgen updates: start fresh from preset's stimgen plus study defaults
+    stimgen_updates = dict(sti)
+    for k, def_val in (("SHOW_SOURCE", True), ("EXTENDED_PRACTICE_IMAGES", False)):
+        stimgen_updates.setdefault(k, def_val)
     cfg["_stimgen_updates"] = stimgen_updates
+    if "MMN_TONE_DURATION_MS" not in sti or "MMN_ISI_DURATION_MS" not in sti:
+        _stage_mmn_updates(cfg)
 
     n_sessions = stimgen_updates.get("MAIN_N_SESSIONS", stimgen_updates.get("main_n_sessions"))
     if isinstance(n_sessions, int):
@@ -1239,7 +1305,7 @@ def _apply_preset(preset: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]
 def _apply_preset_to_disk(preset: Dict[str, Any]) -> None:
     """Write preset values directly to config.json files."""
     _write_laser_task_config(preset.get("experiment", {}))
-    _write_stimgen_config(preset.get("stimgen", {}))
+    _write_stimgen_config(preset.get("stimgen", {}), merge=False)
     _write_preset_origin(preset.get("name", "unknown"))
 
 
@@ -1378,7 +1444,8 @@ def _save_current_as_preset(cfg: Dict[str, Any]) -> None:
     success(f"Exhaustive preset saved to {filepath}")
     info(f"  {n_exp} experiment fields + {n_sti} stimgen fields")
     info(f"  Commit to git to share:  git add presets/{filename} && git commit")
-
+    if exp.get("instruction_override_dir"):
+        _manage_instruction_files(exp["instruction_override_dir"])
 
 def configure_machine(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Machine Setup")
@@ -1547,6 +1614,119 @@ def configure_triggers(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
+INSTRUCTION_TEMPLATES: Dict[str, str] = {
+    "pre_experiment.txt": (
+        "Save-the-world task\n\n"
+        "Welcome to the Save-the-world game!\n\n"
+        "Mysterious radioactive sources have just landed on Earth and are emitting radiation that is harmful to our planet.\n\n"
+        "Your task is to catch the radiation beams with an absorbing shield. You will have to navigate the shield and position it wisely to minimise the damage caused by these sources. Help us save the world!\n\n"
+        "{continue_prompt}\n"
+        "---\n"
+        "Your shield can be positioned anywhere on a circle around the harmful radiation source.\n"
+        "To navigate the shield, use the '{key_left}' and '{key_right}' keys on your keyboard. Try moving the shield now!\n\n"
+        "If you have understood how to move the shield,\n"
+        "{continue_prompt}\n"
+        "---\n"
+        "In every block of this game, your reward for saving the world from this radiation starts off at {currency}{initial_reward}. The more radiation you let through, the more reward you lose.\n\n"
+        "Try to keep as much of that {currency}{initial_reward} as you can by catching as many beams as you can. After every block, you will receive feedback about how much reward you have earned in the previous block.\n\n"
+        "Each block will last {block_duration_min}. A green circle will grow around the radioactive source, indicating how much time has passed. When the green circle is complete, the block is over.\n\n"
+        "{continue_prompt}\n"
+    ),
+    "pre_practice.txt": (
+        "You will now do a short practice block of the task. This block will last {practice_duration_min}.\n\n"
+        "As in the real game, the source will emit radiation, but the main angle of attack might change over time, so that you have to keep monitoring the beams and decide when to re-position your shield.\n\n"
+        "During this practice, you will not receive any reward, but during the actual game, you will receive an in-game reward based on how well you catch the beams. Remember to use the '{key_left}' and '{key_right}' keys to navigate your shield.\n\n"
+        "{start_prompt}\n"
+    ),
+    "post_practice.txt": (
+        "Well done - this was the practice block!\n\n"
+        "As you have seen, the direction of the beams can jump around quickly, and you cannot catch all beams with your shield. That's ok - just try to catch as many as possible. The source will have a main direction of attack at any point - if you place your shield in that direction, you will catch most beams.\n\n"
+        "Moving your shield also costs energy, which will be subtracted from your reward. It is thus important that you only move your shield when you think that the main direction of attack has changed.\n\n"
+        "{continue_prompt}\n"
+    ),
+    "pre_main.txt": (
+        "While playing the game, you will also hear tones through your headphones. These tones are completely unrelated to the game. We are using them to examine how you passively process auditory events. You can ignore the tones and focus on playing the game.\n\n"
+        "{continue_prompt}\n"
+        "---\n"
+        "Are you ready to start the game?\n\n"
+        "In the actual game:\n\n"
+        "1. You will not see the reward bar - but the rules for earning money remain the same, and you will receive feedback about your reward after every block.\n\n"
+        "2. Please focus your eyes on the centre of the radioactive source and do not follow the beams with your eyes. This is to minimise eye-movement artefacts in the EEG/MEG data.\n\n"
+        "3. You will hear tones through your headphones while you play the game. These tones are completely unrelated to the task - you can ignore them and focus on catching the beams.\n\n"
+        "{continue_prompt}\n"
+        "---\n"
+        "@image: images/radioactive1.png, images/radioactive2.png\n"
+        "You will encounter different radioactive sources.\n\n"
+        "The difference between these sources is how often they change their emission angle over time, and therefore how often you will have to adjust your shield position.\n\n"
+        "This game has {n_main_blocks} blocks. You will encounter each source once.\n\n"
+        "{continue_prompt}\n"
+    ),
+    "before_main_block.txt": (
+        "Block {phase_block_idx} out of {phase_block_total}\n\n"
+        "Please try to keep your eyes as fixed as possible on the centre of the screen.\n\n"
+        "New source ahead:\n\n\n\n\n\n\n\n\n"
+        "{start_prompt}\n"
+    ),
+    "after_main_block.txt": (
+        "Well done. In this block, you earned:\n\n"
+        "{block_reward}\n\n\n"
+        "Please take a short break now.\n\n"
+        "{continue_prompt}\n"
+    ),
+    "post_experiment.txt": (
+        "Well done. You completed all blocks of this session.\n\n"
+        "In this session, you have earned:\n\n"
+        "{total_reward}\n\n\n"
+        "Thank you!\n"
+    ),
+    "stop_recording.txt": (
+        "Please STOP the recording in LabRecorder now.\n\n"
+        "Once recording has stopped, press ENTER to finish.\n"
+    ),
+}
+
+
+def _manage_instruction_files(dir_path_str: str) -> None:
+    """Inspect instruction directory, report existing vs missing files, and scaffold on request."""
+    if not dir_path_str:
+        return
+
+    p = PROJECT_ROOT / dir_path_str if not Path(dir_path_str).is_absolute() else Path(dir_path_str)
+    p.mkdir(parents=True, exist_ok=True)
+
+    existing = []
+    missing = []
+    for fname in INSTRUCTION_TEMPLATES:
+        stem = fname.replace(".txt", "")
+        has_file = (
+            (p / fname).is_file()
+            or (p / f"{stem}_loss.txt").is_file()
+            or (p / f"{stem}_win.txt").is_file()
+        )
+        if has_file:
+            existing.append(fname)
+        else:
+            missing.append(fname)
+
+    info(f"Instruction folder: {p.relative_to(PROJECT_ROOT) if p.is_relative_to(PROJECT_ROOT) else p}")
+    if existing:
+        info(f"  Existing files ({len(existing)}):  " + ", ".join(existing))
+    if missing:
+        info(f"  Missing files  ({len(missing)}):  " + ", ".join(missing))
+        info("  (Missing files automatically fall back to clean built-in defaults)")
+        if prompt_yn("Create/scaffold missing instruction files for this study?", False):
+            selected, _ = prompt_multiselect(
+                "Select which files to create",
+                missing,
+                defaults=missing,
+                hint_text="Press Space to toggle, 'a' for all, Enter to confirm",
+            )
+            for fname in selected:
+                target_file = p / fname
+                if not target_file.exists():
+                    target_file.write_text(INSTRUCTION_TEMPLATES[fname], encoding="utf-8")
+                    success(f"Created {target_file.name}")
+
 def configure_design(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Experiment Design")
 
@@ -1570,6 +1750,61 @@ def configure_design(cfg: Dict[str, Any]) -> Dict[str, Any]:
         )
     else:
         cfg["reset_reward_after_practice"] = False
+
+    return cfg
+
+
+def configure_instructions(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    section("Instructions & Slide Text")
+
+    prev_profile = cfg.get("instruction_profile", "default")
+    prev_dir = cfg.get("instruction_override_dir", "")
+
+    new_prof = prompt_select(
+        "Instruction profile",
+        ["default", "cogpsy", "sleps", "custom"],
+        default=prev_profile,
+        descriptions={
+            "default": "Standard PEDUKS study instructions (clean built-in text)",
+            "cogpsy": "CogPsy (PEACE study) instructions",
+            "sleps": "SLEPS study instructions with EEG/reward formatting",
+            "custom": "Custom study instruction directory",
+        },
+    )
+    if new_prof == "cogpsy":
+        cfg["instruction_profile"] = new_prof
+        cfg["instruction_override_dir"] = "presets/cogpsy_instructions/"
+    elif new_prof == "sleps":
+        cfg["instruction_profile"] = new_prof
+        cfg["instruction_override_dir"] = "presets/sleps_instructions/"
+    elif new_prof == "custom":
+        default_dir = prev_dir or "presets/custom_instructions/"
+        try:
+            custom_dir = prompt(
+                "Custom instruction directory",
+                default_dir,
+                hint_text="Folder inside presets/ containing your .txt files",
+            ).strip()
+            cfg["instruction_profile"] = new_prof
+            cfg["instruction_override_dir"] = custom_dir
+        except GoBack:
+            cfg["instruction_profile"] = prev_profile
+            cfg["instruction_override_dir"] = prev_dir
+            raise
+    else:
+        cfg["instruction_profile"] = new_prof
+        cfg["instruction_override_dir"] = ""
+
+    if cfg["instruction_override_dir"]:
+        print()
+        _manage_instruction_files(cfg["instruction_override_dir"])
+
+    if prompt_yn("Preview instructions in terminal now?", False):
+        from laserTask.instructions import preview_instructions
+        print()
+        preview_instructions(cfg.get("instruction_profile"), terminal=True)
+        print()
+
     return cfg
 
 
@@ -1609,7 +1844,7 @@ def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Startup Dialog Options")
 
     # ── which fields appear (interactive multiselect) ──
-    available_fields = ["participant", "visit", "session", "order", "framing", "practice_mode"]
+    available_fields = ["participant", "visit", "session", "order", "framing", "practice_mode", "trigger_mode"]
     current_fields = cfg.get("dialog_fields", ["participant", "visit", "session", "order", "framing"])
 
     cfg["dialog_fields"], action = prompt_multiselect(
@@ -1699,6 +1934,22 @@ def configure_shield_reward(cfg: Dict[str, Any]) -> Dict[str, Any]:
         hint_text="Observations shorter than this are merged into the previous one (Peduks Study: 6 frames)",
     )
     return cfg
+
+
+def _stage_mmn_updates(cfg: Dict[str, Any], fps: Optional[int] = None) -> None:
+    """Stage MMN tone duration and ISI in cfg['_stimgen_updates']."""
+    if fps is None:
+        fps = cfg.get("target_refresh_rate", 60)
+    stimgen_updates = cfg.get("_stimgen_updates", {})
+    std_dur_sec = cfg.get("tone_duration_standard") or cfg.get("tone_duration", 0.05)
+    std_dur_ms = int(round(std_dur_sec * 1000))
+    std_frames = int(round(std_dur_sec * fps))
+    soa_frames = std_frames + cfg.get("tone_isi_frames", 24)
+    soa_ms = int(round(soa_frames / fps * 1000))
+    isi_ms = soa_ms - std_dur_ms
+    stimgen_updates["MMN_TONE_DURATION_MS"] = std_dur_ms
+    stimgen_updates["MMN_ISI_DURATION_MS"] = isi_ms
+    cfg["_stimgen_updates"] = stimgen_updates
 
 
 def configure_audio(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -1825,6 +2076,7 @@ def configure_audio(cfg: Dict[str, Any]) -> Dict[str, Any]:
     info(f"  → Effective ISI: ~{cfg['tone_isi_frames'] / fps * 1000:.0f} ms at {fps} Hz")
     if is_duration:
         info("  → Duration MMN: ISI is automatically shortened for the longer deviant tone to keep SOA constant.")
+    _stage_mmn_updates(cfg, fps)
 
     cfg["tone_volume"] = prompt_float(
         "Tone volume",
@@ -2234,6 +2486,8 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     info("Each session = one full balanced set of all block type combinations.")
 
     stimgen = _read_stimgen_config()
+    if "_stimgen_updates" in cfg and isinstance(cfg["_stimgen_updates"], dict):
+        stimgen.update(cfg["_stimgen_updates"])
     sr = stimgen.get("SAMPLE_RATE", 60)
 
     def frames_live_formatter(val_str: str) -> str:
@@ -2462,7 +2716,9 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     cfg["sessions"] = derived_sessions
     cfg["orders"] = derived_orders
 
-    cfg["_stimgen_updates"] = stimgen
+    updates = cfg.get("_stimgen_updates", {})
+    updates.update(stimgen)
+    cfg["_stimgen_updates"] = updates
     return cfg
 
 
@@ -2566,7 +2822,7 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
     print()
     info(_c(C["bold"], "Startup Dialog Options"))
 
-    available_fields = ["participant", "visit", "session", "order", "framing", "practice_mode"]
+    available_fields = ["participant", "visit", "session", "order", "framing", "practice_mode", "trigger_mode"]
     current_fields = cfg.get("dialog_fields", ["participant", "visit", "session", "order", "framing"])
 
     cfg["dialog_fields"], action = prompt_multiselect(
@@ -2739,6 +2995,7 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
         if is_duration_quick:
             info("  → Duration MMN: ISI is automatically shortened for the longer deviant to keep SOA constant.")
 
+        _stage_mmn_updates(cfg, fps)
         cfg["tone_volume"] = prompt_float(
             "Tone volume",
             cfg.get("tone_volume", 1.0),
@@ -2908,6 +3165,7 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
         ("Sessions", f"{', '.join(cfg.get('sessions', ['?']))}", "8"),
         ("Orders", f"{', '.join(cfg.get('orders', ['?']))}", "8"),
         ("Framings", f"{', '.join(cfg.get('framings', ['?']))}", "8"),
+        ("Instructions", f"{cfg.get('instruction_profile', 'default')}" + (f" ({cfg.get('instruction_override_dir')})" if cfg.get("instruction_override_dir") else " (built-in)"), "9"),
     ]
 
     # Filter by section_id if provided
@@ -3422,6 +3680,7 @@ SECTION_REGISTRY: List[Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]
     ("6", "Auditory MMN (type, frequencies, durations, ISI)", configure_audio),
     ("7", "Sequence generation (noise levels, volatility, durations)", configure_stimgen),
     ("8", "Startup dialog (which fields, dropdown options, framing)", configure_dialog),
+    ("9", "Instructions & slide text (profiles, scaffolding, preview)", configure_instructions),
 ]
 
 SECTION_MAP: Dict[str, Tuple[str, Callable[[Dict[str, Any]], Dict[str, Any]]]] = {
@@ -3614,6 +3873,7 @@ def _run_preset_setup(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "6": configure_audio,
         "7": configure_stimgen,
         "8": configure_dialog,
+        "9": configure_instructions,
     }
 
     for sid in open_ids:
@@ -3881,6 +4141,7 @@ def main() -> None:
         cfg = configure_audio(cfg)
         cfg = configure_dialog(cfg)
         cfg = configure_stimgen(cfg)
+        cfg = configure_instructions(cfg)
         show_summary(cfg)
         if prompt_yn("Save configuration and proceed?", True):
             _write_laser_task_config(cfg)

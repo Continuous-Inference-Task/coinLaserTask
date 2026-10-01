@@ -1,0 +1,25 @@
+Save-the-world task
+
+Welcome to the Save-the-world game!
+
+Mysterious radioactive sources have just landed on Earth and are emitting radiation that is harmful to our planet.
+
+Your task is to catch the radiation beams with an absorbing shield. You will have to navigate the shield and position it wisely to minimise the damage caused by these sources. Help us save the world!
+
+{continue_prompt}
+---
+Your shield can be positioned anywhere on a circle around the harmful radiation source.
+To navigate the shield, press '{key_left}' and '{key_right}' on your keyboard with your left and right pointer fingers.
+
+If you have understood how to move the shield,
+{continue_prompt}
+---
+In every block of this game, you start with {currency}0 reward for saving the world from this radiation. The more radiation you catch, the more reward you win.
+
+Try to earn as much of the {currency}{initial_reward} as possible by catching as many beams as you can.
+
+After every block, you will receive feedback about how much reward you have earned in the previous block.
+
+Each block will last {block_duration_min}. A green circle will grow around the radioactive source, indicating how much time has passed. When the green circle is complete, the block is over.
+
+{continue_prompt}

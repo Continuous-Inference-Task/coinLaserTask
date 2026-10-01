@@ -88,19 +88,20 @@ win.flip()   # all registered callbacks fire at the exact swap instant
 
 If multiple triggers fire in the same frame, they are sent in a rapid burst during the vertical blanking interval, in the same order as the original post-flip logic.
 
-### Audio Triggers — Synced to Audio Onset, NOT Display
+### Audio Triggers — Frame-Synced via `callOnFlip()`
 
-Background tone markers (standard/deviant in the MMN oddball) are sent **immediately** when the tone `.play()` method is called. They are **not** routed through `callOnFlip()`.
+Background tone markers (standard/deviant in the MMN oddball) and their acoustic onsets are frame-synchronized to the display via `callOnFlip()` on every OS.
 
-**Why?** Audio runs on a different clock than the display. On Linux/macOS, `sounddevice` starts playback immediately when `.play()` returns — delaying the marker to the next flip would make timing *worse*. On Windows with PTB, `syncToWin=True` queues the tone to the next flip, but the audio engine's internal buffering is already sub-millisecond tight. Sending the trigger next to `.play()` is the closest possible timestamp to the actual acoustic onset on every platform.
+On Linux/macOS, both playback and marker dispatch are queued on the same flip: `win.callOnFlip(tone.play)` in `audio.py` and `win.callOnFlip(trig.send, tone_trig)` in `experiment.py`. On Windows with PTB, `syncToWin=win` aligns the tone playback to the flip, and the marker is dispatched via `win.callOnFlip(trig.send, tone_trig)` on that same flip.
+
+**Why?** Frame-synchronizing both the marker and playback ensures that the marker timestamp and the acoustic onset command share the exact flip timestamp, eliminating display-phase-dependent marker lag across trials and platforms.
 
 | Trigger Type | Sync Method | File |
 |--------------|-------------|------|
 | Laser hit/miss, key presses, shield size | `win.callOnFlip(trig.send, code)` | `experiment.py` |
-| Tone standard/deviant | Immediate inside `audio.py` `_play()` | `audio.py` |
+| Tone standard/deviant | `win.callOnFlip(trig.send, code)` / `win.callOnFlip(tone.play)` | `audio.py` + `experiment.py` |
 | Block/experiment start/end | Immediate (not frame-synced, events are long-duration) | `experiment.py` |
 | `last_frame` | Immediate (no subsequent flip to sync to) | `experiment.py` |
-
 ---
 
 ## 5. Customizing Event Marker Codes
@@ -148,4 +149,4 @@ Typical session flow for the experimenter:
 - **Linux Serial Port Permission Denied:** Run `sudo usermod -a -G dialout $USER`.
 - **Task crashes immediately on start:** If the port address is wrong, PsychoPy will crash when trying to open the connection. Run `python bootstrap.py` and set the trigger mode to `dummy` to test if the port configuration is the cause.
 - **LabRecorder doesn't see the stream:** Make sure the experiment PC and the EEG acquisition PC are on the same local network segment. LSL uses multicast ports 16571–16581, which must not be blocked by a firewall.
-- **LSL markers have the wrong timestamp:** If you modified the code, double-check that visual triggers use `callOnFlip()` and audio triggers do not. Reversing this will desynchronize the event markers.
+- **LSL markers have the wrong timestamp:** If you modified the code, double-check that both visual and audio triggers use `callOnFlip()`. Bypassing `callOnFlip()` will introduce display-phase-dependent marker lag.

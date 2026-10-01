@@ -86,13 +86,11 @@ class TriggerManager:
                 self._outlet = pylsl.StreamOutlet(info)
                 logging.exp("Created LSL trigger outlet")
             except Exception as exc:
-                logging.error(
-                    f"Could not open LSL trigger outlet: {exc}. "
-                    "Falling back to dummy trigger mode."
-                )
-                print(f"\n  ⚠  WARNING: LSL trigger initialization failed: {exc}")
-                print("     Falling back to DUMMY trigger mode.\n")
-                self.mode = "dummy"
+                logging.error(f"Could not open LSL trigger outlet: {exc}.")
+                raise RuntimeError(
+                    f"Failed to initialize LSL trigger outlet: {exc}. "
+                    "Ensure pylsl is installed and network/multicast is available."
+                ) from exc
 
         if self.mode == "dummy":
             logging.exp("TriggerManager in dummy mode (console only)")

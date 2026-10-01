@@ -1,0 +1,8 @@
+Well done. In this block, you earned:
+
+{block_reward}
+
+
+Please take a short break now.
+
+{continue_prompt}

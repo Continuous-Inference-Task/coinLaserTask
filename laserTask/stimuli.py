@@ -1,108 +1,9 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import numpy as np
 from psychopy import visual
 
 from laserTask.config import ExperimentConfig
-
-# TODO: in long run want to make instruction screen easily adaptable
-def build_shield_instructions(cfg: ExperimentConfig, winds_cond: int) -> str:
-    """Return the participant-facing text explaining shield-size controls
-    and their reward consequences.
-
-    The text adapts automatically to the number of sizes, their values,
-    the assigned keys, and the reward framing (loss vs. win).
-    """
-    sds = cfg.shield_sizes
-    n = len(sds.sizes)
-
-    def _fmt_money(amount: float) -> str:
-        value = f"{abs(amount):.5f}".rstrip("0").rstrip(".")
-        if "." not in value:
-            value = f"{value}.00"
-        return f"{cfg.currency_symbol}{value}"
-
-    def _event_text(amount: float) -> str:
-        if amount > 0:
-            return f"you gain {_fmt_money(amount)} when you catch a beam"
-        if amount < 0:
-            return f"you lose {_fmt_money(amount)} when you catch a beam"
-        return "no change when you catch a beam"
-
-    def _miss_text(amount: float) -> str:
-        if amount > 0:
-            return f"When you miss a beam, you gain {_fmt_money(amount)}."
-        if amount < 0:
-            return f"When you miss a beam, you lose {_fmt_money(amount)}."
-        return "When you miss a beam, there is no score change."
-
-    # readable labels
-    labels: List[str] = []
-    for i, sz in enumerate(sds.sizes):
-        tag = ""
-        if i == 0:
-            tag = " (smallest)"
-        elif i == n - 1:
-            tag = " (largest)"
-        labels.append(f"{sz.degrees:.0f}°{tag}")
-
-
-    if winds_cond == 0:
-        # --- loss framing ---
-        lines = []
-        for lbl, size in zip(labels, sds.sizes):
-            lines.append(f"  • {lbl}:  {_event_text(size.loss.hit.total)}")
-        consequence = "\n".join(lines)
-        miss_values = [size.loss.miss.total for size in sds.sizes]
-        hint = "A smaller shield is harder to aim but protects your score better!"
-    else:
-        # --- win framing ---
-        lines = []
-        for lbl, size in zip(labels, sds.sizes):
-            lines.append(f"  • {lbl}:  {_event_text(size.win.hit.total)}")
-        consequence = "\n".join(lines)
-        miss_values = [size.win.miss.total for size in sds.sizes]
-        hint = "A smaller shield is harder to aim but earns you more when you succeed!"
-
-    if len(set(miss_values)) == 1:
-        # Keep text compact when miss outcome is identical for all sizes.
-        miss_line = f"{_miss_text(miss_values[0])} This is the same for all shield sizes."
-    else:
-        # Otherwise show explicit per-size miss consequences.
-        miss_line = "Miss outcome by shield size:\n" + "\n".join(
-            f"  • {lbl}: {_miss_text(total).replace('When you miss a beam, ', '')}"
-            for lbl, total in zip(labels, miss_values)
-        )
-
-    default_sz = sds.default_degrees
-
-    _keyboard_shield_blurb = (
-        f"Press  '{sds.key_shrink.upper()}'  to make the shield SMALLER.\n"
-        f"Press  '{sds.key_grow.upper()}'  to make the shield LARGER.\n\n"
-    )
-    _box_shield_blurb = (
-        "Use the second response box to make the shield smaller or larger.\n\n"
-    )
-    _shield_blurb = (
-        _keyboard_shield_blurb
-        if cfg.input_device == "keyboard"
-        else _box_shield_blurb
-    )
-
-    return (
-        "Shield Size\n\n"
-        # f"Press  '{sds.key_shrink.upper()}'  to make the shield SMALLER.\n"
-        # f"Press  '{sds.key_grow.upper()}'  to make the shield LARGER.\n\n"
-        f"{_shield_blurb}"
-        f"There are {n} sizes.  Each block starts at the default "
-        f"size ({default_sz:.0f}°).\n\n"
-        f"{hint}\n\n"
-        f"Reward by shield size:\n"
-        f"{consequence}\n\n"
-        f"{miss_line}\n\n"
-        "Press any key to continue."
-    )
-
 
 def compute_shield_vertices(
     shield_degrees: float,
@@ -139,20 +40,14 @@ def compute_shield_vertices(
     ys = np.cos(angles) * scale
     return [[0.0, 0.0]] + [[float(x), float(y)] for x, y in zip(xs, ys)]
 
-
 def create_stimuli(
     win: visual.Window,
     cfg: ExperimentConfig,
-    wins_cond: int,
-    n_main_blocks: Optional[int] = None,
-    block_duration_min: float = 3.0,
-    practice_block_duration_min: float = 1.0,
 ) -> Dict[str, Any]:
     """Instantiate every ``visual.*`` component used by the experiment.
 
     Appearance is governed entirely by ``cfg.style``.  To change how
     anything looks, edit ``StimulusStyle`` — not this function.
-    The shield-size instructions are generated from cfg by a separate function -- see build_shield_instructions().
 
     Returns
     -------
@@ -165,141 +60,19 @@ def create_stimuli(
     default_deg = cfg.shield_sizes.default_degrees
     init_verts = compute_shield_vertices(default_deg, cfg.circle_radius)
 
-    # --- instruction / info screens ------------------------------------ #
-    S["title"] = visual.TextStim(
+    # Warning screen for non-60Hz monitors
+    S["fps_warn"] = visual.TextStim(
         win,
-        name="title",
-        text="Are you ready to save the world?",
-        font=s.font,
-        pos=(0, 0.35),
-        height=s.title_size,
-        color=s.text_color,
-    )
-
-    # Change instruction screen based on input device
-    _keyboard_move_blurb = (
-        f"Use the '{cfg.key_left.upper()}' key to move the shield left "
-        f"and the '{cfg.key_right.upper()}' key to move it right."
-    )
-    _box_move_blurb = (
-        "Use the left and right hand-held button keys to navigate the shield."
-    )
-    _move_blurb = (
-        _keyboard_move_blurb if cfg.input_device == "keyboard" else _box_move_blurb
-    )
-
-    _dur_val = int(block_duration_min) if block_duration_min.is_integer() else round(block_duration_min, 1)
-    _dur_str = f"{_dur_val} min"
-
-    S["instr1"] = visual.TextStim(
-        win,
-        name="instr1",
-        text=(
-            "You will now play 1 session of the save-the-world game, "
-            "where you protect our planet Earth by shielding it from "
-            "harmful radiation.\n\n"
-            f"This session will have {n_main_blocks if n_main_blocks is not None else cfg.n_blocks} blocks. "
-            f"Each block lasts {_dur_str}.\n\n"
-            f"{_move_blurb}\n\n"
-            "Pay attention to the different sources and "
-            "catch as many beams as you can!\n\n"
-            "Press any key to continue."
-        ),
-        font=s.font,
-        pos=(0, -0.08),
-        height=s.small_text_size,
-        wrapWidth=1.5,
-        color=s.text_color,
-    )
-
-    # Shield instruction only if adjustments allowed
-    S["shield_instr"] = visual.TextStim(
-        win,
-        name="shield_instr",
-        text=(
-            build_shield_instructions(cfg, wins_cond)
-            if cfg.allow_shield_adjustment
-            else ""
-        ),
-        font=s.font,
-        pos=(0, 0),
-        height=s.small_text_size,
-        wrapWidth=1.5,
-        color=s.text_color,
-    )
-
-    _tone_blurb = (
-        "While playing the game, you will also hear tones through "
-        "your headphones. These tones are completely unrelated to "
-        "the game. We are using them to examine how you passively "
-        "process auditory events. You can ignore the tones and "
-        "focus on playing the game.\n\n\n"
-        "When you are ready, press any key to start."
-    )
-    _no_tone_blurb = "When you are ready, press any key to start."
-    S["main_start"] = visual.TextStim(
-        win,
-        name="main_start",
-        text=_tone_blurb if cfg.enable_audio else _no_tone_blurb,
+        name="fps_warn",
+        text="",
         font=s.font,
         pos=(0, 0),
         height=s.text_size,
         wrapWidth=1.5,
-        color=s.text_color,
-    )
-    # Dynamic practice instructions
-    _practice_keys = (
-        f"'{cfg.key_left.upper()}' and '{cfg.key_right.upper()}' keys"
-        if cfg.input_device == "keyboard"
-        else "left and right buttons of the response box"
-    )
-    _prac_dur_val = int(practice_block_duration_min) if practice_block_duration_min.is_integer() else round(practice_block_duration_min, 1)
-    _prac_dur_str = f"{_prac_dur_val} min"
-
-    S["practice_start_txt"] = visual.TextStim(
-        win,
-        name="practice_start_text",
-        text=(
-            "You will now do a short practice block of the task. "
-            f"This block will last {_prac_dur_str}.\n\n"
-            "As in the real game, the source will emit radiation, but the main angle "
-            "of attack might change over time, so that you have to keep monitoring "
-            "the beams and decide when to re-position your shield.\n\n"
-            "You will see a reward bar on the right of the screen, which shows you how "
-            "you lose money whenever a beam remains uncaught, but you will not actually "
-            f"earn any money during this practice. Remember to use the {_practice_keys} "
-            "to navigate your shield.\n\n"
-            "Press any key to start the practice block."
-        ),
-        font=s.font,
-        pos=(0, 0),
-        height=s.small_text_size,
-        wrapWidth=1.5,
-        color=s.text_color,
+        color="red",
     )
 
-    S["practice_end_txt"] = visual.TextStim(
-        win,
-        name="practice_end_text",
-        text=(
-            "Well done - this was the practice block!\n\n"
-            "As you have seen, the direction of the beams can jump around quickly, "
-            "and you cannot catch all beams with your shield. That's ok - just try to "
-            "catch as many as possible. The source will have a main direction of attack "
-            "at any point - if you place your shield in that direction, you will catch most beams.\n\n"
-            "Moving your shield also costs energy, which will be subtracted from your reward. "
-            "It is thus important that you only move your shield when you think that the main "
-            "direction of attack has changed.\n\n"
-            "Press any key to continue."
-        ),
-        font=s.font,
-        pos=(0, 0),
-        height=s.small_text_size,
-        wrapWidth=1.5,
-        color=s.text_color,
-    )
-
-    # --- block start / end --------------------------------------------- #
+    # --- trial components ---------------------------------------------- #
     S["earth_background"] = visual.ImageStim(
         win,
         name="earth_background",
@@ -312,124 +85,6 @@ def create_stimuli(
         texRes=128.0,
         interpolate=True,
     )
-
-    S["blk_source_img"] = visual.ImageStim(
-        win,
-        name="block_source_img",
-        image=None,
-        pos=s.center_pos,
-        size=s.source_size,
-    )
-
-    S["blk_start_txt"] = visual.TextStim(
-        win,
-        name="block_start_text",
-        text=(
-            "New source ahead:\n\n\n\n\n\n\n\n\n"
-            "!!Please try to keep your eyes focussed on the source "
-            "throughout the block!!\n\n"
-            "Press any key if you're ready to start."
-        ),
-        font=s.font,
-        pos=(0, 0),
-        height=s.text_size,
-        color=s.text_color,
-    )
-    S["blk_id"] = visual.TextStim(
-        win,
-        name="block_id",
-        text="",
-        font="Open Sans",
-        pos=(0, 0.4),
-        height=s.text_size,
-        color=s.text_color,
-    )
-    S["blk_end_label"] = visual.TextStim(
-        win,
-        name="block_end_label",
-        text="",
-        font="Open Sans",
-        pos=(0, 0.1),
-        height=s.text_size,
-        color=s.text_color,
-    )
-    S["blk_end_reward"] = visual.TextStim(
-        win,
-        name="block_end_reward",
-        text="",
-        font=s.font,
-        pos=(0, 0),
-        height=s.text_size,
-        color=s.text_color,
-    )
-    S["pause"] = visual.TextStim(
-        win,
-        name="pause",
-        text="If you wish, you can now take a short break.\n",
-        font=s.font,
-        pos=(0, -0.2),
-        height=s.text_size,
-        color=s.text_color,
-    )
-    S["continue"] = visual.TextStim(
-        win,
-        name="continue",
-        text="Press any key to continue.",
-        font=s.font,
-        pos=(0, -0.43),
-        height=s.text_size,
-        wrapWidth=1.5,
-        color=s.text_color,
-    )
-    S["fps_warn"] = visual.TextStim(
-        win,
-        name="fps_warn",
-        text="",
-        font=s.font,
-        pos=(0, 0),
-        height=s.text_size,
-        wrapWidth=1.5,
-        color="red",
-    )
-
-
-    # --- experiment end ------------------------------------------------- #
-    S["exp_end"] = visual.TextStim(
-        win,
-        name="expermiment_end",
-        text=(
-            "Well done. You completed all blocks of this session.\n\n"
-            "In this session, you have earned:\n\n\n\n\n\n"
-            "Thank you"
-        ),
-        font=s.font,
-        pos=(0, 0),
-        height=s.text_size,
-        color=s.text_color,
-    )
-    S["final_reward"] = visual.TextStim(
-        win,
-        name="final_reward",
-        text="",
-        font=s.font,
-        pos=(0, 0),
-        height=s.text_size,
-        color=s.text_color,
-    )
-    S["stop_recording"] = visual.TextStim(
-        win,
-        name="stop_recording",
-        text=(
-            "Experimenter: Please stop the recording in LabRecorder now.\n\n"
-            "Press RETURN to close the experiment once recording is stopped."
-        ),
-        font=s.font,
-        pos=(0, 0),
-        height=s.text_size,
-        wrapWidth=1.5,
-        color=s.text_color,
-    )
-
     # --- trial components ---------------------------------------------- #
     S["harmless"] = visual.ShapeStim(
         win,
@@ -525,27 +180,70 @@ def create_stimuli(
         lineColor=s.reward_bar_color,
         fillColor=s.reward_bar_color,
     )
-    S["pbar_edge"] = visual.Rect(
-        win,
-        name="progress_bar_edge",
-        width=s.progress_bar_width,
-        height=s.progress_bar_height,
-        pos=(0, s.progress_bar_y),
-        anchor="center",
-        lineWidth=2.0,
-        lineColor=s.progress_bar_edge_color,
-        fillColor=cfg.background_color,
-    )
-    S["pbar"] = visual.Rect(
-        win,
-        name="progress_bar",
-        width=0.001,
-        height=s.progress_bar_height,
-        pos=(-0.4, s.progress_bar_y),
-        anchor="center",
-        lineColor=s.progress_bar_color,
-        fillColor=s.progress_bar_color,
-    )
+    if cfg.round_pbar:
+        try:
+            from psychopy_visionscience.radial import RadialStim
+        except ImportError:
+            from psychopy.visual import RadialStim
+        _uniform_tex = np.ones((64, 64), dtype=np.float32)
+        pbar_col = cfg.style.progress_bar_color
+        if isinstance(pbar_col, (list, tuple)):
+            pbar_col_space = "rgb255" if any(v > 1.0 for v in pbar_col) else "rgb"
+        else:
+            pbar_col_space = "named"
+        S["progress_circle"] = RadialStim(
+            win,
+            name="progress_circle",
+            tex=_uniform_tex,
+            mask="circle",
+            color=pbar_col,
+            colorSpace=pbar_col_space,
+            radialCycles=0,
+            angularCycles=0,
+            visibleWedge=(0, 0.001),
+            size=s.progress_circle_size,
+            pos=s.center_pos,
+        )
+    else:
+        S["pbar_edge"] = visual.Rect(
+            win,
+            name="progress_bar_edge",
+            width=s.progress_bar_width,
+            height=s.progress_bar_height,
+            pos=(0, s.progress_bar_y),
+            anchor="center",
+            lineWidth=2.0,
+            lineColor=s.progress_bar_edge_color,
+            fillColor=cfg.background_color,
+        )
+        S["pbar"] = visual.Rect(
+            win,
+            name="progress_bar",
+            width=0.001,
+            height=s.progress_bar_height,
+            pos=(-0.4, s.progress_bar_y),
+            anchor="center",
+            lineColor=s.progress_bar_color,
+            fillColor=s.progress_bar_color,
+        )
+        S["start_lbl"] = visual.TextStim(
+            win,
+            name="start_label",
+            text="Start",
+            font=s.font,
+            pos=(-0.47, s.progress_bar_y),
+            height=s.small_text_size,
+            color=s.text_color,
+        )
+        S["end_lbl"] = visual.TextStim(
+            win,
+            name="end_label",
+            text="End",
+            font=s.font,
+            pos=(0.47, s.progress_bar_y),
+            height=s.small_text_size,
+            color=s.text_color,
+        )
     S["rtxt_top"] = visual.TextStim(
         win,
         name="reward_text_top",
@@ -564,23 +262,17 @@ def create_stimuli(
         height=s.text_size,
         color=s.text_color,
     )
-    S["start_lbl"] = visual.TextStim(
-        win,
-        name="start_label",
-        text="Start",
-        font=s.font,
-        pos=(-0.47, s.progress_bar_y),
-        height=s.small_text_size,
-        color=s.text_color,
-    )
-    S["end_lbl"] = visual.TextStim(
-        win,
-        name="end_label",
-        text="End",
-        font=s.font,
-        pos=(0.47, s.progress_bar_y),
-        height=s.small_text_size,
-        color=s.text_color,
-    )
+
+    if not cfg.show_source:
+        S["reward_center"] = visual.TextStim(
+            win,
+            name="reward_center",
+            text="",
+            font=s.font,
+            pos=(0, -0.025),
+            height=s.text_size * 0.6,
+            color=s.text_color,
+        )
+
 
     return S

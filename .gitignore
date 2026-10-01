@@ -11,6 +11,10 @@ stimgen/laser/config.json
 # --- Sequence generation artifacts ---
 sequences/*
 
+# --- Web version artifacts (local-only) ---
+web/
+web_data/
+
 # --- Python ---
 __pycache__/
 *.py[codz]
