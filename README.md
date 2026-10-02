@@ -136,7 +136,8 @@ coin_laser_task/
 │
 ├── sequences/                 # Generated sequence CSV files (git-ignored)
 ├── images/                    # Visual assets
-└── data/                      # Participant output files (git-ignored)
+└── data/                      # Participant output files (git-ignored), e.g. sub-<id>_vis-<v>_ses-<s>_task-laser_type-main.csv
+                               # (type-practice when practice_mode is "Practice Only")
 ```
 
 ---

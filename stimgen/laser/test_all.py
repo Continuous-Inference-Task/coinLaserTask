@@ -512,6 +512,15 @@ def test_plot_session():
     plt.close('all')
     print("✓ plot_session")
 
+def test_order_counts():
+    """Practice orders must cover every main order (practice file is chosen by main order)."""
+    from coin_script_sequence_generation import _order_counts
+    assert _order_counts(1, 1) == (2, 2)
+    assert _order_counts(4, 1) == (4, 4)
+    assert _order_counts(4, 4) == (4, 4)
+    assert _order_counts(1, 4) == (2, 4)
+    print("✓ order_counts")
+
 if __name__ == '__main__':
     test_design_vola_stocha()
     test_design_vola_stocha_random_walk()
@@ -532,4 +541,5 @@ if __name__ == '__main__':
     test_generate_mean_stimulus()
     test_analyse_session()
     test_plot_session()
+    test_order_counts()
     print("\n🎉 ALL TESTS PASSED!")

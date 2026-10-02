@@ -38,6 +38,17 @@ def _build_block_sequence(n_types, n_blocks):
     return seq
 
 
+def _order_counts(n_main_types, n_practice_types):
+    """Return (n_main_orders, n_practice_orders).
+
+    Practice must provide at least as many orders as main: the task picks the
+    practice file by the participant's (main) order.
+    """
+    n_main_orders = 2 if n_main_types <= 1 else 4
+    n_practice_orders = max(n_main_orders, 2 if n_practice_types <= 1 else 4)
+    return n_main_orders, n_practice_orders
+
+
 def _generate_mmn_for_main(main_design, main_block_seq, output_root, n_main_blocks):
     """Generate MMN tone blocks coupled to main-session laser blocks.
 
@@ -182,7 +193,7 @@ def main():
     blocks_per_session = n_main_types
 
     # Main session CSVs (with MMN tone info)
-    n_main_orders = 2 if n_main_types <= 1 else 4
+    n_main_orders, n_practice_orders = _order_counts(n_main_types, n_practice_types)
     for order_index in range(1, n_main_orders + 1):
         generate_coin_session_csv_files(
             order_index, 'main', output_root,
@@ -198,7 +209,6 @@ def main():
     print(f'\nSession CSV files generated for main ({n_main_blocks} blocks, {blocks_per_session}/session, + MMN)')
 
     # Practice session CSVs (no MMN)
-    n_practice_orders = 2 if n_practice_types <= 1 else 4
     for order_index in range(1, n_practice_orders + 1):
         generate_coin_session_csv_files(
             order_index, 'practice', output_root,

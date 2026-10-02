@@ -252,13 +252,47 @@ def show_instruction_section(
                 the_exp.nextEntry()
 
 
-def _build_stims(win: Any, text: str, images: List[str], cfg: ExperimentConfig) -> List[Any]:
-    """Create PsychoPy visual stimuli for one slide."""
-    stims = []
-    if text:
-        pos = (0, -0.08) if images else (0, 0)
-        stims.append(visual.TextStim(win, text=text, font=cfg.style.font, pos=pos, height=cfg.style.small_text_size, wrapWidth=1.5, color=cfg.style.text_color))
+IMAGE_TEXT_MARGIN = 0.03  # gap between image row and adjacent text blocks (height units)
 
+
+def split_text_around_images(text: str) -> Tuple[str, str]:
+    """Split slide text into (top, bottom) around the image row.
+
+    The image row goes at the longest run (first on ties) of >=3 consecutive
+    blank lines; without such a run everything is placed below the images.
+    """
+    lines = text.split("\n")
+    best_start, best_len, i = -1, 0, 0
+    while i < len(lines):
+        if lines[i].strip():
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and not lines[j].strip():
+            j += 1
+        if j - i >= 3 and j - i > best_len:
+            best_start, best_len = i, j - i
+        i = j
+    if best_start < 0:
+        return "", text
+    top = "\n".join(lines[:best_start]).rstrip()
+    bottom = "\n".join(lines[best_start + best_len:]).lstrip()
+    return top, bottom
+
+
+def _build_stims(win: Any, text: str, images: List[str], cfg: ExperimentConfig) -> List[Any]:
+    """Create PsychoPy visual stimuli for one slide.
+
+    Without images the text is centred. With images the slide is a vertical
+    stack [top text] [image row] [bottom text] centred on y=0 (see
+    ``split_text_around_images``).
+    """
+    def make_text(s: str, pos: Tuple[float, float], anchor: str = "center") -> Any:
+        return visual.TextStim(win, text=s, font=cfg.style.font, pos=pos, height=cfg.style.small_text_size,
+                               wrapWidth=1.5, color=cfg.style.text_color, anchorVert=anchor)
+
+    # (path, size, x) for every image that exists on disk
+    row = []
     n = len(images)
     for i, img_path in enumerate(images):
         p = Path(img_path)
@@ -266,7 +300,7 @@ def _build_stims(win: Any, text: str, images: List[str], cfg: ExperimentConfig) 
             p = Path(__file__).resolve().parent.parent / p
         if not p.is_file():
             continue
-        size, pos = (0.2, 0.2), (0.0, 0.11)
+        size, x = (0.2, 0.2), 0.0
         if n == 1:
             try:
                 if Image:
@@ -274,9 +308,35 @@ def _build_stims(win: Any, text: str, images: List[str], cfg: ExperimentConfig) 
                     if (pw / ph) > 2.0: size = (0.1 * (pw / ph), 0.1)
             except Exception: pass
         else:
-            pos = (-0.2 + (0.4 * i / (n - 1)), 0.11)
-        stims.append(visual.ImageStim(win, image=str(p), pos=pos, size=size, color=[1, 1, 1], colorSpace="rgb", interpolate=True))
+            x = -0.2 + (0.4 * i / (n - 1))
+        row.append((p, size, x))
 
+    if not row:
+        return [make_text(text, (0, 0))] if text else []
+
+    top, bottom = split_text_around_images(text) if text else ("", "")
+    top_stim = make_text(top, (0, 0), "bottom") if top else None
+    bottom_stim = make_text(bottom, (0, 0), "top") if bottom else None
+    # Rendered text height in height units (boundingBox is in pixels).
+    h_top = top_stim.boundingBox[1] / win.size[1] if top_stim else 0.0
+    h_bottom = bottom_stim.boundingBox[1] / win.size[1] if bottom_stim else 0.0
+    h_img = max(size[1] for _, size, _ in row)
+    m = IMAGE_TEXT_MARGIN
+
+    total = h_img + (h_top + m if top_stim else 0.0) + (h_bottom + m if bottom_stim else 0.0)
+    y = total / 2  # running top edge
+    stims = []
+    if top_stim:
+        top_stim.pos = (0, y - h_top)
+        stims.append(top_stim)
+        y -= h_top + m
+    y_img = y - h_img / 2
+    for p, size, x in row:
+        stims.append(visual.ImageStim(win, image=str(p), pos=(x, y_img), size=size, color=[1, 1, 1], colorSpace="rgb", interpolate=True))
+    y -= h_img
+    if bottom_stim:
+        bottom_stim.pos = (0, y - m)
+        stims.append(bottom_stim)
     return stims
 
 
