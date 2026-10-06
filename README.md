@@ -105,7 +105,7 @@ Study-design presets are JSON snapshots committed to git. Load one with `python 
 
 Save the current config as a new preset from the wizard's interactive menu (`p`).
 
-Instruction screens come from the preset's `instruction_profile` (`default` = built-in PEDUKS text, `cogpsy`, `sleps`). The text lives in `presets/<profile>_instructions/*.txt` - see [presets/INSTRUCTIONS_GUIDE.md](presets/INSTRUCTIONS_GUIDE.md). Preview without running the task: `uv run python -m laserTask.instructions --profile sleps --terminal`.
+Instruction screens come from the preset's `instruction_dir`, one folder per study (`presets/peduks_instructions/`, `presets/cogpsy_instructions/`, `presets/sleps_instructions/`). Each `.txt` file in the folder is a screen; there is no built-in fallback text - see [presets/INSTRUCTIONS_GUIDE.md](presets/INSTRUCTIONS_GUIDE.md). Preview without running the task: `uv run python -m laserTask.instructions --preset presets/SLEPS_default.json --terminal`.
 
 ---
 

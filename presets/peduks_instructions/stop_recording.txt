@@ -1,0 +1,3 @@
+Please STOP the recording in LabRecorder now.
+
+Once recording has stopped, press ENTER to finish.

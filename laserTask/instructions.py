@@ -1,16 +1,21 @@
-"""laserTask.instructions — Plain-text slide instructions (Option 1).
+"""laserTask.instructions — Plain-text slide instructions.
 
-Sections are simple .txt files in your preset folder (e.g. presets/cogpsy_instructions/):
+Every study has one instruction folder (``cfg.instruction_dir``, e.g.
+presets/sleps_instructions/). The folder is the complete list of screens:
+a section is shown only if its .txt file exists and is non-empty.
+
   - pre_experiment.txt        (or _loss.txt / _win.txt for framing)
-  - pre_main.txt              (split pages with '---', embed images with '@image: path')
   - pre_practice.txt
+  - post_practice.txt
+  - pre_main.txt              (split pages with '---', embed images with '@image: path')
   - before_main_block.txt
   - after_main_block.txt
   - post_experiment.txt
-  - stop_recording.txt
+  - stop_recording.txt        (required when trigger_mode is 'lsl')
 
 Usage:
-  uv run python -m laserTask.instructions --profile cogpsy
+  uv run python -m laserTask.instructions --preset presets/SLEPS_default.json
+  uv run python -m laserTask.instructions --dir presets/sleps_instructions/ --terminal
 """
 
 import argparse
@@ -99,23 +104,22 @@ def _shield_instructions_text(cfg: ExperimentConfig, framing: str, continue_prom
     )
 
 
-def build_instruction_context(cfg: ExperimentConfig, exp_info: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
+def build_instruction_context(
+    cfg: ExperimentConfig,
+    exp_info: Optional[Dict[str, Any]] = None,
+    *,
+    block_duration_min: float,
+    practice_duration_min: float,
+    **kwargs: Any,
+) -> Dict[str, Any]:
     """Return dictionary of runtime placeholders for text formatting."""
     exp = exp_info or {}
     key_next = cfg.key_next.upper() if cfg.key_next else ""
-    def _fmt_min(val: Any) -> str:
-        return f"{round(val, 1):g} min" if isinstance(val, (int, float)) else str(val)
+    def _fmt_min(val: float) -> str:
+        return f"{round(val, 1):g} min"
 
-    block_dur_str = _fmt_min(kwargs.get("block_duration_min", 4.0))
-    prac_dur_str = _fmt_min(
-        kwargs.get(
-            "practice_duration_min",
-            kwargs.get(
-                "practice_block_duration_min",
-                1.0 if cfg.instruction_profile == "default" else 2.0,
-            ),
-        )
-    )
+    block_dur_str = _fmt_min(block_duration_min)
+    prac_dur_str = _fmt_min(practice_duration_min)
 
     ctx = {
         "key_left": cfg.key_left.upper(),
@@ -155,9 +159,66 @@ def build_instruction_context(cfg: ExperimentConfig, exp_info: Optional[Dict[str
             else:
                 ctx["source_image_path"] = f"{cfg.image_root}{src}"
     ctx.update(kwargs)
-    ctx["block_duration_min"] = block_dur_str
-    ctx["practice_duration_min"] = prac_dur_str
     return ctx
+
+
+# ------------------------------------------------------------------ #
+#  Instruction folder                                                 #
+# ------------------------------------------------------------------ #
+
+SECTIONS: Tuple[str, ...] = (
+    "pre_experiment",
+    "pre_practice",
+    "post_practice",
+    "pre_main",
+    "before_main_block",
+    "after_main_block",
+    "post_experiment",
+    "stop_recording",
+)
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def resolve_instruction_dir(cfg: ExperimentConfig) -> Path:
+    """Return the study's instruction folder; raise if unset or missing."""
+    if not cfg.instruction_dir:
+        raise ValueError(
+            "No instruction folder configured (instruction_dir is empty). "
+            "Run 'python wizard.py' and pick one, e.g. presets/peduks_instructions/."
+        )
+    p = Path(cfg.instruction_dir)
+    if not p.is_absolute():
+        p = _PROJECT_ROOT / p
+    if not p.is_dir():
+        raise FileNotFoundError(f"Instruction folder not found: {p}")
+    return p
+
+
+def read_section_text(section: str, cfg: ExperimentConfig, framing: str) -> str:
+    """Raw text of a section ('' if its file is absent or empty).
+
+    ``<section>_<framing>.txt`` takes precedence over ``<section>.txt``.
+    """
+    folder = resolve_instruction_dir(cfg)
+    for f in (folder / f"{section}_{framing}.txt", folder / f"{section}.txt"):
+        if f.is_file():
+            return f.read_text(encoding="utf-8").strip()
+    return ""
+
+
+def validate_instructions(cfg: ExperimentConfig, framing: str) -> None:
+    """Fail before the session starts if the instruction folder is unusable.
+
+    With LSL triggers the stop_recording screen is what keeps the stream
+    alive until LabRecorder is stopped, so it must not be missing.
+    """
+    folder = resolve_instruction_dir(cfg)
+    if cfg.trigger_mode == "lsl" and not read_section_text("stop_recording", cfg, framing):
+        raise FileNotFoundError(
+            f"{folder / 'stop_recording.txt'} is missing or empty. With LSL triggers this screen "
+            "holds the stream open until LabRecorder is stopped; add the file before running."
+        )
 
 
 # ------------------------------------------------------------------ #
@@ -165,20 +226,11 @@ def build_instruction_context(cfg: ExperimentConfig, exp_info: Optional[Dict[str
 # ------------------------------------------------------------------ #
 
 def load_section_pages(section: str, cfg: ExperimentConfig, context: Dict[str, Any]) -> List[Tuple[str, List[str]]]:
-    """Load (text, [images]) slides for a section. Pages split on '---'."""
-    raw = ""
-    if cfg.instruction_override_dir:
-        p = Path(cfg.instruction_override_dir)
-        if not p.is_absolute():
-            p = Path(__file__).resolve().parent.parent / p
-        framing = context.get("framing", "loss")
-        for f in (p / f"{section}_{framing}.txt", p / f"{section}.txt"):
-            if f.is_file():
-                raw = f.read_text(encoding="utf-8").strip()
-                break
+    """Load (text, [images]) slides for a section. Pages split on '---'.
 
-    if not raw:
-        raw = _DEFAULT_PEDUKS.get(section, "")
+    Returns [] when the section has no file (or an empty one): no screen.
+    """
+    raw = read_section_text(section, cfg, context.get("framing", "loss"))
     if not raw:
         return []
 
@@ -375,75 +427,59 @@ def _show_timed(win: Any, stims: List[Any], kb: Any, duration: float = 5.0, quit
 #  CLI Preview Tool                                                  #
 # ------------------------------------------------------------------ #
 
-_PRESET_BY_PROFILE = {
-    "sleps": "presets/SLEPS_default.json",
-    "cogpsy": "presets/Cogpsy_Rob_Version_2026.json",
-}
+def _load_preset(cfg: ExperimentConfig, preset: str) -> Dict[str, Any]:
+    """Apply a preset's experiment settings to *cfg*; return its stimgen dict."""
+    preset_path = Path(preset)
+    if not preset_path.is_absolute() and not preset_path.is_file():
+        preset_path = _PROJECT_ROOT / preset_path
+    preset_data = json.loads(preset_path.read_text(encoding="utf-8"))
+    exp_dict = preset_data.get("experiment", {})
+    skip_keys = {"dialog_fields", "visits", "sessions", "orders", "framings"}
+    for k, v in exp_dict.items():
+        if k not in skip_keys and hasattr(cfg, k):
+            setattr(cfg, k, tuple(v) if k == "window_size" else v)
+    if "n_blocks" in exp_dict:
+        cfg.n_blocks = exp_dict["n_blocks"]
+    elif isinstance(exp_dict.get("orders"), list):
+        cfg.n_blocks = len(exp_dict["orders"])
+    cfg.__post_init__()
+    return preset_data.get("stimgen", {})
 
 
 def preview_instructions(
-    profile: Optional[str] = None,
+    preset: Optional[str] = None,
+    instruction_dir: Optional[str] = None,
     terminal: bool = False,
     screen: Optional[int] = None,
     framing: Optional[str] = None,
 ) -> None:
-    """Open visual window preview (or terminal fallback if headless or requested)."""
+    """Open visual window preview (or terminal fallback if headless or requested).
+
+    Settings come from *preset* (a preset JSON) if given, else from the active
+    config.json. *instruction_dir* overrides the folder from either source.
+    """
     from laserTask.config import get_config
     cfg = get_config()
-    if profile:
-        cfg.instruction_profile = profile
-        cfg.instruction_override_dir = f"presets/{profile}_instructions/" if profile in ("cogpsy", "sleps") else ""
-
-    preset_n_blocks = None
-    if profile in _PRESET_BY_PROFILE:
-        preset_rel = _PRESET_BY_PROFILE[profile]
-        repo_root = Path(__file__).resolve().parent.parent
-        preset_path = repo_root / preset_rel
-        if not preset_path.is_file() and Path(preset_rel).is_file():
-            preset_path = Path(preset_rel)
-
-        if preset_path.is_file():
-            try:
-                with open(preset_path, "r", encoding="utf-8") as fh:
-                    preset_data = json.load(fh)
-                exp_dict = preset_data.get("experiment", {})
-                skip_keys = {
-                    "instruction_profile",
-                    "instruction_override_dir",
-                    "dialog_fields",
-                    "visits",
-                    "sessions",
-                    "orders",
-                    "framings",
-                }
-                for k, v in exp_dict.items():
-                    if k not in skip_keys and hasattr(cfg, k):
-                        setattr(cfg, k, v)
-                if "n_blocks" in exp_dict:
-                    preset_n_blocks = exp_dict["n_blocks"]
-                elif "orders" in exp_dict and isinstance(exp_dict["orders"], list):
-                    preset_n_blocks = len(exp_dict["orders"])
-                if preset_n_blocks:
-                    cfg.n_blocks = preset_n_blocks
-            except Exception as err:
-                print(f"Warning: could not load preset {preset_path}: {err}")
-        else:
-            print(f"Warning: preset file {preset_path} not found; using active config.")
+    if preset:
+        stimgen = _load_preset(cfg, preset)
+    else:
+        from stimgen.laser import config as _stimgen_cfg
+        stimgen = {
+            "MAIN_BLOCK_DURATION_MIN": _stimgen_cfg.MAIN_BLOCK_DURATION_MIN,
+            "PRACTICE_BLOCK_DURATION_MIN": _stimgen_cfg.PRACTICE_BLOCK_DURATION_MIN,
+        }
+    if instruction_dir:
+        cfg.instruction_dir = instruction_dir
+    folder = resolve_instruction_dir(cfg)
 
     if screen is not None:
         cfg.screen_index = screen
 
-    n_blocks_val = preset_n_blocks or cfg.n_blocks
-    sections = [
-        "pre_experiment",
-        "pre_practice",
-        "post_practice",
-        "pre_main",
-        "before_main_block",
-        "after_main_block",
-        "post_experiment",
-        "stop_recording",
-    ]
+    durations = dict(
+        block_duration_min=float(stimgen["MAIN_BLOCK_DURATION_MIN"]),
+        practice_duration_min=float(stimgen["PRACTICE_BLOCK_DURATION_MIN"]),
+    )
+    title = folder.name
     framings_to_show = [framing] if framing else ["loss", "win"]
 
     # Standard PsychoPy window creation (matches laserTask/experiment.py)
@@ -489,17 +525,17 @@ def preview_instructions(
             ctx = build_instruction_context(
                 cfg,
                 exp_info={"framing": frm},
-                n_main_blocks=n_blocks_val,
-                block_duration_min=4.0,
+                n_main_blocks=cfg.n_blocks,
                 source_img="radioactive1.png",
+                **durations,
             )
-            for sec in sections:
+            for sec in SECTIONS:
                 pages = load_section_pages(sec, cfg, ctx)
                 for i, (text, images) in enumerate(pages, 1):
                     stims = [banner] + _build_stims(win, text, images, cfg)
                     frm_label = f" ({frm})" if len(framings_to_show) > 1 else ""
                     banner.setText(
-                        f"[{cfg.instruction_profile.upper()} PREVIEW{frm_label}: {sec} "
+                        f"[{title} PREVIEW{frm_label}: {sec} "
                         f"(Page {i}/{len(pages)}) | Press SPACE to advance, ESC to quit]"
                     )
                     for s in stims:
@@ -528,19 +564,19 @@ def preview_instructions(
     except Exception as exc:
         print(f"(No graphical display: {exc} — showing text preview)\n")
         print("=" * 60)
-        print(f"  Instruction Preview: Profile '{cfg.instruction_profile}'")
+        print(f"  Instruction Preview: {folder}")
         print("=" * 60)
         for frm in framings_to_show:
             ctx = build_instruction_context(
                 cfg,
                 exp_info={"framing": frm},
-                n_main_blocks=n_blocks_val,
-                block_duration_min=4.0,
+                n_main_blocks=cfg.n_blocks,
                 source_img="radioactive1.png",
+                **durations,
             )
             if len(framings_to_show) > 1:
                 print(f"\n--- Framing: {frm.upper()} ---")
-            for sec in sections:
+            for sec in SECTIONS:
                 pages = load_section_pages(sec, cfg, ctx)
                 if not pages:
                     continue
@@ -554,7 +590,7 @@ def preview_instructions(
                     print()
 
 # ------------------------------------------------------------------ #
-#  Default PEDUKS Text Dictionary                                    #
+#  Generated placeholder text                                         #
 # ------------------------------------------------------------------ #
 
 _TONE_BLURB = (
@@ -562,67 +598,11 @@ _TONE_BLURB = (
     "We are using them to examine how you passively process auditory events. You can ignore the tones and focus on playing the game.\n\n\n"
 )
 
-_DEFAULT_PEDUKS: Dict[str, str] = {
-    "pre_experiment": (
-        "Are you ready to save the world?\n\n"
-        "You will now play 1 session of the save-the-world game, "
-        "where you protect our planet Earth by shielding it from harmful radiation.\n\n"
-        "This session will have {n_main_blocks} blocks. Each block lasts {block_duration_min}.\n\n"
-        "{move_blurb}\n\n"
-        "Pay attention to the different sources and catch as many beams as you can!\n\n"
-        "{continue_prompt}\n"
-        "---\n"
-        "{shield_instructions}"
-    ),
-    "pre_practice": (
-        "You will now do a short practice block of the task. This block will last {practice_duration_min}.\n\n"
-        "As in the real game, the source will emit radiation, but the main angle of attack might change over time, "
-        "so that you have to keep monitoring the beams and decide when to re-position your shield.\n\n"
-        "You will see a reward bar on the right of the screen, which shows you how you lose money whenever a beam "
-        "remains uncaught, but you will not actually earn any money during this practice. "
-        "Remember to use the '{key_left}' and '{key_right}' keys to navigate your shield.\n\n"
-        "{start_prompt}"
-    ),
-    "post_practice": (
-        "Well done - this was the practice block!\n\n"
-        "As you have seen, the direction of the beams can jump around quickly, and you cannot catch all beams with your shield. "
-        "That's ok - just try to catch as many as possible. The source will have a main direction of attack at any point - "
-        "if you place your shield in that direction, you will catch most beams.\n\n"
-        "Moving your shield also costs energy, which will be subtracted from your reward. It is thus important that you only move "
-        "your shield when you think that the main direction of attack has changed.\n\n"
-        "{continue_prompt}"
-    ),
-    "pre_main": (
-        "{tone_blurb}{start_prompt}"
-    ),
-    "before_main_block": (
-        "Block {phase_block_idx} out of {phase_block_total}\n\n"
-        "New source ahead:\n\n\n\n\n\n\n\n\n"
-        "!!Please try to keep your eyes focussed on the source throughout the block!!\n\n"
-        "{start_prompt}"
-    ),
-    "after_main_block": (
-        "Well done. In this block, you earned:\n\n"
-        "{block_reward}\n\n\n"
-        "If you wish, you can now take a short break.\n\n"
-        "{continue_prompt}"
-    ),
-    "post_experiment": (
-        "Well done. You completed all blocks of this session.\n\n"
-        "In this session, you have earned:\n\n"
-        "{total_reward}\n\n\n"
-        "Thank you"
-    ),
-    "stop_recording": (
-        "Please STOP the recording in LabRecorder now.\n\n"
-        "Once recording has stopped, press ENTER to finish."
-    ),
-}
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preview experiment instructions.")
-    parser.add_argument("--profile", "-p", choices=["default", "cogpsy", "sleps"], help="Profile to preview")
+    parser.add_argument("--preset", "-p", default=None, help="Preset JSON to preview (e.g. presets/SLEPS_default.json); default: active config.json")
+    parser.add_argument("--dir", "-d", default=None, help="Instruction folder to preview (overrides the preset's/config's instruction_dir)")
     parser.add_argument("--screen", "-s", type=int, default=None, help="Target screen index (0, 1, ...)")
     parser.add_argument("--terminal", "-t", action="store_true", help="Print instructions in terminal instead of opening a window")
     parser.add_argument(
@@ -634,7 +614,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     preview_instructions(
-        args.profile,
+        preset=args.preset,
+        instruction_dir=args.dir,
         terminal=args.terminal,
         screen=args.screen,
         framing=args.framing,

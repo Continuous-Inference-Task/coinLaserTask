@@ -129,8 +129,7 @@ Because every lab has a different EEG/MEG recording setup, configuring triggers 
 
 | Field | Default | Description |
 |---|---|---|
-| `instruction_profile` | `"default"` | `"default"` (built-in PEDUKS text), `"cogpsy"`, or `"sleps"` |
-| `instruction_override_dir` | `""` | Folder of instruction `.txt` files; filled automatically from the profile (`presets/<profile>_instructions/`) when empty. File format: [presets/INSTRUCTIONS_GUIDE.md](presets/INSTRUCTIONS_GUIDE.md) |
+| `instruction_dir` | `""` (required) | Study instruction folder, e.g. `presets/sleps_instructions/`. Each section's `.txt` file in it is one screen; missing or empty files mean no screen. The task refuses to start if it is unset or the folder doesn't exist. File format: [presets/INSTRUCTIONS_GUIDE.md](presets/INSTRUCTIONS_GUIDE.md) |
 
 ### Session Structure
 

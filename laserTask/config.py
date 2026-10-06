@@ -233,11 +233,10 @@ class ExperimentConfig:
     """Whether to show the circular progress indicator (True) or horizontal progress bar (False)."""
     style: StimulusStyle = field(default_factory=StimulusStyle)
 
-    # -- Instruction overrides --
-    instruction_override_dir: str = ""
-    """Path to directory containing .txt files overriding default instruction screens."""
-    instruction_profile: str = "default"
-    """Named instruction profile: 'default', 'cogpsy', or 'sleps'."""
+    # -- Instructions --
+    instruction_dir: str = ""
+    """Study instruction folder (e.g. 'presets/sleps_instructions/'). Each section's
+    .txt file in it is shown; absent or empty files mean no screen. Required."""
     # -- Session structure --
     enable_practice: bool = True
     """Whether to run the practice session before the main experiment."""
@@ -336,16 +335,6 @@ class ExperimentConfig:
             if self.key_next in ("none", "null", ""):
                 self.key_next = ""
 
-        if self.instruction_override_dir is None:
-            self.instruction_override_dir = ""
-
-        # Resolve instruction profile default directories if instruction_override_dir not set
-        if self.instruction_profile == "cogpsy" and not self.instruction_override_dir:
-            self.instruction_override_dir = "presets/cogpsy_instructions/"
-        elif self.instruction_profile == "sleps" and not self.instruction_override_dir:
-            self.instruction_override_dir = "presets/sleps_instructions/"
-        elif self.instruction_profile == "default" and not self.instruction_override_dir:
-            self.instruction_override_dir = ""
 
 # Trigger event codes — used both for sending and for data logging.
 TRIGGER_CODES: Dict[str, int] = {
@@ -412,7 +401,8 @@ def get_config() -> ExperimentConfig:
     (shield_sizes, keyboard_backend, tone fallbacks, etc.).
 
     If config.json doesn't exist (first run), all dataclass defaults
-    are used — the experiment will run with sensible starter values.
+    are used. ``instruction_dir`` has no default, so run wizard.py (or set
+    it) before starting a session.
     """
     cfg = ExperimentConfig()
     data = _load_config_json()

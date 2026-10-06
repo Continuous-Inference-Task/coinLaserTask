@@ -1,0 +1,7 @@
+You will now do a short practice block of the task. This block will last {practice_duration_min}.
+
+As in the real game, the source will emit radiation, but the main angle of attack might change over time, so that you have to keep monitoring the beams and decide when to re-position your shield.
+
+You will see a reward bar on the right of the screen, which shows you how you lose money whenever a beam remains uncaught, but you will not actually earn any money during this practice. Remember to use the '{key_left}' and '{key_right}' keys to navigate your shield.
+
+{start_prompt}

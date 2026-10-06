@@ -1,0 +1,13 @@
+Are you ready to save the world?
+
+You will now play 1 session of the save-the-world game, where you protect our planet Earth by shielding it from harmful radiation.
+
+This session will have {n_main_blocks} blocks. Each block lasts {block_duration_min}.
+
+{move_blurb}
+
+Pay attention to the different sources and catch as many beams as you can!
+
+{continue_prompt}
+---
+{shield_instructions}

@@ -38,6 +38,7 @@ from laserTask.triggers import TriggerManager
 from laserTask.instructions import (
     build_instruction_context,
     show_instruction_section,
+    validate_instructions,
 )
 
 _PACKAGE_DIR = Path(__file__).parent
@@ -262,6 +263,9 @@ def run_experiment(
         if selected_trig in ("dummy", "parallel", "serial", "lsl"):
             cfg.trigger_mode = selected_trig
 
+    # Fail now (not after the last block) if the instruction folder is unusable.
+    validate_instructions(cfg, exp_info.get("framing", "loss"))
+
     exp_info["date"] = data.getDateStr()
     exp_info["expName"] = exp_name
 
@@ -365,6 +369,12 @@ def run_experiment(
             practice_block_duration_min = len(prac_stream) / frames_per_min
     except Exception:
         pass
+    # Placeholder values every instruction screen can use.
+    instr_base = dict(
+        n_main_blocks=n_display_blocks,
+        block_duration_min=block_duration_min,
+        practice_duration_min=practice_block_duration_min,
+    )
 
     S = create_stimuli(win, cfg)
     # Reward tracker passed as argument, allowing for easier custom implementations
@@ -468,9 +478,7 @@ def run_experiment(
     instr_ctx = build_instruction_context(
         cfg,
         exp_info=exp_info,
-        n_main_blocks=n_display_blocks,
-        block_duration_min=block_duration_min,
-        practice_block_duration_min=practice_block_duration_min,
+        **instr_base,
     )
 
     def _quit():
@@ -521,9 +529,8 @@ def run_experiment(
             main_entry_ctx = build_instruction_context(
                 cfg,
                 exp_info=exp_info,
-                n_main_blocks=n_display_blocks,
-                block_duration_min=block_duration_min,
                 source_img=source_img,
+                **instr_base,
             )
             show_instruction_section(
                 "pre_main",
@@ -565,7 +572,7 @@ def run_experiment(
                 phase_block_idx=phase_block_idx,
                 phase_block_total=phase_block_total,
                 source_img=source_img,
-                practice_block_duration_min=practice_block_duration_min,
+                **instr_base,
             )
             show_instruction_section(
                 "pre_practice",
@@ -584,7 +591,7 @@ def run_experiment(
                 phase_block_idx=phase_block_idx,
                 phase_block_total=phase_block_total,
                 source_img=source_img,
-                block_duration_min=block_duration_min,
+                **instr_base,
             )
             show_instruction_section(
                 "before_main_block",
@@ -1010,6 +1017,7 @@ def run_experiment(
                 exp_info=exp_info,
                 phase_block_idx=phase_block_idx,
                 phase_block_total=phase_block_total,
+                **instr_base,
             )
             show_instruction_section(
                 "post_practice",
@@ -1029,6 +1037,7 @@ def run_experiment(
                 phase_block_total=phase_block_total,
                 block_reward=reward_tracker.reward_text,
                 total_reward=reward_tracker.session_total_text,
+                **instr_base,
             )
             show_instruction_section(
                 "after_main_block",
@@ -1051,6 +1060,7 @@ def run_experiment(
         cfg,
         exp_info=exp_info,
         total_reward=reward_tracker.session_total_text,
+        **instr_base,
     )
     show_instruction_section(
         "post_experiment",

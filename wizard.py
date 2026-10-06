@@ -812,8 +812,7 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "show_source": c.show_source,
         "round_pbar": c.round_pbar,
         "flash_feedback": c.flash_feedback,
-        "instruction_override_dir": c.instruction_override_dir,
-        "instruction_profile": c.instruction_profile,
+        "instruction_dir": c.instruction_dir,
         "tone_freq_standard": c.tone_freq_standard,
         "tone_freq_deviant": c.tone_freq_deviant,
         "tone_duration": c.tone_duration,
@@ -1078,8 +1077,8 @@ SECTION_FIELDS: Dict[str, Dict[str, Any]] = {
     },
     "9": {
         "namespace": "experiment",
-        "fields": {"instruction_profile", "instruction_override_dir"},
-        "label": "Instructions & text profiles",
+        "fields": {"instruction_dir"},
+        "label": "Instruction folder",
     },
 }
 
@@ -1264,8 +1263,7 @@ def _apply_preset(preset: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]
 
     # Study-specific flags default reset so sequential preset switching doesn't leak
     study_defaults = {
-        "instruction_profile": "default",
-        "instruction_override_dir": "",
+        "instruction_dir": "",
         "show_source": True,
         "round_pbar": False,
         "show_rbar": True,
@@ -1281,16 +1279,6 @@ def _apply_preset(preset: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]
 
     for key, val in exp.items():
         cfg[key] = val
-    prof = exp.get("instruction_profile", cfg.get("instruction_profile", "default"))
-    if "instruction_override_dir" in exp:
-        cfg["instruction_override_dir"] = exp["instruction_override_dir"]
-    elif prof == "cogpsy":
-        cfg["instruction_override_dir"] = "presets/cogpsy_instructions/"
-    elif prof == "sleps":
-        cfg["instruction_override_dir"] = "presets/sleps_instructions/"
-    else:
-        cfg["instruction_override_dir"] = ""
-    cfg["instruction_profile"] = prof
 
     # Stimgen updates: start fresh from preset's stimgen plus study defaults
     stimgen_updates = dict(sti)
@@ -1449,9 +1437,10 @@ def _save_current_as_preset(cfg: Dict[str, Any]) -> None:
     n_sti = len(sti)
     success(f"Exhaustive preset saved to {filepath}")
     info(f"  {n_exp} experiment fields + {n_sti} stimgen fields")
-    info(f"  Commit to git to share:  git add presets/{filename} && git commit")
-    if exp.get("instruction_override_dir"):
-        _manage_instruction_files(exp["instruction_override_dir"])
+    commit_paths = f"presets/{filename}"
+    if exp.get("instruction_dir"):
+        commit_paths += f" {exp['instruction_dir']}"
+    info(f"  Commit to git to share:  git add {commit_paths} && git commit")
 
 def configure_machine(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Machine Setup")
@@ -1620,119 +1609,6 @@ def configure_triggers(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
-INSTRUCTION_TEMPLATES: Dict[str, str] = {
-    "pre_experiment.txt": (
-        "Save-the-world task\n\n"
-        "Welcome to the Save-the-world game!\n\n"
-        "Mysterious radioactive sources have just landed on Earth and are emitting radiation that is harmful to our planet.\n\n"
-        "Your task is to catch the radiation beams with an absorbing shield. You will have to navigate the shield and position it wisely to minimise the damage caused by these sources. Help us save the world!\n\n"
-        "{continue_prompt}\n"
-        "---\n"
-        "Your shield can be positioned anywhere on a circle around the harmful radiation source.\n"
-        "To navigate the shield, use the '{key_left}' and '{key_right}' keys on your keyboard. Try moving the shield now!\n\n"
-        "If you have understood how to move the shield,\n"
-        "{continue_prompt}\n"
-        "---\n"
-        "In every block of this game, your reward for saving the world from this radiation starts off at {currency}{initial_reward}. The more radiation you let through, the more reward you lose.\n\n"
-        "Try to keep as much of that {currency}{initial_reward} as you can by catching as many beams as you can. After every block, you will receive feedback about how much reward you have earned in the previous block.\n\n"
-        "Each block will last {block_duration_min}. A green circle will grow around the radioactive source, indicating how much time has passed. When the green circle is complete, the block is over.\n\n"
-        "{continue_prompt}\n"
-    ),
-    "pre_practice.txt": (
-        "You will now do a short practice block of the task. This block will last {practice_duration_min}.\n\n"
-        "As in the real game, the source will emit radiation, but the main angle of attack might change over time, so that you have to keep monitoring the beams and decide when to re-position your shield.\n\n"
-        "During this practice, you will not receive any reward, but during the actual game, you will receive an in-game reward based on how well you catch the beams. Remember to use the '{key_left}' and '{key_right}' keys to navigate your shield.\n\n"
-        "{start_prompt}\n"
-    ),
-    "post_practice.txt": (
-        "Well done - this was the practice block!\n\n"
-        "As you have seen, the direction of the beams can jump around quickly, and you cannot catch all beams with your shield. That's ok - just try to catch as many as possible. The source will have a main direction of attack at any point - if you place your shield in that direction, you will catch most beams.\n\n"
-        "Moving your shield also costs energy, which will be subtracted from your reward. It is thus important that you only move your shield when you think that the main direction of attack has changed.\n\n"
-        "{continue_prompt}\n"
-    ),
-    "pre_main.txt": (
-        "While playing the game, you will also hear tones through your headphones. These tones are completely unrelated to the game. We are using them to examine how you passively process auditory events. You can ignore the tones and focus on playing the game.\n\n"
-        "{continue_prompt}\n"
-        "---\n"
-        "Are you ready to start the game?\n\n"
-        "In the actual game:\n\n"
-        "1. You will not see the reward bar - but the rules for earning money remain the same, and you will receive feedback about your reward after every block.\n\n"
-        "2. Please focus your eyes on the centre of the radioactive source and do not follow the beams with your eyes. This is to minimise eye-movement artefacts in the EEG/MEG data.\n\n"
-        "3. You will hear tones through your headphones while you play the game. These tones are completely unrelated to the task - you can ignore them and focus on catching the beams.\n\n"
-        "{continue_prompt}\n"
-        "---\n"
-        "@image: images/radioactive1.png, images/radioactive2.png\n"
-        "You will encounter different radioactive sources.\n\n"
-        "The difference between these sources is how often they change their emission angle over time, and therefore how often you will have to adjust your shield position.\n\n"
-        "This game has {n_main_blocks} blocks. You will encounter each source once.\n\n"
-        "{continue_prompt}\n"
-    ),
-    "before_main_block.txt": (
-        "Block {phase_block_idx} out of {phase_block_total}\n\n"
-        "Please try to keep your eyes as fixed as possible on the centre of the screen.\n\n"
-        "New source ahead:\n\n\n\n\n\n\n\n\n"
-        "{start_prompt}\n"
-    ),
-    "after_main_block.txt": (
-        "Well done. In this block, you earned:\n\n"
-        "{block_reward}\n\n\n"
-        "Please take a short break now.\n\n"
-        "{continue_prompt}\n"
-    ),
-    "post_experiment.txt": (
-        "Well done. You completed all blocks of this session.\n\n"
-        "In this session, you have earned:\n\n"
-        "{total_reward}\n\n\n"
-        "Thank you!\n"
-    ),
-    "stop_recording.txt": (
-        "Please STOP the recording in LabRecorder now.\n\n"
-        "Once recording has stopped, press ENTER to finish.\n"
-    ),
-}
-
-
-def _manage_instruction_files(dir_path_str: str) -> None:
-    """Inspect instruction directory, report existing vs missing files, and scaffold on request."""
-    if not dir_path_str:
-        return
-
-    p = PROJECT_ROOT / dir_path_str if not Path(dir_path_str).is_absolute() else Path(dir_path_str)
-    p.mkdir(parents=True, exist_ok=True)
-
-    existing = []
-    missing = []
-    for fname in INSTRUCTION_TEMPLATES:
-        stem = fname.replace(".txt", "")
-        has_file = (
-            (p / fname).is_file()
-            or (p / f"{stem}_loss.txt").is_file()
-            or (p / f"{stem}_win.txt").is_file()
-        )
-        if has_file:
-            existing.append(fname)
-        else:
-            missing.append(fname)
-
-    info(f"Instruction folder: {p.relative_to(PROJECT_ROOT) if p.is_relative_to(PROJECT_ROOT) else p}")
-    if existing:
-        info(f"  Existing files ({len(existing)}):  " + ", ".join(existing))
-    if missing:
-        info(f"  Missing files  ({len(missing)}):  " + ", ".join(missing))
-        info("  (Missing files automatically fall back to clean built-in defaults)")
-        if prompt_yn("Create/scaffold missing instruction files for this study?", False):
-            selected, _ = prompt_multiselect(
-                "Select which files to create",
-                missing,
-                defaults=missing,
-                hint_text="Press Space to toggle, 'a' for all, Enter to confirm",
-            )
-            for fname in selected:
-                target_file = p / fname
-                if not target_file.exists():
-                    target_file.write_text(INSTRUCTION_TEMPLATES[fname], encoding="utf-8")
-                    success(f"Created {target_file.name}")
-
 def configure_design(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Experiment Design")
 
@@ -1760,55 +1636,132 @@ def configure_design(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
+def _instruction_folders() -> List[str]:
+    """Study instruction folders in presets/ (``presets/<study>_instructions/``)."""
+    return sorted(
+        f"presets/{p.name}/"
+        for p in PRESET_DIR.iterdir()
+        if p.is_dir() and p.name.endswith("_instructions")
+    )
+
+
+# Short hints shown next to the shipped study folders in the wizard.
+_INSTRUCTION_FOLDER_TIPS: Dict[str, str] = {
+    "presets/peduks_instructions/": "PEDUKS study text - the standard full set; recommended starting point",
+    "presets/cogpsy_instructions/": "CogPsy (PEACE) study text - 3-page intro, MEG rules, source colour legend",
+    "presets/sleps_instructions/": "SLEPS study text - separate loss/win intros, EEG fixation, neutral sources",
+}
+
+
+def _instruction_folder_sections(dir_str: str) -> List[str]:
+    """Sections with a non-empty file (plain or framing variant) in *dir_str*."""
+    from laserTask.instructions import SECTIONS
+
+    p = PROJECT_ROOT / dir_str
+    return [
+        s for s in SECTIONS
+        if any(
+            f.is_file() and f.read_text(encoding="utf-8").strip()
+            for f in (p / f"{s}{suffix}.txt" for suffix in ("", "_loss", "_win"))
+        )
+    ]
+
+
+def _instruction_folder_description(dir_str: str) -> str:
+    from laserTask.instructions import SECTIONS
+
+    count = f"{len(_instruction_folder_sections(dir_str))} of {len(SECTIONS)} screens have text"
+    tip = _INSTRUCTION_FOLDER_TIPS.get(dir_str)
+    return f"{tip}\n{count}" if tip else count
+
+
+def _create_instruction_folder(folders: List[str]) -> str:
+    """Create a new study folder (copy of an existing one, or empty files); return its path."""
+    import shutil
+    from laserTask.instructions import SECTIONS
+
+    peduks = "presets/peduks_instructions/"
+    fresh = "start fresh (empty files)"
+    src = prompt_select(
+        "Start the new folder from",
+        folders + [fresh],
+        default=peduks if peduks in folders else fresh,
+        descriptions={
+            **{f: _instruction_folder_description(f) for f in folders},
+            fresh: (
+                "One empty .txt file per screen - write your own text from scratch.\n"
+                "Empty files show nothing until you fill them. stop_recording.txt is\n"
+                "pre-filled with the LabRecorder operator prompt (needed for LSL)."
+            ),
+        },
+        hint_text="Copy an existing study's text, or start from empty files",
+    )
+    while True:
+        study = prompt(
+            "Name of the new study",
+            hint_text="Creates presets/<name>_instructions/ (letters, digits, '_' or '-')",
+        ).strip().lower()
+        if not re.fullmatch(r"[a-z0-9_-]+", study):
+            warn("Use only letters, digits, '_' or '-'.")
+            continue
+        dest = f"presets/{study}_instructions/"
+        if (PROJECT_ROOT / dest).exists():
+            warn(f"{dest} already exists - pick another name or select it directly.")
+            continue
+        break
+
+    dest_path = PROJECT_ROOT / dest
+    if src == fresh:
+        dest_path.mkdir(parents=True)
+        stop_src = PROJECT_ROOT / peduks / "stop_recording.txt"
+        for s in SECTIONS:
+            text = stop_src.read_text(encoding="utf-8") if s == "stop_recording" and stop_src.is_file() else ""
+            (dest_path / f"{s}.txt").write_text(text, encoding="utf-8")
+        success(f"Created {dest} with {len(SECTIONS)} empty screen files")
+        info("  Fill the files you want to show; empty or deleted files are skipped.")
+    else:
+        shutil.copytree(PROJECT_ROOT / src, dest_path)
+        success(f"Copied {src} -> {dest}")
+    return dest
+
+
 def configure_instructions(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    from laserTask.instructions import SECTIONS
+
     section("Instructions & Slide Text")
 
-    prev_profile = cfg.get("instruction_profile", "default")
-    prev_dir = cfg.get("instruction_override_dir", "")
-
-    new_prof = prompt_select(
-        "Instruction profile",
-        ["default", "cogpsy", "sleps", "custom"],
-        default=prev_profile,
+    prev_dir = cfg.get("instruction_dir", "")
+    folders = _instruction_folders()
+    if prev_dir and prev_dir not in folders:
+        folders.append(prev_dir)
+    new_option = "+ new study folder"
+    choice = prompt_select(
+        "Instruction folder",
+        folders + [new_option],
+        default=prev_dir if prev_dir in folders else "presets/peduks_instructions/",
         descriptions={
-            "default": "Standard PEDUKS study instructions (clean built-in text)",
-            "cogpsy": "CogPsy (PEACE study) instructions",
-            "sleps": "SLEPS study instructions with EEG/reward formatting",
-            "custom": "Custom study instruction directory",
+            **{f: _instruction_folder_description(f) for f in folders},
+            new_option: "Copy an existing study's folder or start from empty files,\nthen edit its .txt files",
         },
+        hint_text="Each .txt file in the folder is one instruction screen; no file = no screen",
     )
-    if new_prof == "cogpsy":
-        cfg["instruction_profile"] = new_prof
-        cfg["instruction_override_dir"] = "presets/cogpsy_instructions/"
-    elif new_prof == "sleps":
-        cfg["instruction_profile"] = new_prof
-        cfg["instruction_override_dir"] = "presets/sleps_instructions/"
-    elif new_prof == "custom":
-        default_dir = prev_dir or "presets/custom_instructions/"
-        try:
-            custom_dir = prompt(
-                "Custom instruction directory",
-                default_dir,
-                hint_text="Folder inside presets/ containing your .txt files",
-            ).strip()
-            cfg["instruction_profile"] = new_prof
-            cfg["instruction_override_dir"] = custom_dir
-        except GoBack:
-            cfg["instruction_profile"] = prev_profile
-            cfg["instruction_override_dir"] = prev_dir
-            raise
-    else:
-        cfg["instruction_profile"] = new_prof
-        cfg["instruction_override_dir"] = ""
+    instruction_dir = _create_instruction_folder(_instruction_folders()) if choice == new_option else choice
+    cfg["instruction_dir"] = instruction_dir
 
-    if cfg["instruction_override_dir"]:
-        print()
-        _manage_instruction_files(cfg["instruction_override_dir"])
+    present = _instruction_folder_sections(instruction_dir)
+    print()
+    info(f"Instruction folder: {instruction_dir}")
+    info("  Shown:     " + (", ".join(present) or "none"))
+    absent = [s for s in SECTIONS if s not in present]
+    if absent:
+        info("  No screen (missing or empty file): " + ", ".join(absent))
+    if "stop_recording" not in present:
+        warn("stop_recording.txt is missing or empty: sessions with LSL triggers will refuse to start.")
 
     if prompt_yn("Preview instructions in terminal now?", False):
         from laserTask.instructions import preview_instructions
         print()
-        preview_instructions(cfg.get("instruction_profile"), terminal=True)
+        preview_instructions(instruction_dir=instruction_dir, terminal=True)
         print()
 
     return cfg
@@ -3171,7 +3124,7 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
         ("Sessions", f"{', '.join(cfg.get('sessions', ['?']))}", "8"),
         ("Orders", f"{', '.join(cfg.get('orders', ['?']))}", "8"),
         ("Framings", f"{', '.join(cfg.get('framings', ['?']))}", "8"),
-        ("Instructions", f"{cfg.get('instruction_profile', 'default')}" + (f" ({cfg.get('instruction_override_dir')})" if cfg.get("instruction_override_dir") else " (built-in)"), "9"),
+        ("Instructions", cfg.get("instruction_dir") or "(not set)", "9"),
     ]
 
     # Filter by section_id if provided
@@ -3686,7 +3639,7 @@ SECTION_REGISTRY: List[Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]
     ("6", "Auditory MMN (type, frequencies, durations, ISI)", configure_audio),
     ("7", "Sequence generation (noise levels, volatility, durations)", configure_stimgen),
     ("8", "Startup dialog (which fields, dropdown options, framing)", configure_dialog),
-    ("9", "Instructions & slide text (profiles, scaffolding, preview)", configure_instructions),
+    ("9", "Instructions & slide text (study folder, preview)", configure_instructions),
 ]
 
 SECTION_MAP: Dict[str, Tuple[str, Callable[[Dict[str, Any]], Dict[str, Any]]]] = {
