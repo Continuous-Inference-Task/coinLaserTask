@@ -3697,85 +3697,97 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
         print()
         choice = input(_c(C["magenta"], "  ❯ ")).strip().lower()
 
-        if choice == "b":
-            return dirty
-        elif choice == "a":
-            try:
-                _quick_setup()
-            except GoBack:
-                info("All-sections cancelled — returning to menu.")
-        elif choice == "s":
-            show_summary(cfg)
-        elif choice == "p":
-            _save_current_as_preset(cfg)
-        elif choice == "r":
-            show_slim_summary(cfg, "run")
-            if dirty:
-                warn("Unsaved config changes — run anyway?")
-                if not prompt_yn("Proceed without saving?", True):
+        try:
+            if choice == "b":
+                return dirty
+            elif choice == "a":
+                try:
+                    _quick_setup()
+                except GoBack:
+                    info("All-sections cancelled — returning to menu.")
+            elif choice == "s":
+                show_summary(cfg)
+            elif choice == "p":
+                _save_current_as_preset(cfg)
+            elif choice == "r":
+                show_slim_summary(cfg, "run")
+                if dirty:
+                    warn("Unsaved config changes — run anyway?")
+                    if not prompt_yn("Proceed without saving?", True):
+                        continue
+                # Pre-flight: compare generated sequences against current config
+                pf_warnings = _preflight_check(cfg)
+                if not _show_preflight_warnings(cfg, pf_warnings):
                     continue
-            # Pre-flight: compare generated sequences against current config
-            pf_warnings = _preflight_check(cfg)
-            if not _show_preflight_warnings(cfg, pf_warnings):
-                continue
-            print()
-            info("Launching experiment …")
-            print()
-            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-            return dirty
-        elif choice == "v":
-            print()
-            info("Running sequence verification …")
-            from stimgen.laser.verify_sequences import run_verification
-            n = run_verification(show=True)  # try to display plots
-            print()
-            if n > 0:
-                seq_dir = PROJECT_ROOT / "sequences"
-                pngs = sorted(p for p in seq_dir.glob("*_VERIFY_*.png") if not p.name.endswith("_summary"))
-                success(f"{n} session(s) verified.")
-                info("Verification plots saved to:")
-                for p in pngs:
-                    info(f"  {p}")
-        elif choice == "g":
-            show_slim_summary(cfg, "generate")
-            if dirty:
-                warn("You have unsaved config changes.")
-                if prompt_yn("Save before generating?", True):
+                print()
+                info("Launching experiment …")
+                print()
+                subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                return dirty
+            elif choice == "v":
+                print()
+                info("Running sequence verification …")
+                from stimgen.laser.verify_sequences import run_verification
+                n = run_verification(show=True)  # try to display plots
+                print()
+                if n > 0:
+                    seq_dir = PROJECT_ROOT / "sequences"
+                    pngs = sorted(p for p in seq_dir.glob("*_VERIFY_*.png") if not p.name.endswith("_summary"))
+                    success(f"{n} session(s) verified.")
+                    info("Verification plots saved to:")
+                    for p in pngs:
+                        info(f"  {p}")
+            elif choice == "g":
+                show_slim_summary(cfg, "generate")
+                if dirty:
+                    warn("You have unsaved config changes.")
+                    if prompt_yn("Save before generating?", True):
+                        _write_laser_task_config(cfg)
+                        if _save_stimgen_from_cfg(cfg.copy()):
+                            dirty = False
+                if prompt_yn("Generate sequences now?", True):
+                    if run_sequence_generation(cfg.copy()):
+                        print()
+                        if prompt_yn("Start the experiment?", True):
+                            pf_warnings = _preflight_check(cfg)
+                            if _show_preflight_warnings(cfg, pf_warnings):
+                                print()
+                                info("Launching experiment …")
+                                print()
+                                subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                                return dirty
+            elif choice == "o":
+                from offline import prepare_offline_package
+                prepare_offline_package(cfg)
+            elif choice in SECTION_MAP:
+                import copy
+
+                desc, fn = SECTION_MAP[choice]
+                # 'back' anywhere in the section (incl. the save prompt) discards its inputs.
+                original, snapshot = cfg, copy.deepcopy(cfg)
+                try:
+                    cfg = fn(cfg)
+                    show_summary(cfg, choice)
+                    save = prompt_yn("Save this section?", True)
+                except GoBack:
+                    original.clear()
+                    original.update(snapshot)
+                    cfg = original
+                    info("Section changes discarded — returned to section menu.")
+                    continue
+                dirty = True
+                if save:
                     _write_laser_task_config(cfg)
-                    if _save_stimgen_from_cfg(cfg.copy()):
-                        dirty = False
-            if prompt_yn("Generate sequences now?", True):
-                if run_sequence_generation(cfg.copy()):
-                    print()
-                    if prompt_yn("Start the experiment?", True):
-                        pf_warnings = _preflight_check(cfg)
-                        if _show_preflight_warnings(cfg, pf_warnings):
-                            print()
-                            info("Launching experiment …")
-                            print()
-                            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-                            return dirty
-        elif choice == "o":
-            from offline import prepare_offline_package
-            prepare_offline_package(cfg)
-        elif choice in SECTION_MAP:
-            desc, fn = SECTION_MAP[choice]
-            try:
-                cfg = fn(cfg)
-            except GoBack:
-                info("Returned to section menu.")
-                continue
-            dirty = True
-            show_summary(cfg, choice)
-            if prompt_yn("Save this section?", True):
-                _write_laser_task_config(cfg)
-                _save_stimgen_from_cfg(cfg.copy())
-                dirty = False
-                success(f"Section {choice} saved.")
+                    _save_stimgen_from_cfg(cfg.copy())
+                    dirty = False
+                    success(f"Section {choice} saved.")
+                else:
+                    info("Change held in memory.")
             else:
-                info("Change held in memory.")
-        else:
-            warn(f"Unknown option: '{choice}'")
+                warn(f"Unknown option: '{choice}'")
+        except GoBack:
+            info("Returned to section menu.")
+            continue
 
         if choice not in ("b", "q"):
             print()
@@ -3880,107 +3892,114 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
         print()
         choice = input(_c(C["magenta"], "  ❯ ")).strip().lower()
 
-        if choice == "q":
-            if dirty:
-                if prompt_yn("Save changes before quitting?", True):
+        try:
+            if choice == "q":
+                if dirty:
+                    if prompt_yn("Save changes before quitting?", True):
+                        _write_laser_task_config(cfg)
+                        _save_stimgen_from_cfg(cfg.copy())
+                        success("Config saved.")
+                break
+            elif choice in ("1", "2"):
+                import copy
+
+                # 'back' anywhere in the setup (incl. the save prompt) discards its inputs.
+                original, snapshot = cfg, copy.deepcopy(cfg)
+                try:
+                    if choice == "1":
+                        cfg = _run_preset_setup(cfg)
+                    else:
+                        cfg = configure_quick(cfg)
+                        show_summary(cfg)
+                    save = prompt_yn("Save configuration?" if choice == "1" else "Save quick settings?", True)
+                except GoBack:
+                    original.clear()
+                    original.update(snapshot)
+                    cfg = original
+                    info("Setup cancelled — changes discarded.")
+                    continue
+                dirty = True
+                if choice == "2":
+                    active_preset_name = None
+                if not save:
+                    info("Changes held in memory — use 's' to review, 'q' to save & quit.")
+                elif choice == "1":
                     _write_laser_task_config(cfg)
                     _save_stimgen_from_cfg(cfg.copy())
-                    success("Config saved.")
-            break
-        elif choice == "1":
-            try:
-                cfg = _run_preset_setup(cfg)
-            except GoBack:
-                info("Preset setup cancelled.")
-                continue
-            dirty = True
-            if prompt_yn("Save configuration?", True):
-                _write_laser_task_config(cfg)
-                _save_stimgen_from_cfg(cfg.copy())
-                dirty = False
-                if cfg.get("_stimgen_updates") or not _sequences_exist():
-                    if prompt_yn("Generate sequences now?", True):
-                        if run_sequence_generation(cfg.copy()):
-                            success("Sequences generated.")
-                success("Configuration saved.")
-            else:
-                info("Changes held in memory — use 's' to review, 'q' to save & quit.")
-        elif choice == "2":
-            try:
-                cfg = configure_quick(cfg)
-            except GoBack:
-                info("Quick setup cancelled.")
-                continue
-            dirty = True
-            active_preset_name = None
-            show_summary(cfg)
-            if prompt_yn("Save quick settings?", True):
-                _write_laser_task_config(cfg)
-                _save_stimgen_from_cfg(cfg.copy())
-                dirty = False
-                success("Quick settings saved.")
-            else:
-                info("Changes held in memory — use 's' to review, 'q' to save & quit.")
-        elif choice == "3":
-            if _run_advanced_menu(cfg):
-                dirty = True
-                active_preset_name = None
-        elif choice == "s":
-            show_summary(cfg)
-        elif choice == "p":
-            _save_current_as_preset(cfg)
-        elif choice == "r":
-            show_slim_summary(cfg, "run")
-            if dirty:
-                warn("Unsaved config changes — run anyway?")
-                if not prompt_yn("Proceed without saving?", True):
-                    continue
-            # Pre-flight: compare generated sequences against current config
-            pf_warnings = _preflight_check(cfg)
-            if not _show_preflight_warnings(cfg, pf_warnings):
-                continue
-            print()
-            info("Launching experiment …")
-            print()
-            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-            return
-        elif choice == "o":
-            from offline import prepare_offline_package
-            prepare_offline_package(cfg)
-        elif choice == "v":
-            print()
-            info("Running sequence verification …")
-            from stimgen.laser.verify_sequences import run_verification
-            n = run_verification(show=True)  # try to display plots
-            print()
-            if n > 0:
-                seq_dir = PROJECT_ROOT / "sequences"
-                pngs = sorted(p for p in seq_dir.glob("*_VERIFY_*.png") if not p.name.endswith("_summary"))
-                success(f"{n} session(s) verified.")
-                info("Verification plots saved to:")
-                for p in pngs:
-                    info(f"  {p}")
-        elif choice == "g":
-            show_slim_summary(cfg, "generate")
-            if dirty:
-                warn("You have unsaved config changes.")
-                if prompt_yn("Save before generating?", True):
+                    dirty = False
+                    if cfg.get("_stimgen_updates") or not _sequences_exist():
+                        if prompt_yn("Generate sequences now?", True):
+                            if run_sequence_generation(cfg.copy()):
+                                success("Sequences generated.")
+                    success("Configuration saved.")
+                else:
                     _write_laser_task_config(cfg)
-                    if _save_stimgen_from_cfg(cfg.copy()):
-                        dirty = False
-            if prompt_yn("Generate sequences now?", True):
-                if run_sequence_generation(cfg.copy()):
-                    print()
-                    if prompt_yn("Start the experiment?", True):
-                        pf_warnings = _preflight_check(cfg)
-                        if _show_preflight_warnings(cfg, pf_warnings):
-                            print()
-                            info("Launching experiment …")
-                            print()
-                            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-                            return
-        else:
-            warn(f"Unknown option: '{choice}'")
+                    _save_stimgen_from_cfg(cfg.copy())
+                    dirty = False
+                    success("Quick settings saved.")
+            elif choice == "3":
+                if _run_advanced_menu(cfg):
+                    dirty = True
+                    active_preset_name = None
+            elif choice == "s":
+                show_summary(cfg)
+            elif choice == "p":
+                _save_current_as_preset(cfg)
+            elif choice == "r":
+                show_slim_summary(cfg, "run")
+                if dirty:
+                    warn("Unsaved config changes — run anyway?")
+                    if not prompt_yn("Proceed without saving?", True):
+                        continue
+                # Pre-flight: compare generated sequences against current config
+                pf_warnings = _preflight_check(cfg)
+                if not _show_preflight_warnings(cfg, pf_warnings):
+                    continue
+                print()
+                info("Launching experiment …")
+                print()
+                subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                return
+            elif choice == "o":
+                from offline import prepare_offline_package
+                prepare_offline_package(cfg)
+            elif choice == "v":
+                print()
+                info("Running sequence verification …")
+                from stimgen.laser.verify_sequences import run_verification
+                n = run_verification(show=True)  # try to display plots
+                print()
+                if n > 0:
+                    seq_dir = PROJECT_ROOT / "sequences"
+                    pngs = sorted(p for p in seq_dir.glob("*_VERIFY_*.png") if not p.name.endswith("_summary"))
+                    success(f"{n} session(s) verified.")
+                    info("Verification plots saved to:")
+                    for p in pngs:
+                        info(f"  {p}")
+            elif choice == "g":
+                show_slim_summary(cfg, "generate")
+                if dirty:
+                    warn("You have unsaved config changes.")
+                    if prompt_yn("Save before generating?", True):
+                        _write_laser_task_config(cfg)
+                        if _save_stimgen_from_cfg(cfg.copy()):
+                            dirty = False
+                if prompt_yn("Generate sequences now?", True):
+                    if run_sequence_generation(cfg.copy()):
+                        print()
+                        if prompt_yn("Start the experiment?", True):
+                            pf_warnings = _preflight_check(cfg)
+                            if _show_preflight_warnings(cfg, pf_warnings):
+                                print()
+                                info("Launching experiment …")
+                                print()
+                                subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                                return
+            else:
+                warn(f"Unknown option: '{choice}'")
+        except GoBack:
+            info("Returned to menu.")
+            continue
 
         if choice != "q":
             print()
