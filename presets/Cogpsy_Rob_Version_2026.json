@@ -1,6 +1,6 @@
 {
     "name": "Cogpsy_Rob_Version_2026",
-    "description": "CogPsy adapted for Rob — 20° shield, medium noise for practice, £ currency, loss-only",
+    "description": "CogPsy adapted for Rob — 40° shield, medium noise for practice, £ currency, loss-only",
     "experiment": {
         "target_os": "windows",
         "window_size": [1512, 982],
@@ -17,7 +17,7 @@
         "rotation_speed": 1.0,
         "circle_radius": 3.0,
         "allow_shield_adjustment": false,
-        "fixed_shield_degrees": 20.0,
+        "fixed_shield_degrees": 40.0,
         "loss_factor": 0.003,
         "currency_symbol": "£",
         "trigger_mode": "parallel",

@@ -425,7 +425,10 @@ def prompt_select(
     try:
         import termios
         import tty
+    except ImportError:  # Windows: no raw terminal
+        return _prompt_select_fallback(text, options, default, descriptions, hint_text)
 
+    try:
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
 
@@ -498,7 +501,7 @@ def prompt_select(
         sys.stdout.flush()
         return options[cursor]
 
-    except (ImportError, termios.error, AttributeError, OSError):
+    except (termios.error, AttributeError, OSError):
         pass
 
     # ── fallback: simple numbered prompt ──
@@ -596,7 +599,10 @@ def prompt_multiselect(
     try:
         import termios
         import tty
+    except ImportError:  # Windows: no raw terminal
+        return _prompt_multiselect_fallback(text, options, defaults, hint_text, action_keys)
 
+    try:
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
         cursor = 0
@@ -702,7 +708,7 @@ def prompt_multiselect(
         sys.stdout.flush()
         return sorted(selected, key=lambda o: options.index(o)), None
 
-    except Exception:
+    except (termios.error, AttributeError, OSError):
         pass
 
     # ── fallback: simple numbered prompt ──

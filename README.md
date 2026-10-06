@@ -100,7 +100,7 @@ Study-design presets are JSON snapshots committed to git. Load one with `python 
 |---|---|
 | `PEDUKS_default` | Original PEDUKS study - fixed 20° shield, duration MMN, € currency, loss/win framing |
 | `CogPsy_original` | Original Cognitive Psychology adaptation |
-| `Cogpsy_Rob_Version_2026` | Adapted for Rob's MEG study - 20° shield, £ currency, round progress bar instead of reward bar, custom instructions |
+| `Cogpsy_Rob_Version_2026` | Adapted for Rob's MEG study - 40° shield, £ currency, round progress bar instead of reward bar, custom instructions |
 | `SLEPS_default` | Thesis-student EEG study - neutral sources with central reward readout, €2.00 start, frequency MMN (70 ms tones), LSL triggers, win/loss instruction variants |
 
 Save the current config as a new preset from the wizard's interactive menu (`p`).

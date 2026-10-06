@@ -666,8 +666,9 @@ def run_experiment(
             trial_stims.append(S["end_lbl"])
         else:
             trial_stims.append(S["progress_circle"])
-        if cfg.show_source or phase_n == PHASE_PRACTICE:
-            trial_stims.append(S["source"])
+        # show_source only picks the image set (radioactive vs. neutral) at
+        # sequence generation; the source itself is always the fixation target.
+        trial_stims.append(S["source"])
         for stim in trial_stims:
             stim.setAutoDraw(True)
 
