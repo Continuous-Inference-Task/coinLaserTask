@@ -1,0 +1,14 @@
+Block {phase_block_idx} out of {phase_block_total}
+
+Please try to keep your eyes as fixed as possible on the centre of the screen.
+
+New source ahead:
+
+
+
+
+
+
+
+
+{start_prompt}

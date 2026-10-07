@@ -1,0 +1,8 @@
+Well done. You completed all blocks of this session.
+
+In this session, you have earned:
+
+{total_reward}
+
+
+Thank you

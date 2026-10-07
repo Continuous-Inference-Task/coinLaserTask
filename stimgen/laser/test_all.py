@@ -366,19 +366,19 @@ def test_generate_coin_session_csv_files():
         for order in range(1, 5):
             generate_coin_session_csv_files(order, 'practice', tmpdir,
                                             design=main_design, block_sequence=main_block_seq[:4],
-                                            n_sessions=1, blocks_per_session=4)
+                                            n_sessions=1, blocks_per_session=4, show_source=config.SHOW_SOURCE)
             generate_coin_session_csv_files(order, 'onlineTrain', tmpdir,
                                             design=main_design, block_sequence=main_block_seq[:4],
-                                            n_sessions=1, blocks_per_session=4)
+                                            n_sessions=1, blocks_per_session=4, show_source=config.SHOW_SOURCE)
             generate_coin_session_csv_files(order, 'main', tmpdir,
                                             design=main_design, block_sequence=main_block_seq,
-                                            n_sessions=3, blocks_per_session=4,
+                                            n_sessions=3, blocks_per_session=4, show_source=config.SHOW_SOURCE,
                                             mmn_filenames=fake_mmn,
                                             tone_vol_list=[0, 1, 0, 1] * 3,
                                             tone_noise_list=[1, 1, 0, 0] * 3)
             generate_coin_session_csv_files(order, 'infusion', tmpdir,
                                             design=main_design, block_sequence=main_block_seq,
-                                            n_sessions=3, blocks_per_session=4)
+                                            n_sessions=3, blocks_per_session=4, show_source=config.SHOW_SOURCE)
         # Verify orders 1 & 3 have same stability (stable first) vs orders 2 & 4
         # Order 1: stab_orders[0]=1, img_orders[0]=1
         # Order 2: stab_orders[1]=2, img_orders[1]=1
@@ -401,9 +401,70 @@ def test_generate_coin_session_csv_files():
         o1_first_img = o1_lines[1].strip().split(',')[1]
         o3_first_img = o3_lines[1].strip().split(',')[1]
         # Order 1 uses imgAssignment1, order 3 uses imgAssignment2
-        assert o1_first_img == 'radioactive1.png', f"Order 1 first img: {o1_first_img}"
-        assert o3_first_img == 'radioactive4.png', f"Order 3 first img: {o3_first_img}"
+        if config.SHOW_SOURCE:
+            assert o1_first_img == 'radioactive1.png', f"Order 1 first img: {o1_first_img}"
+            assert o3_first_img == 'radioactive4.png', f"Order 3 first img: {o3_first_img}"
+        else:
+            assert o1_first_img == 'not_so_radioactive1.png', f"Order 1 first img: {o1_first_img}"
+            assert o3_first_img == 'not_so_radioactive4.png', f"Order 3 first img: {o3_first_img}"
     print("✓ generate_coin_session_csv_files (all orders, all task flags)")
+
+def test_show_source_toggle():
+    """Verify SHOW_SOURCE=False uses not_so_radioactive for main and radioactive5-8 for practice."""
+    import tempfile
+    from design_vola_stocha import design_vola_stocha
+    from generate_coin_session_csv_files import generate_coin_session_csv_files
+    import config
+    with tempfile.TemporaryDirectory() as tmpdir:
+        design = design_vola_stocha(config.MAIN_VOLATILITY, config.MAIN_NOISE)
+        block_seq = [1, 2, 3, 4]
+        # 1. show_source=False, extended_practice=True (SLEPS)
+        generate_coin_session_csv_files(1, 'main', tmpdir, design, block_seq, n_sessions=1, blocks_per_session=4, show_source=False, extended_practice=True)
+        generate_coin_session_csv_files(1, 'practice', tmpdir, design, block_seq, n_sessions=1, blocks_per_session=4, show_source=False, extended_practice=True)
+        main_csv = os.path.join(tmpdir, 'coin_main_order1', 'session_s1_main.csv')
+        practice_csv = os.path.join(tmpdir, 'coin_practice_order1', 'session_s1_practice.csv')
+        with open(main_csv) as f:
+            main_img = f.readlines()[1].strip().split(',')[1]
+        with open(practice_csv) as f:
+            prac_img = f.readlines()[1].strip().split(',')[1]
+        assert main_img == 'not_so_radioactive1.png', f"Expected not_so_radioactive1.png, got {main_img}"
+        assert prac_img == 'radioactive5.png', f"Expected radioactive5.png, got {prac_img}"
+        # Order 3 (reversed images)
+        generate_coin_session_csv_files(3, 'main', tmpdir, design, block_seq, n_sessions=1, blocks_per_session=4, show_source=False, extended_practice=True)
+        generate_coin_session_csv_files(3, 'practice', tmpdir, design, block_seq, n_sessions=1, blocks_per_session=4, show_source=False, extended_practice=True)
+        with open(os.path.join(tmpdir, 'coin_main_order3', 'session_s1_main.csv')) as f:
+            assert f.readlines()[1].strip().split(',')[1] == 'not_so_radioactive4.png'
+        with open(os.path.join(tmpdir, 'coin_practice_order3', 'session_s1_practice.csv')) as f:
+            assert f.readlines()[1].strip().split(',')[1] == 'radioactive8.png'
+
+        # 2. show_source=True, extended_practice=False (standard PEDUKS / CogPsy)
+        generate_coin_session_csv_files(1, 'main', tmpdir, design, block_seq, n_sessions=1, blocks_per_session=4, show_source=True, extended_practice=False)
+        generate_coin_session_csv_files(1, 'practice', tmpdir, design, block_seq, n_sessions=1, blocks_per_session=4, show_source=True, extended_practice=False)
+        with open(main_csv) as f:
+            main_img = f.readlines()[1].strip().split(',')[1]
+        with open(practice_csv) as f:
+            prac_img = f.readlines()[1].strip().split(',')[1]
+        assert main_img == 'radioactive1.png', f"Expected radioactive1.png, got {main_img}"
+        assert prac_img == 'radioactive1.png', f"Expected radioactive1.png, got {prac_img}"
+        # Order 3 (reversed images)
+        generate_coin_session_csv_files(3, 'main', tmpdir, design, block_seq, n_sessions=1, blocks_per_session=4, show_source=True, extended_practice=False)
+        generate_coin_session_csv_files(3, 'practice', tmpdir, design, block_seq, n_sessions=1, blocks_per_session=4, show_source=True, extended_practice=False)
+        with open(os.path.join(tmpdir, 'coin_main_order3', 'session_s1_main.csv')) as f:
+            assert f.readlines()[1].strip().split(',')[1] == 'radioactive4.png'
+        with open(os.path.join(tmpdir, 'coin_practice_order3', 'session_s1_practice.csv')) as f:
+            assert f.readlines()[1].strip().split(',')[1] == 'radioactive4.png'
+
+        # 3. show_source=False, extended_practice=False (neutral main, legacy practice)
+        generate_coin_session_csv_files(1, 'main', tmpdir, design, block_seq, n_sessions=1, blocks_per_session=4, show_source=False, extended_practice=False)
+        generate_coin_session_csv_files(1, 'practice', tmpdir, design, block_seq, n_sessions=1, blocks_per_session=4, show_source=False, extended_practice=False)
+        with open(main_csv) as f:
+            main_img = f.readlines()[1].strip().split(',')[1]
+        with open(practice_csv) as f:
+            prac_lines = f.readlines()
+        prac_img = prac_lines[1].strip().split(',')[1]
+        assert main_img == 'not_so_radioactive1.png', f"Expected not_so_radioactive1.png, got {main_img}"
+        assert prac_img == 'radioactive1.png', f"Expected radioactive1.png, got {prac_img}"
+    print("✓ test_show_source_toggle")
 
 def test_generate_mean_stimulus():
     from generate_mean_stimulus import generate_mean_stimulus
@@ -451,6 +512,15 @@ def test_plot_session():
     plt.close('all')
     print("✓ plot_session")
 
+def test_order_counts():
+    """Practice orders must cover every main order (practice file is chosen by main order)."""
+    from coin_script_sequence_generation import _order_counts
+    assert _order_counts(1, 1) == (2, 2)
+    assert _order_counts(4, 1) == (4, 4)
+    assert _order_counts(4, 4) == (4, 4)
+    assert _order_counts(1, 4) == (2, 4)
+    print("✓ order_counts")
+
 if __name__ == '__main__':
     test_design_vola_stocha()
     test_design_vola_stocha_random_walk()
@@ -467,7 +537,9 @@ if __name__ == '__main__':
     test_write_exp_csv_file()
     test_write_exp_csv_file_with_tones()
     test_generate_coin_session_csv_files()
+    test_show_source_toggle()
     test_generate_mean_stimulus()
     test_analyse_session()
     test_plot_session()
+    test_order_counts()
     print("\n🎉 ALL TESTS PASSED!")

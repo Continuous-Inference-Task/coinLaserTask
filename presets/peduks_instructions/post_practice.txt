@@ -1,0 +1,7 @@
+Well done - this was the practice block!
+
+As you have seen, the direction of the beams can jump around quickly, and you cannot catch all beams with your shield. That's ok - just try to catch as many as possible. The source will have a main direction of attack at any point - if you place your shield in that direction, you will catch most beams.
+
+Moving your shield also costs energy, which will be subtracted from your reward. It is thus important that you only move your shield when you think that the main direction of attack has changed.
+
+{continue_prompt}

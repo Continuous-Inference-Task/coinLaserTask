@@ -1,0 +1,3 @@
+Please START the recording in LabRecorder now (check that the LaserTask_Triggers stream is selected).
+
+Once recording is running, press ENTER to begin the experiment.

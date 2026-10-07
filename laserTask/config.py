@@ -81,7 +81,7 @@ class StimulusStyle:
     progress_bar_y: float = -0.45
     progress_bar_height: float = 0.05
     progress_bar_width: float = 0.8
-
+    progress_circle_size: Tuple[float, float] = (0.12, 0.12)
 
 @dataclass
 class ExperimentConfig:
@@ -112,6 +112,7 @@ class ExperimentConfig:
     # -- Keyboard controls --
     key_right: str = "j"
     key_left: str = "f"
+    key_next: str = ""
     # controls instruction screen -- other option is "response_box"
     # if set to response_box, instruction do not name the keys
     # NOTE: must still set key mappings to code the device sends! 
@@ -122,7 +123,7 @@ class ExperimentConfig:
     """Fields shown in the session setup dialog.
 
     Must be a subset of ``["participant", "visit", "session", "order",
-    "framing", "practice_mode"]``.  ``"participant"`` is always force-included even if
+    "framing", "practice_mode", "trigger_mode"]``.  ``"participant"`` is always force-included even if
     omitted (required for data-file naming).
 
     Example — run without framings::
@@ -170,9 +171,9 @@ class ExperimentConfig:
     # -- Reward --
     loss_factor: float = 0.003
     currency_symbol: str = "€"
-
+    initial_reward: float = 1.0
+    neutral_practice: bool = False
     flash_feedback: bool = False
-
     # -- Trigger settings --
     trigger_mode: str = "parallel"
     """How event markers are sent to the recording system.
@@ -222,8 +223,20 @@ class ExperimentConfig:
     # -- Visual style --
     show_earth_background: bool = True
     """Whether to show the earth/world picture as the background during trials."""
+    show_earth_background_practice: bool = False
+    """Whether to force the earth background during practice blocks regardless of show_earth_background."""
+    show_rbar: bool = True
+    """Whether to show the reward bar during the main task."""
+    show_source: bool = True
+    """Whether to show standard radioactive source icons (True) or neutral sources with central reward readout (False)."""
+    round_pbar: bool = False
+    """Whether to show the circular progress indicator (True) or horizontal progress bar (False)."""
     style: StimulusStyle = field(default_factory=StimulusStyle)
 
+    # -- Instructions --
+    instruction_dir: str = ""
+    """Study instruction folder (e.g. 'presets/sleps_instructions/'). Each section's
+    .txt file in it is shown; absent or empty files mean no screen. Required."""
     # -- Session structure --
     enable_practice: bool = True
     """Whether to run the practice session before the main experiment."""
@@ -315,6 +328,14 @@ class ExperimentConfig:
             self.tone_duration_deviant = self.tone_duration
 
 
+        if self.key_next is None:
+            self.key_next = ""
+        else:
+            self.key_next = str(self.key_next).strip().lower()
+            if self.key_next in ("none", "null", ""):
+                self.key_next = ""
+
+
 # Trigger event codes — used both for sending and for data logging.
 TRIGGER_CODES: Dict[str, int] = {
     "exp_start":   100,
@@ -380,7 +401,8 @@ def get_config() -> ExperimentConfig:
     (shield_sizes, keyboard_backend, tone fallbacks, etc.).
 
     If config.json doesn't exist (first run), all dataclass defaults
-    are used — the experiment will run with sensible starter values.
+    are used. ``instruction_dir`` has no default, so run wizard.py (or set
+    it) before starting a session.
     """
     cfg = ExperimentConfig()
     data = _load_config_json()

@@ -17,6 +17,7 @@ ExperimentConfig        <- in-memory object used by the experiment
 Running `python bootstrap.py --preset NAME` copies the preset's values into `laserTask/config.json`, then prompts you for machine-specific settings (monitor, triggers). Running `python bootstrap.py` without a preset lets you configure everything manually.
 
 Derived fields (`shield_sizes`, `keyboard_backend` when empty, `serial_port` when empty, tone duration fallbacks) are computed at load time and are **not** stored in `config.json`.
+``instruction_dir`` is required: it has no default value, so the task refuses to start until a preset or the wizard has set it to an existing instruction folder (see [presets/INSTRUCTIONS_GUIDE.md](presets/INSTRUCTIONS_GUIDE.md)).
 
 ---
 
@@ -74,6 +75,7 @@ All fields below live in `laserTask/config.json` and equivalently in preset file
 |---|---|---|
 | `key_left` | `"f"` | Counter-clockwise rotation key |
 | `key_right` | `"j"` | Clockwise rotation key |
+| `key_next` | `""` | Only this key advances instruction screens (e.g. `"space"`); `""` = any key |
 | `input_device` | `"keyboard"` | `"keyboard"` or `"response_box"` |
 | `keyboard_backend` | `""` | `""` = auto; `"ptb"`, `"iohub"`, `"event"` |
 | `use_legacy_key_tracking` | `true` | Original key-release behaviour |
@@ -97,6 +99,7 @@ Because every lab has a different EEG/MEG recording setup, configuring triggers 
 | `allow_shield_adjustment` | `false` | Let participant resize shield |
 | `loss_factor` | `0.003` | Per-event monetary delta |
 | `currency_symbol` | `"€"` | Displayed before reward amounts |
+| `initial_reward` | `1.0` | Reward each block starts at (SLEPS: `2.0`) |
 | `flash_feedback` | `false` | Flash bar on neutral events (hits in loss, misses in win) |
 
 ### Audio (MMN)
@@ -110,13 +113,24 @@ Because every lab has a different EEG/MEG recording setup, configuring triggers 
 | `tone_duration_standard` | `0.05` | Standard tone length (s) |
 | `tone_duration_deviant` | `0.1` | Deviant tone length (s) |
 | `tone_volume` | `1.0` | Playback volume (0-1) |
-| `tone_isi_frames` | `24` | Frames between tones (~400 ms at 60 Hz) |
+| `tone_isi_frames` | `24` | Silent frames after a *standard* tone. Onset-to-onset interval (SOA) is fixed at standard-tone frames + `tone_isi_frames` (50 ms + 24 f = 27 f = 450 ms at 60 Hz); in duration MMN the longer deviant therefore shortens the silence after it |
 
 ### Visual
 
 | Field | Default | Description |
 |---|---|---|
 | `show_earth_background` | `true` | Show Earth image behind the game circle |
+| `show_earth_background_practice` | `false` | Force the Earth background during practice even if `show_earth_background` is off |
+| `show_rbar` | `true` | Show the reward bar during main blocks |
+| `neutral_practice` | `false` | Hide the reward bar during practice |
+| `show_source` | `true` | `true`: coloured radioactive source icons; `false`: neutral sources with the reward shown in the centre (SLEPS) |
+| `round_pbar` | `false` | Circular progress ring around the source instead of the bottom progress bar (CogPsy) |
+
+### Instructions
+
+| Field | Default | Description |
+|---|---|---|
+| `instruction_dir` | `""` (required) | Study instruction folder, e.g. `presets/sleps_instructions/`. Each section's `.txt` file in it is one screen; missing or empty files mean no screen. The task refuses to start if it is unset or the folder doesn't exist. File format: [presets/INSTRUCTIONS_GUIDE.md](presets/INSTRUCTIONS_GUIDE.md) |
 
 ### Session Structure
 

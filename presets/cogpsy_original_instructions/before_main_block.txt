@@ -1,0 +1,14 @@
+Block {phase_block_idx} out of {phase_block_total}
+
+New source ahead:
+
+
+
+
+
+
+
+
+!!Please try to keep your eyes focussed on the source throughout the block!!
+
+{start_prompt}

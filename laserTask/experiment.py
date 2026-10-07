@@ -35,6 +35,11 @@ from laserTask.io import (
 from laserTask.reward import BaseRewardTracker, RewardTracker
 from laserTask.stimuli import compute_shield_vertices, create_stimuli
 from laserTask.triggers import TriggerManager
+from laserTask.instructions import (
+    build_instruction_context,
+    show_instruction_section,
+    validate_instructions,
+)
 
 _PACKAGE_DIR = Path(__file__).parent
 _PROJECT_ROOT = _PACKAGE_DIR.parent
@@ -214,6 +219,7 @@ def run_experiment(
         "order":       lambda c: ("order",       ["-- select order --"] + c.orders),
         "framing":     lambda c: ("framing",     ["-- select framing --"] + c.framings),
         "practice_mode": lambda c: ("practice_mode", ["Practice + Main", "Practice Only", "Skip Practice (Main Only)"]),
+        "trigger_mode": lambda c: ("trigger_mode", ["-- select trigger --", c.trigger_mode, "dummy"] if c.trigger_mode != "dummy" else ["-- select trigger --", "dummy", "parallel", "serial", "lsl"]),
     }
 
     _dialog_fields = {}
@@ -247,6 +253,14 @@ def run_experiment(
     )
     if exp_info is None:
         core.quit()
+
+    if "trigger_mode" in exp_info:
+        selected_trig = exp_info["trigger_mode"]
+        if selected_trig in ("dummy", "parallel", "serial", "lsl"):
+            cfg.trigger_mode = selected_trig
+
+    # Fail now (not after the last block) if the instruction folder is unusable.
+    validate_instructions(cfg, exp_info.get("framing", "loss"))
 
     exp_info["date"] = data.getDateStr()
     exp_info["expName"] = exp_name
@@ -331,34 +345,34 @@ def run_experiment(
 
     n_display_blocks = len(practice_conditions) if practice_only else len(main_conditions)
 
-    # Calculate block duration from the first loaded block file if possible
+    # Block durations (minutes) for instruction placeholders, from the first block file
+    frames_per_min = cfg.target_refresh_rate * 60.0
     block_duration_min = 3.0
     practice_block_duration_min = 1.0
     try:
         if practice_only and len(practice_conditions) > 0:
             first_bf = practice_conditions[0]["blockFileName"]
             first_stream = load_stimulus_stream(cfg.sequence_root + first_bf)
-            block_duration_min = len(first_stream) / 3600.0
+            block_duration_min = len(first_stream) / frames_per_min
         elif len(main_conditions) > 0:
             first_bf = main_conditions[0]["blockFileName"]
             first_stream = load_stimulus_stream(cfg.sequence_root + first_bf)
-            block_duration_min = len(first_stream) / 3600.0
+            block_duration_min = len(first_stream) / frames_per_min
 
         if len(practice_conditions) > 0:
             prac_bf = practice_conditions[0]["blockFileName"]
             prac_stream = load_stimulus_stream(cfg.sequence_root + prac_bf)
-            practice_block_duration_min = len(prac_stream) / 3600.0
+            practice_block_duration_min = len(prac_stream) / frames_per_min
     except Exception:
         pass
-
-    S = create_stimuli(
-        win,
-        cfg,
-        wins_cond=wins_condition,
+    # Placeholder values every instruction screen can use.
+    instr_base = dict(
         n_main_blocks=n_display_blocks,
         block_duration_min=block_duration_min,
-        practice_block_duration_min=practice_block_duration_min,
+        practice_duration_min=practice_block_duration_min,
     )
+
+    S = create_stimuli(win, cfg)
     # Reward tracker passed as argument, allowing for easier custom implementations
     if reward_tracker is None:
         reward_tracker = RewardTracker(cfg, wins=wins_condition)
@@ -455,35 +469,44 @@ def run_experiment(
             f"(no conflicts with shortest run lengths)."
         )
 
+    instr_ctx = build_instruction_context(
+        cfg,
+        exp_info=exp_info,
+        **instr_base,
+    )
+
+    def _quit():
+        quit_experiment(win, trig)
+
+    # ------------------------------------------------------------------ #
+    #  START RECORDING SCREEN (LSL only)                                  #
+    #  The outlet now exists; hold here until LabRecorder is actually      #
+    #  recording, so exp_start is captured.                              #
+    # ------------------------------------------------------------------ #
+    if cfg.trigger_mode == "lsl":
+        show_instruction_section(
+            "start_recording",
+            win=win,
+            trig=trig,
+            default_kb=default_kb,
+            the_exp=the_exp,
+            cfg=cfg,
+            context=instr_ctx,
+            quit_callback=_quit,
+        )
+
     trig.send(TRIGGER_CODES["exp_start"])
 
-    # ================================================================== #
-    #  GAME INSTRUCTIONS                                                       #
-    # ================================================================== #
-    wait_for_key(
-        win,
-        trig,
-        [S["title"], S["instr1"]],
-        default_kb,
-        the_exp,
-        label="instr1",
+    show_instruction_section(
+        "pre_experiment",
+        win=win,
+        trig=trig,
+        default_kb=default_kb,
+        the_exp=the_exp,
+        cfg=cfg,
+        context=instr_ctx,
+        quit_callback=_quit,
     )
-    logging.exp("Participant completed instruction screen 1.")
-    the_exp.nextEntry()
-
-    # SCREEN 2 -- Shield-size instructions only if shield adjustments allowed
-    if cfg.allow_shield_adjustment:
-        wait_for_key(
-            win,
-            trig,
-            [S["shield_instr"]],
-            default_kb,
-            the_exp,
-            label="shield_instr",
-        )
-        logging.exp("Participant completed instruction screen 2.")
-        the_exp.nextEntry()
-
     # ================================================================== #
     #  BLOCK LOOP                                                         #
     # ================================================================== #
@@ -504,20 +527,6 @@ def run_experiment(
         phase_n = int(bt.get("phase", PHASE_MAIN))
         phase_block_idx = int(bt.get("phaseBlockIndex", 1))
         phase_block_total = int(bt.get("phaseBlockTotal", cfg.n_blocks))
-
-        if phase_n == PHASE_MAIN and not entered_main_phase:
-            if cfg.enable_practice and cfg.reset_reward_after_practice:
-                reward_tracker.session_total = 0.0
-            wait_for_key(
-                win,
-                trig,
-                [S["main_start"]],
-                default_kb,
-                the_exp,
-                label="main_start",
-            )
-            entered_main_phase = True
-
         block_id = bt["blockID"]
         block_file = bt["blockFileName"]
         source_img = bt["sourceImage"]
@@ -527,6 +536,26 @@ def run_experiment(
         tone_vol = bt.get("toneVolatility", np.nan)
         tone_sto = bt.get("toneStochasticity", np.nan)
 
+        if phase_n == PHASE_MAIN and not entered_main_phase:
+            if cfg.enable_practice and cfg.reset_reward_after_practice:
+                reward_tracker.session_total = 0.0
+            main_entry_ctx = build_instruction_context(
+                cfg,
+                exp_info=exp_info,
+                source_img=source_img,
+                **instr_base,
+            )
+            show_instruction_section(
+                "pre_main",
+                win=win,
+                trig=trig,
+                default_kb=default_kb,
+                the_exp=the_exp,
+                cfg=cfg,
+                context=main_entry_ctx,
+                quit_callback=_quit,
+            )
+            entered_main_phase = True
         if phase_n == PHASE_PRACTICE:
             # QUESTION: Should practice blocks have background audio (MMN tones)?
             # Currently disabled to reduce cognitive load during learning.
@@ -538,39 +567,61 @@ def run_experiment(
         src_path = cfg.image_root + source_img
         earth_path = cfg.image_root + "earth.png"
 
+        # Update block visual stimuli before preview / start screen
+        S["source"].setImage(src_path)
+        if cfg.show_earth_background or (
+            phase_n == PHASE_PRACTICE and cfg.show_earth_background_practice
+        ):
+            S["earth_background"].setImage(earth_path)
         # ============================================================== #
         #  BLOCK START SCREEN                                             #
         # ============================================================== #
         trig.send(TRIGGER_CODES["block_start"])
 
         if phase_n == PHASE_PRACTICE:
-            wait_for_key(
-                win,
-                trig,
-                [S["practice_start_txt"]],
-                default_kb,
-                the_exp,
-                label="practice_start",
+            prac_start_ctx = build_instruction_context(
+                cfg,
+                exp_info=exp_info,
+                phase_block_idx=phase_block_idx,
+                phase_block_total=phase_block_total,
+                source_img=source_img,
+                **instr_base,
+            )
+            show_instruction_section(
+                "pre_practice",
+                win=win,
+                trig=trig,
+                default_kb=default_kb,
+                the_exp=the_exp,
+                cfg=cfg,
+                context=prac_start_ctx,
+                quit_callback=_quit,
             )
         else:
-            label = f"Block {phase_block_idx} out of {phase_block_total}"
-            S["blk_id"].setText(label)
-            S["blk_source_img"].setImage(src_path)
-
-            wait_for_key(
-                win,
-                trig,
-                [S["blk_id"], S["blk_start_txt"], S["blk_source_img"]],
-                default_kb,
-                the_exp,
-                label="blk_start",
+            block_start_ctx = build_instruction_context(
+                cfg,
+                exp_info=exp_info,
+                phase_block_idx=phase_block_idx,
+                phase_block_total=phase_block_total,
+                source_img=source_img,
+                **instr_base,
             )
-
+            show_instruction_section(
+                "before_main_block",
+                win=win,
+                trig=trig,
+                default_kb=default_kb,
+                the_exp=the_exp,
+                cfg=cfg,
+                context=block_start_ctx,
+                quit_callback=_quit,
+            )
         # ============================================================== #
         #  TRIAL  (frame-by-frame)                                        #
         # ============================================================== #
 
         # --- block initialisation -------------------------------------- #
+        reward_tracker.reset_block()
         sds = cfg.shield_sizes
         size_idx = sds.default_index  # reset to middle each block
         sd = sds.size_degrees[size_idx]
@@ -590,20 +641,22 @@ def run_experiment(
         first_hit_occurred = False
         send_resp_triggers = True
 
-        reward_tracker.reset_block()
-        S["source"].setImage(src_path)
-        if cfg.show_earth_background:
-            S["earth_background"].setImage(earth_path)
 
         block_audio_enabled = bool(
             cfg.enable_audio and phase_n == PHASE_MAIN and tone_seq_file
         )
         if block_audio_enabled:
-            audio.load_block_sequence(f"{cfg.sequence_root}{tone_seq_file}")
+            audio.load_block_sequence(
+                f"{cfg.sequence_root}{tone_seq_file}",
+                n_block_frames=n_frames,
+            )
 
         # Progress bar state
-        prog_len = 0.0
-        prog_pos = -0.4
+        if not cfg.round_pbar:
+            prog_len = 0.0
+            prog_pos = -0.4
+        else:
+            prog_deg = 0.0
 
         # --- show trial stimuli ---------------------------------------- #
         trial_stims = [
@@ -613,18 +666,29 @@ def run_experiment(
             S["shield_bg"],
             S["laser"],
             S["laser_long"],
-            S["source"],
-            S["rbar_change"],
-            S["rbar"],
-            S["pbar_edge"],
-            S["pbar"],
-            S["rtxt_top"],
-            S["rtxt_bot"],
-            S["start_lbl"],
-            S["end_lbl"],
         ]
-        if cfg.show_earth_background:
+        if cfg.show_earth_background or (
+            phase_n == PHASE_PRACTICE and cfg.show_earth_background_practice
+        ):
             trial_stims.insert(0, S["earth_background"])
+        show_reward_bar = (phase_n == PHASE_MAIN and cfg.show_rbar) or (
+            phase_n == PHASE_PRACTICE and not cfg.neutral_practice
+        )
+        if show_reward_bar:
+            trial_stims.append(S["rbar"])
+            trial_stims.append(S["rbar_change"])
+            trial_stims.append(S["rtxt_top"])
+            trial_stims.append(S["rtxt_bot"])
+        if not cfg.round_pbar:
+            trial_stims.append(S["pbar_edge"])
+            trial_stims.append(S["pbar"])
+            trial_stims.append(S["start_lbl"])
+            trial_stims.append(S["end_lbl"])
+        else:
+            trial_stims.append(S["progress_circle"])
+        # show_source only picks the image set (radioactive vs. neutral) at
+        # sequence generation; the source itself is always the fixation target.
+        trial_stims.append(S["source"])
         for stim in trial_stims:
             stim.setAutoDraw(True)
 
@@ -857,41 +921,50 @@ def run_experiment(
             S["laser_long"].setOri(laser_rot, log=False)
             S["laser_long"].setOpacity(ll_opacity if (show_laser and first_hit_occurred) else 0.0, log=False)
 
-            S["rbar"].setPos(
-                (cfg.style.reward_bar_x, reward_tracker.bar_position),
-                log=False,
-            )
-            S["rbar"].setSize(
-                (cfg.style.reward_bar_width, reward_tracker.bar_length),
-                log=False,
-            )
-            S["rbar_change"].setPos(
-                (
-                    cfg.style.reward_bar_x,
-                    reward_tracker.BAR_BOTTOM + reward_tracker.bar_length,
-                ),
-                log=False,
-            )
-            S["rbar_change"].setSize(
-                (cfg.style.reward_bar_width, reward_tracker.flash_bar_length),
-                log=False,
-            )
-            S["rbar_change"].setFillColor(reward_tracker.change_color, log=False)
-            S["rbar_change"].setLineColor(reward_tracker.change_color, log=False)
+            if show_reward_bar:
+                S["rbar"].setPos(
+                    (cfg.style.reward_bar_x, reward_tracker.bar_position),
+                    log=False,
+                )
+                S["rbar"].setSize(
+                    (cfg.style.reward_bar_width, reward_tracker.bar_length),
+                    log=False,
+                )
+                S["rbar_change"].setPos(
+                    (
+                        cfg.style.reward_bar_x,
+                        reward_tracker.BAR_BOTTOM + reward_tracker.bar_length,
+                    ),
+                    log=False,
+                )
+                S["rbar_change"].setSize(
+                    (cfg.style.reward_bar_width, reward_tracker.flash_bar_length),
+                    log=False,
+                )
+                S["rbar_change"].setFillColor(reward_tracker.change_color, log=False)
+                S["rbar_change"].setLineColor(reward_tracker.change_color, log=False)
 
-            S["rtxt_top"].setText(reward_tracker.top_text, log=False)
-            S["rtxt_bot"].setText(reward_tracker.bottom_text, log=False)
+                S["rtxt_top"].setText(reward_tracker.top_text, log=False)
+                S["rtxt_bot"].setText(reward_tracker.bottom_text, log=False)
 
-            prog_len += cfg.style.progress_bar_width / n_frames
-            prog_pos += 0.4 / n_frames
-            S["pbar"].setPos(
-                (prog_pos, cfg.style.progress_bar_y),
-                log=False,
-            )
-            S["pbar"].setSize(
-                (prog_len, cfg.style.progress_bar_height),
-                log=False,
-            )
+            if not cfg.round_pbar:
+                prog_len += cfg.style.progress_bar_width / n_frames
+                prog_pos += 0.4 / n_frames
+                S["pbar"].setPos(
+                    (prog_pos, cfg.style.progress_bar_y),
+                    log=False,
+                )
+                S["pbar"].setSize(
+                    (prog_len, cfg.style.progress_bar_height),
+                    log=False,
+                )
+            else:
+                prog_deg = 360.0 * (cur_frame / n_frames)
+                if abs(prog_deg - S["progress_circle"].visibleWedge[1]) >= 0.5:
+                    S["progress_circle"].visibleWedge = (0, prog_deg)
+            if not cfg.show_source and phase_n == PHASE_MAIN:
+                S["reward_center"].setText(reward_tracker.reward_text, log=False)
+                S["reward_center"].setAutoDraw(show_laser)
 
             # ---- audio ------------------------------------------------ #
             tone_trig = audio.update_frame() if block_audio_enabled else 0
@@ -929,7 +1002,8 @@ def run_experiment(
                 win.callOnFlip(trig.send, size_trig_val)
             if do_send:
                 win.callOnFlip(trig.send, trig_val)
-
+            if tone_trig:
+                win.callOnFlip(trig.send, tone_trig)
             cur_frame += 1
             win.flip()   # callbacks fire at buffer swap
 
@@ -938,6 +1012,8 @@ def run_experiment(
             stim.setAutoDraw(False)
         S["laser"].setAutoDraw(False)
         S["laser_long"].setAutoDraw(False)
+        if "reward_center" in S:
+            S["reward_center"].setAutoDraw(False)
 
         reward_tracker.end_block()
         np.savetxt(save_path, save_rows, delimiter=",", fmt="%s")
@@ -949,26 +1025,42 @@ def run_experiment(
         trig.send(TRIGGER_CODES["block_end"])
 
         if phase_n == PHASE_PRACTICE:
-            wait_for_key(
-                win,
-                trig,
-                [S["practice_end_txt"]],
-                default_kb,
-                the_exp,
-                label="practice_end",
+            prac_end_ctx = build_instruction_context(
+                cfg,
+                exp_info=exp_info,
+                phase_block_idx=phase_block_idx,
+                phase_block_total=phase_block_total,
+                **instr_base,
+            )
+            show_instruction_section(
+                "post_practice",
+                win=win,
+                trig=trig,
+                default_kb=default_kb,
+                the_exp=the_exp,
+                cfg=cfg,
+                context=prac_end_ctx,
+                quit_callback=_quit,
             )
         else:
-            S["blk_end_label"].setText("Well done. In this block, you earned:")
-            S["blk_end_reward"].setText(reward_tracker.reward_text)
-
-            wait_for_key(
-                win,
-                trig,
-                [S["blk_end_label"], S["blk_end_reward"], S["pause"], S["continue"]],
-                default_kb,
-                the_exp,
-                min_wait=5.0,
-                label="blk_end",
+            block_end_ctx = build_instruction_context(
+                cfg,
+                exp_info=exp_info,
+                phase_block_idx=phase_block_idx,
+                phase_block_total=phase_block_total,
+                block_reward=reward_tracker.reward_text,
+                total_reward=reward_tracker.session_total_text,
+                **instr_base,
+            )
+            show_instruction_section(
+                "after_main_block",
+                win=win,
+                trig=trig,
+                default_kb=default_kb,
+                the_exp=the_exp,
+                cfg=cfg,
+                context=block_end_ctx,
+                quit_callback=_quit,
             )
         the_exp.nextEntry()
 
@@ -977,35 +1069,37 @@ def run_experiment(
     # ================================================================== #
     trig.send(TRIGGER_CODES["exp_end"])
 
-    S["final_reward"].setText(reward_tracker.session_total_text)
-    S["exp_end"].setAutoDraw(True)
-    S["final_reward"].setAutoDraw(True)
-
-    end_clk = core.Clock()
-    while end_clk.getTime() < 5.0:
-        if default_kb.getKeys(keyList=["escape"]):
-            break
-        win.flip()
-
-    S["exp_end"].setAutoDraw(False)
-    S["final_reward"].setAutoDraw(False)
+    post_exp_ctx = build_instruction_context(
+        cfg,
+        exp_info=exp_info,
+        total_reward=reward_tracker.session_total_text,
+        **instr_base,
+    )
+    show_instruction_section(
+        "post_experiment",
+        win=win,
+        trig=trig,
+        default_kb=default_kb,
+        the_exp=the_exp,
+        cfg=cfg,
+        context=post_exp_ctx,
+        quit_callback=_quit,
+    )
 
     # ------------------------------------------------------------------ #
     #  STOP RECORDING SCREEN                                              #
     #  Keep the LSL stream alive until LabRecorder has been stopped.     #
     # ------------------------------------------------------------------ #
-    S["stop_recording"].setAutoDraw(True)
-    win.flip()
-    default_kb.clearEvents()
-    while True:
-        keys = default_kb.getKeys(keyList=["return"], waitRelease=False)
-        if keys:
-            break
-        if default_kb.getKeys(keyList=["escape"]):
-            break
-        win.flip()
-    S["stop_recording"].setAutoDraw(False)
-    win.flip()
+    show_instruction_section(
+        "stop_recording",
+        win=win,
+        trig=trig,
+        default_kb=default_kb,
+        the_exp=the_exp,
+        cfg=cfg,
+        context=post_exp_ctx,
+        quit_callback=_quit,
+    )
 
     # ------------------------------------------------------------------ #
     #  CLEANUP                                                            #

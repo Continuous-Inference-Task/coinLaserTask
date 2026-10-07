@@ -70,9 +70,10 @@ class RewardTracker(BaseRewardTracker):
         """Initialise reward variables for a new block."""
         if self.wins == 0:
             self.bar_length = 0.5
-            self.total = 1.0
-            self.top_amount = 1.0
-            self.bottom_amount = 0.8
+            init_rew = getattr(self.cfg, "initial_reward", 1.0)
+            self.total = init_rew
+            self.top_amount = init_rew
+            self.bottom_amount = max(0.0, init_rew - 0.2)
             self.change_color = [1, -1, -1]    # red for losses
         else:
             self._bar_length = 0.001

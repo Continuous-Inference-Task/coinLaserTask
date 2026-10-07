@@ -10,6 +10,7 @@
         "target_refresh_rate": 60,
         "key_right": "j",
         "key_left": "f",
+        "key_next": "",
         "input_device": "keyboard",
         "keyboard_backend": "",
         "use_legacy_key_tracking": true,
@@ -26,6 +27,14 @@
         "enable_audio": true,
         "mmn_type": "duration",
         "show_earth_background": true,
+        "show_earth_background_practice": false,
+        "show_rbar": true,
+        "show_source": true,
+        "round_pbar": false,
+        "flash_feedback": false,
+        "neutral_practice": false,
+        "instruction_dir": "presets/peduks_instructions/",
+        "initial_reward": 1.0,
         "tone_freq_standard": 440.0,
         "tone_freq_deviant": 440.0,
         "tone_duration": 0.05,
@@ -67,6 +76,10 @@
         "JUMP_DURATION_MEAN_SEC": 0.3,
         "JUMP_DURATION_MIN_SEC": 0.075,
         "JUMP_DURATION_MAX_SEC": 1.0,
-        "JUMP_VALUE_SET": [-40, -30, -20, 20, 30, 40]
+        "JUMP_VALUE_SET": [-40, -30, -20, 20, 30, 40],
+        "SHOW_SOURCE": true,
+        "EXTENDED_PRACTICE_IMAGES": false,
+        "MMN_TONE_DURATION_MS": 50,
+        "MMN_ISI_DURATION_MS": 400
     }
 }

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-from .mmn_design import mmn_design as _mmn_design_fn, MmnDesign
+from .mmn_design import mmn_design as _mmn_design_fn
 from .generate_block_sequence import generate_block_sequence
 
 
@@ -55,9 +55,6 @@ def generate_mmn_blocks(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Patch design defaults so tone timing comes from our parameters
-    MmnDesign.tone_duration = tone_duration_ms
-    MmnDesign.isi_duration = isi_duration_ms
 
     filenames: List[str] = []
 
@@ -69,7 +66,12 @@ def generate_mmn_blocks(
         mmn_dev_prob = deviant_prob_map.get(noise_label, 0.2)
 
         # Generate the tone sequence
-        design = _mmn_design_fn(mmn_condition, mmn_dev_prob)
+        design = _mmn_design_fn(
+            mmn_condition,
+            mmn_dev_prob,
+            tone_duration=tone_duration_ms,
+            isi_duration=isi_duration_ms,
+        )
         seq, sta_dev = generate_block_sequence(block_duration_min, design, plot=False)
 
         # Write block CSV

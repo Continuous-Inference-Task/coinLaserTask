@@ -425,7 +425,10 @@ def prompt_select(
     try:
         import termios
         import tty
+    except ImportError:  # Windows: no raw terminal
+        return _prompt_select_fallback(text, options, default, descriptions, hint_text)
 
+    try:
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
 
@@ -498,7 +501,7 @@ def prompt_select(
         sys.stdout.flush()
         return options[cursor]
 
-    except (ImportError, termios.error, AttributeError):
+    except (termios.error, AttributeError, OSError):
         pass
 
     # ── fallback: simple numbered prompt ──
@@ -587,13 +590,19 @@ def prompt_multiselect(
     """
     if defaults is None:
         defaults = []
+    extra_defaults = [d for d in defaults if d not in options]
+    if extra_defaults:
+        options = list(options) + extra_defaults
     selected: List[str] = [o for o in options if o in defaults]
 
     # ── Unix raw-terminal path ──
     try:
         import termios
         import tty
+    except ImportError:  # Windows: no raw terminal
+        return _prompt_multiselect_fallback(text, options, defaults, hint_text, action_keys)
 
+    try:
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
         cursor = 0
@@ -699,7 +708,7 @@ def prompt_multiselect(
         sys.stdout.flush()
         return sorted(selected, key=lambda o: options.index(o)), None
 
-    except (ImportError, termios.error, AttributeError):
+    except (termios.error, AttributeError, OSError):
         pass
 
     # ── fallback: simple numbered prompt ──
@@ -779,15 +788,18 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "screen_index": c.screen_index,
         "monitor_name": c.monitor_name,
         "target_refresh_rate": c.target_refresh_rate,
+        "input_device": c.input_device,
         "key_right": c.key_right,
         "key_left": c.key_left,
-        "input_device": c.input_device,
+        "key_next": c.key_next,
         "rotation_speed": c.rotation_speed,
         "circle_radius": c.circle_radius,
         "allow_shield_adjustment": c.allow_shield_adjustment,
         "fixed_shield_degrees": c.fixed_shield_degrees,
         "loss_factor": c.loss_factor,
         "currency_symbol": c.currency_symbol,
+        "neutral_practice": c.neutral_practice,
+        "initial_reward": c.initial_reward,
         "trigger_mode": c.trigger_mode,
         "serial_port": c.serial_port,
         "serial_baud_rate": c.serial_baud_rate,
@@ -795,6 +807,12 @@ def _read_laser_task_config() -> Dict[str, Any]:
         "enable_audio": c.enable_audio,
         "mmn_type": c.mmn_type,
         "show_earth_background": c.show_earth_background,
+        "show_earth_background_practice": c.show_earth_background_practice,
+        "show_rbar": c.show_rbar,
+        "show_source": c.show_source,
+        "round_pbar": c.round_pbar,
+        "flash_feedback": c.flash_feedback,
+        "instruction_dir": c.instruction_dir,
         "tone_freq_standard": c.tone_freq_standard,
         "tone_freq_deviant": c.tone_freq_deviant,
         "tone_duration": c.tone_duration,
@@ -861,6 +879,10 @@ def _read_stimgen_config() -> Dict[str, Any]:
         "MAIN_NOISE_MODE": _cfg.MAIN_NOISE_MODE,
         "MAIN_N_SESSIONS": _cfg.MAIN_N_SESSIONS,
         "MAIN_BLOCK_DURATION_MIN": _cfg.MAIN_BLOCK_DURATION_MIN,
+        "SHOW_SOURCE": getattr(_cfg, "SHOW_SOURCE", True),
+        "EXTENDED_PRACTICE_IMAGES": getattr(_cfg, "EXTENDED_PRACTICE_IMAGES", False),
+        "MMN_TONE_DURATION_MS": getattr(_cfg, "MMN_TONE_DURATION_MS", 50),
+        "MMN_ISI_DURATION_MS": getattr(_cfg, "MMN_ISI_DURATION_MS", 400),
     }
 
 
@@ -897,11 +919,17 @@ def _write_laser_task_config(cfg: Dict[str, Any]) -> None:
     cfg_path.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _write_stimgen_config(updates: Dict[str, Any]) -> None:
+def _write_stimgen_config(updates: Dict[str, Any], merge: bool = False) -> None:
     """Write stimgen config to stimgen/laser/config.json."""
     cfg_path = PROJECT_ROOT / "stimgen" / "laser" / "config.json"
 
     data: Dict[str, Any] = {}
+    if merge and cfg_path.is_file():
+        try:
+            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+
     for key, value in updates.items():
         if key.startswith("_"):
             continue
@@ -924,7 +952,7 @@ def _save_stimgen_from_cfg(cfg: Dict[str, Any]) -> bool:
     if not stimgen_updates:
         return True
     try:
-        _write_stimgen_config(stimgen_updates)
+        _write_stimgen_config(stimgen_updates, merge=True)
         success("stimgen/laser/config.json updated")
         return True
     except Exception as exc:
@@ -1047,10 +1075,15 @@ SECTION_FIELDS: Dict[str, Dict[str, Any]] = {
         "fields": {"dialog_fields", "visits", "framings"},
         "label": "Startup dialog",
     },
+    "9": {
+        "namespace": "experiment",
+        "fields": {"instruction_dir"},
+        "label": "Instruction folder",
+    },
 }
 
 # Sections that are "study design" (selected by default when saving a preset).
-STUDY_DESIGN_SECTIONS = {"4", "5", "6", "7", "8"}
+STUDY_DESIGN_SECTIONS = {"4", "5", "6", "7", "8", "9"}
 # Sections that are "machine-local" (off by default when saving a preset).
 MACHINE_LOCAL_SECTIONS = {"1", "2", "3"}
 
@@ -1186,7 +1219,15 @@ def _show_preset_summary(preset: Dict[str, Any]) -> None:
 def _validate_preset(preset: Dict[str, Any]) -> List[str]:
     """Validate a preset before applying. Returns a list of error messages."""
     errors = []
+    exp = preset.get("experiment", {})
     sti = preset.get("stimgen", {})
+
+    from laserTask.config import ExperimentConfig
+    import dataclasses
+    valid_fields = {f.name for f in dataclasses.fields(ExperimentConfig)}
+    for key in exp:
+        if key not in valid_fields:
+            errors.append(f"experiment.{key} is not a recognised ExperimentConfig field")
 
     # Check that referenced volatility/noise names exist in their presets
     vol_presets = sti.get("VOLATILITY_PRESETS", sti.get("volatility_presets", {}))
@@ -1220,13 +1261,32 @@ def _apply_preset(preset: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]
     exp = preset.get("experiment", {})
     sti = preset.get("stimgen", {})
 
+    # Study-specific flags default reset so sequential preset switching doesn't leak
+    study_defaults = {
+        "instruction_dir": "",
+        "show_source": True,
+        "round_pbar": False,
+        "show_rbar": True,
+        "neutral_practice": False,
+        "show_earth_background_practice": False,
+        "flash_feedback": False,
+        "initial_reward": 1.0,
+        "key_next": "",
+    }
+    for k, default_val in study_defaults.items():
+        if k not in exp:
+            cfg[k] = default_val
+
     for key, val in exp.items():
         cfg[key] = val
 
-    stimgen_updates = cfg.get("_stimgen_updates", {})
-    for key, val in sti.items():
-        stimgen_updates[key] = val
+    # Stimgen updates: start fresh from preset's stimgen plus study defaults
+    stimgen_updates = dict(sti)
+    for k, def_val in (("SHOW_SOURCE", True), ("EXTENDED_PRACTICE_IMAGES", False)):
+        stimgen_updates.setdefault(k, def_val)
     cfg["_stimgen_updates"] = stimgen_updates
+    if "MMN_TONE_DURATION_MS" not in sti or "MMN_ISI_DURATION_MS" not in sti:
+        _stage_mmn_updates(cfg)
 
     n_sessions = stimgen_updates.get("MAIN_N_SESSIONS", stimgen_updates.get("main_n_sessions"))
     if isinstance(n_sessions, int):
@@ -1239,7 +1299,7 @@ def _apply_preset(preset: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]
 def _apply_preset_to_disk(preset: Dict[str, Any]) -> None:
     """Write preset values directly to config.json files."""
     _write_laser_task_config(preset.get("experiment", {}))
-    _write_stimgen_config(preset.get("stimgen", {}))
+    _write_stimgen_config(preset.get("stimgen", {}), merge=False)
     _write_preset_origin(preset.get("name", "unknown"))
 
 
@@ -1377,8 +1437,10 @@ def _save_current_as_preset(cfg: Dict[str, Any]) -> None:
     n_sti = len(sti)
     success(f"Exhaustive preset saved to {filepath}")
     info(f"  {n_exp} experiment fields + {n_sti} stimgen fields")
-    info(f"  Commit to git to share:  git add presets/{filename} && git commit")
-
+    commit_paths = f"presets/{filename}"
+    if exp.get("instruction_dir"):
+        commit_paths += f" {exp['instruction_dir']}"
+    info(f"  Commit to git to share:  git add {commit_paths} && git commit")
 
 def configure_machine(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Machine Setup")
@@ -1570,6 +1632,156 @@ def configure_design(cfg: Dict[str, Any]) -> Dict[str, Any]:
         )
     else:
         cfg["reset_reward_after_practice"] = False
+
+    return cfg
+
+
+def _instruction_folders() -> List[str]:
+    """Study instruction folders in presets/ (``presets/<study>_instructions/``)."""
+    return sorted(
+        f"presets/{p.name}/"
+        for p in PRESET_DIR.iterdir()
+        if p.is_dir() and p.name.endswith("_instructions")
+    )
+
+
+# Short hints shown next to the shipped study folders in the wizard.
+_INSTRUCTION_FOLDER_TIPS: Dict[str, str] = {
+    "presets/peduks_instructions/": "PEDUKS study text - the standard full set; recommended starting point",
+    "presets/cogpsy_rob_instructions/": "CogPsy adapted for Rob (PEACE) - round progress circle, MEG rules, source colour legend",
+    "presets/cogpsy_original_instructions/": "Original CogPsy study - bottom progress bar, MEG rules, source colour legend",
+    "presets/sleps_instructions/": "SLEPS study text - separate loss/win intros, EEG fixation, neutral sources",
+}
+
+
+def _instruction_folder_sections(dir_str: str) -> List[str]:
+    """Sections with a non-empty file (plain or framing variant) in *dir_str*."""
+    from laserTask.instructions import SECTIONS
+
+    p = PROJECT_ROOT / dir_str
+    return [
+        s for s in SECTIONS
+        if any(
+            f.is_file() and f.read_text(encoding="utf-8").strip()
+            for f in (p / f"{s}{suffix}.txt" for suffix in ("", "_loss", "_win"))
+        )
+    ]
+
+
+def _instruction_folder_description(dir_str: str) -> str:
+    from laserTask.instructions import SECTIONS
+
+    count = f"{len(_instruction_folder_sections(dir_str))} of {len(SECTIONS)} screens have text"
+    tip = _INSTRUCTION_FOLDER_TIPS.get(dir_str)
+    return f"{tip}\n{count}" if tip else count
+
+
+def _create_instruction_folder(folders: List[str]) -> str:
+    """Create a new study folder (copy of an existing one, or empty files); return its path."""
+    import shutil
+    from laserTask.instructions import SECTIONS
+
+    peduks = "presets/peduks_instructions/"
+    fresh = "start fresh (empty files)"
+    src = prompt_select(
+        "Start the new folder from",
+        folders + [fresh],
+        default=peduks if peduks in folders else fresh,
+        descriptions={
+            **{f: _instruction_folder_description(f) for f in folders},
+            fresh: (
+                "One empty .txt file per screen - write your own text from scratch.\n"
+                "Empty files show nothing until you fill them. start_recording.txt and\n"
+                "stop_recording.txt are pre-filled with the LabRecorder operator prompts\n"
+                "(needed for LSL)."
+            ),
+        },
+        hint_text="Copy an existing study's text, or start from empty files",
+    )
+    while True:
+        study = prompt(
+            "Name of the new study",
+            hint_text="Creates presets/<name>_instructions/ (letters, digits, '_' or '-')",
+        ).strip().lower()
+        if not re.fullmatch(r"[a-z0-9_-]+", study):
+            warn("Use only letters, digits, '_' or '-'.")
+            continue
+        dest = f"presets/{study}_instructions/"
+        if (PROJECT_ROOT / dest).exists():
+            warn(f"{dest} already exists - pick another name or select it directly.")
+            continue
+        break
+
+    dest_path = PROJECT_ROOT / dest
+    if src == fresh:
+        dest_path.mkdir(parents=True)
+        prefill = {"start_recording", "stop_recording"}
+        for s in SECTIONS:
+            text = ""
+            if s in prefill:
+                src_file = PROJECT_ROOT / peduks / f"{s}.txt"
+                if src_file.is_file():
+                    text = src_file.read_text(encoding="utf-8")
+            (dest_path / f"{s}.txt").write_text(text, encoding="utf-8")
+        success(f"Created {dest} with {len(SECTIONS)} empty screen files")
+        info("  Fill the files you want to show; empty or deleted files are skipped.")
+    else:
+        shutil.copytree(PROJECT_ROOT / src, dest_path)
+        success(f"Copied {src} -> {dest}")
+    return dest
+
+
+def _pick_instruction_folder(cfg: Dict[str, Any]) -> str:
+    """Prompt for an instruction folder (existing study or new); return its path.
+
+    Shared by section 9 and Quick Setup - the single place the folder is chosen.
+    """
+    prev_dir = cfg.get("instruction_dir", "")
+    folders = _instruction_folders()
+    if prev_dir and prev_dir not in folders:
+        folders.append(prev_dir)
+    new_option = "+ new study folder"
+    choice = prompt_select(
+        "Instruction folder",
+        folders + [new_option],
+        default=prev_dir if prev_dir in folders else "presets/peduks_instructions/",
+        descriptions={
+            **{f: _instruction_folder_description(f) for f in folders},
+            new_option: "Copy an existing study's folder or start from empty files,\nthen edit its .txt files",
+        },
+        hint_text="Each .txt file in the folder is one instruction screen; no file = no screen",
+    )
+    return _create_instruction_folder(_instruction_folders()) if choice == new_option else choice
+
+
+def _report_instruction_folder(instruction_dir: str, trigger_mode: str) -> None:
+    """Print which screens the folder shows and warn about LSL operator screens."""
+    from laserTask.instructions import SECTIONS
+
+    present = _instruction_folder_sections(instruction_dir)
+    print()
+    info(f"Instruction folder: {instruction_dir}")
+    info("  Shown:     " + (", ".join(present) or "none"))
+    absent = [s for s in SECTIONS if s not in present]
+    if absent:
+        info("  No screen (missing or empty file): " + ", ".join(absent))
+    for s in ("start_recording", "stop_recording"):
+        if s not in present:
+            warn(f"{s}.txt is missing or empty: sessions with LSL triggers will refuse to start.")
+
+
+def configure_instructions(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    section("Instructions & Slide Text")
+
+    cfg["instruction_dir"] = _pick_instruction_folder(cfg)
+    _report_instruction_folder(cfg["instruction_dir"], cfg.get("trigger_mode", "dummy"))
+
+    if prompt_yn("Preview instructions in terminal now?", False):
+        from laserTask.instructions import preview_instructions
+        print()
+        preview_instructions(instruction_dir=cfg["instruction_dir"], terminal=True)
+        print()
+
     return cfg
 
 
@@ -1609,7 +1821,7 @@ def configure_dialog(cfg: Dict[str, Any]) -> Dict[str, Any]:
     section("Startup Dialog Options")
 
     # ── which fields appear (interactive multiselect) ──
-    available_fields = ["participant", "visit", "session", "order", "framing", "practice_mode"]
+    available_fields = ["participant", "visit", "session", "order", "framing", "practice_mode", "trigger_mode"]
     current_fields = cfg.get("dialog_fields", ["participant", "visit", "session", "order", "framing"])
 
     cfg["dialog_fields"], action = prompt_multiselect(
@@ -1699,6 +1911,22 @@ def configure_shield_reward(cfg: Dict[str, Any]) -> Dict[str, Any]:
         hint_text="Observations shorter than this are merged into the previous one (Peduks Study: 6 frames)",
     )
     return cfg
+
+
+def _stage_mmn_updates(cfg: Dict[str, Any], fps: Optional[int] = None) -> None:
+    """Stage MMN tone duration and ISI in cfg['_stimgen_updates']."""
+    if fps is None:
+        fps = cfg.get("target_refresh_rate", 60)
+    stimgen_updates = cfg.get("_stimgen_updates", {})
+    std_dur_sec = cfg.get("tone_duration_standard") or cfg.get("tone_duration", 0.05)
+    std_dur_ms = int(round(std_dur_sec * 1000))
+    std_frames = int(round(std_dur_sec * fps))
+    soa_frames = std_frames + cfg.get("tone_isi_frames", 24)
+    soa_ms = int(round(soa_frames / fps * 1000))
+    isi_ms = soa_ms - std_dur_ms
+    stimgen_updates["MMN_TONE_DURATION_MS"] = std_dur_ms
+    stimgen_updates["MMN_ISI_DURATION_MS"] = isi_ms
+    cfg["_stimgen_updates"] = stimgen_updates
 
 
 def configure_audio(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -1825,6 +2053,7 @@ def configure_audio(cfg: Dict[str, Any]) -> Dict[str, Any]:
     info(f"  → Effective ISI: ~{cfg['tone_isi_frames'] / fps * 1000:.0f} ms at {fps} Hz")
     if is_duration:
         info("  → Duration MMN: ISI is automatically shortened for the longer deviant tone to keep SOA constant.")
+    _stage_mmn_updates(cfg, fps)
 
     cfg["tone_volume"] = prompt_float(
         "Tone volume",
@@ -2234,6 +2463,8 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     info("Each session = one full balanced set of all block type combinations.")
 
     stimgen = _read_stimgen_config()
+    if "_stimgen_updates" in cfg and isinstance(cfg["_stimgen_updates"], dict):
+        stimgen.update(cfg["_stimgen_updates"])
     sr = stimgen.get("SAMPLE_RATE", 60)
 
     def frames_live_formatter(val_str: str) -> str:
@@ -2462,7 +2693,9 @@ def configure_stimgen(cfg: Dict[str, Any]) -> Dict[str, Any]:
     cfg["sessions"] = derived_sessions
     cfg["orders"] = derived_orders
 
-    cfg["_stimgen_updates"] = stimgen
+    updates = cfg.get("_stimgen_updates", {})
+    updates.update(stimgen)
+    cfg["_stimgen_updates"] = updates
     return cfg
 
 
@@ -2566,7 +2799,7 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
     print()
     info(_c(C["bold"], "Startup Dialog Options"))
 
-    available_fields = ["participant", "visit", "session", "order", "framing", "practice_mode"]
+    available_fields = ["participant", "visit", "session", "order", "framing", "practice_mode", "trigger_mode"]
     current_fields = cfg.get("dialog_fields", ["participant", "visit", "session", "order", "framing"])
 
     cfg["dialog_fields"], action = prompt_multiselect(
@@ -2739,6 +2972,7 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
         if is_duration_quick:
             info("  → Duration MMN: ISI is automatically shortened for the longer deviant to keep SOA constant.")
 
+        _stage_mmn_updates(cfg, fps)
         cfg["tone_volume"] = prompt_float(
             "Tone volume",
             cfg.get("tone_volume", 1.0),
@@ -2746,6 +2980,12 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
         )
     else:
         info("Audio disabled — no tones will play.")
+
+    # ── 9.: Instruction folder (required; the task refuses to start without one) ──
+    print()
+    info(_c(C["bold"], "Instructions"))
+    cfg["instruction_dir"] = _pick_instruction_folder(cfg)
+    _report_instruction_folder(cfg["instruction_dir"], cfg.get("trigger_mode", "dummy"))
 
     # ── 8.: All sequence generation parameters ──
     cfg = configure_stimgen(cfg)
@@ -2908,6 +3148,7 @@ def show_summary(cfg: Dict[str, Any], section_id: Optional[str] = None) -> None:
         ("Sessions", f"{', '.join(cfg.get('sessions', ['?']))}", "8"),
         ("Orders", f"{', '.join(cfg.get('orders', ['?']))}", "8"),
         ("Framings", f"{', '.join(cfg.get('framings', ['?']))}", "8"),
+        ("Instructions", cfg.get("instruction_dir") or "(not set)", "9"),
     ]
 
     # Filter by section_id if provided
@@ -3050,6 +3291,7 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
             ("Practice", "Yes" if cfg.get("enable_practice") else "No"),
             ("Shield", shield),
             ("Currency", f"{cfg.get('currency_symbol', '?')} (loss factor {cfg.get('loss_factor', '?')})"),
+            ("Instructions", cfg.get("instruction_dir") or "(not set!)"),
             ("Combinations", f"{' × '.join(str(len(x)) for x in [visits, sessions, orders, framings])} = {n_combos}"),
         ]
     else:
@@ -3080,8 +3322,9 @@ def _preflight_check(cfg: Dict[str, Any]) -> List[str]:
 
     Returns a list of warning strings.  Empty list = everything OK.
     Checks:
-      1. pkl metadata vs. stimgen config (block types, noise, durations, counts)
-      2. min_laser_duration_frames vs. actual shortest laser runs in block CSVs
+      1. instruction_dir set and existing; with LSL also start/stop_recording.txt
+      2. pkl metadata vs. stimgen config (block types, noise, durations, counts)
+      3. min_laser_duration_frames vs. actual shortest laser runs in block CSVs
     """
     import csv
     import pickle
@@ -3091,7 +3334,32 @@ def _preflight_check(cfg: Dict[str, Any]) -> List[str]:
     seq_dir = PROJECT_ROOT / "sequences"
     stimgen = _read_stimgen_config()
 
-    # ── 1. Check if sequences exist at all ──
+    # ── 1. Instruction folder (the task refuses to start without one) ──
+    instr_dir = (cfg.get("instruction_dir") or "").strip()
+    if not instr_dir:
+        warnings.append(
+            "instruction_dir is not set - the experiment will refuse to start. "
+            "Pick an instruction folder (Advanced §9 or Quick Setup)."
+        )
+    else:
+        instr_path = Path(instr_dir)
+        if not instr_path.is_absolute():
+            instr_path = PROJECT_ROOT / instr_path
+        if not instr_path.is_dir():
+            warnings.append(
+                f"instruction_dir '{instr_dir}' does not exist - the experiment will refuse to start."
+            )
+        elif cfg.get("trigger_mode") == "lsl":
+            present = _instruction_folder_sections(instr_dir)
+            for screen in ("start_recording", "stop_recording"):
+                if screen not in present:
+                    f = instr_path / f"{screen}.txt"
+                    warnings.append(
+                        f"{f} is missing or empty - required with LSL triggers; "
+                        "the experiment will refuse to start."
+                    )
+
+    # ── 2. Check if sequences exist at all ──
     if not seq_dir.is_dir():
         warnings.append("No sequences/ directory found — generate sequences first.")
         return warnings
@@ -3422,6 +3690,7 @@ SECTION_REGISTRY: List[Tuple[str, str, Callable[[Dict[str, Any]], Dict[str, Any]
     ("6", "Auditory MMN (type, frequencies, durations, ISI)", configure_audio),
     ("7", "Sequence generation (noise levels, volatility, durations)", configure_stimgen),
     ("8", "Startup dialog (which fields, dropdown options, framing)", configure_dialog),
+    ("9", "Instructions & slide text (study folder, preview)", configure_instructions),
 ]
 
 SECTION_MAP: Dict[str, Tuple[str, Callable[[Dict[str, Any]], Dict[str, Any]]]] = {
@@ -3479,85 +3748,97 @@ def _run_advanced_menu(cfg: Dict[str, Any]) -> bool:
         print()
         choice = input(_c(C["magenta"], "  ❯ ")).strip().lower()
 
-        if choice == "b":
-            return dirty
-        elif choice == "a":
-            try:
-                _quick_setup()
-            except GoBack:
-                info("All-sections cancelled — returning to menu.")
-        elif choice == "s":
-            show_summary(cfg)
-        elif choice == "p":
-            _save_current_as_preset(cfg)
-        elif choice == "r":
-            show_slim_summary(cfg, "run")
-            if dirty:
-                warn("Unsaved config changes — run anyway?")
-                if not prompt_yn("Proceed without saving?", True):
+        try:
+            if choice == "b":
+                return dirty
+            elif choice == "a":
+                try:
+                    _quick_setup()
+                except GoBack:
+                    info("All-sections cancelled — returning to menu.")
+            elif choice == "s":
+                show_summary(cfg)
+            elif choice == "p":
+                _save_current_as_preset(cfg)
+            elif choice == "r":
+                show_slim_summary(cfg, "run")
+                if dirty:
+                    warn("Unsaved config changes — run anyway?")
+                    if not prompt_yn("Proceed without saving?", True):
+                        continue
+                # Pre-flight: compare generated sequences against current config
+                pf_warnings = _preflight_check(cfg)
+                if not _show_preflight_warnings(cfg, pf_warnings):
                     continue
-            # Pre-flight: compare generated sequences against current config
-            pf_warnings = _preflight_check(cfg)
-            if not _show_preflight_warnings(cfg, pf_warnings):
-                continue
-            print()
-            info("Launching experiment …")
-            print()
-            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-            return dirty
-        elif choice == "v":
-            print()
-            info("Running sequence verification …")
-            from stimgen.laser.verify_sequences import run_verification
-            n = run_verification(show=True)  # try to display plots
-            print()
-            if n > 0:
-                seq_dir = PROJECT_ROOT / "sequences"
-                pngs = sorted(p for p in seq_dir.glob("*_VERIFY_*.png") if not p.name.endswith("_summary"))
-                success(f"{n} session(s) verified.")
-                info("Verification plots saved to:")
-                for p in pngs:
-                    info(f"  {p}")
-        elif choice == "g":
-            show_slim_summary(cfg, "generate")
-            if dirty:
-                warn("You have unsaved config changes.")
-                if prompt_yn("Save before generating?", True):
+                print()
+                info("Launching experiment …")
+                print()
+                subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                return dirty
+            elif choice == "v":
+                print()
+                info("Running sequence verification …")
+                from stimgen.laser.verify_sequences import run_verification
+                n = run_verification(show=True)  # try to display plots
+                print()
+                if n > 0:
+                    seq_dir = PROJECT_ROOT / "sequences"
+                    pngs = sorted(p for p in seq_dir.glob("*_VERIFY_*.png") if not p.name.endswith("_summary"))
+                    success(f"{n} session(s) verified.")
+                    info("Verification plots saved to:")
+                    for p in pngs:
+                        info(f"  {p}")
+            elif choice == "g":
+                show_slim_summary(cfg, "generate")
+                if dirty:
+                    warn("You have unsaved config changes.")
+                    if prompt_yn("Save before generating?", True):
+                        _write_laser_task_config(cfg)
+                        if _save_stimgen_from_cfg(cfg.copy()):
+                            dirty = False
+                if prompt_yn("Generate sequences now?", True):
+                    if run_sequence_generation(cfg.copy()):
+                        print()
+                        if prompt_yn("Start the experiment?", True):
+                            pf_warnings = _preflight_check(cfg)
+                            if _show_preflight_warnings(cfg, pf_warnings):
+                                print()
+                                info("Launching experiment …")
+                                print()
+                                subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                                return dirty
+            elif choice == "o":
+                from offline import prepare_offline_package
+                prepare_offline_package(cfg)
+            elif choice in SECTION_MAP:
+                import copy
+
+                desc, fn = SECTION_MAP[choice]
+                # 'back' anywhere in the section (incl. the save prompt) discards its inputs.
+                original, snapshot = cfg, copy.deepcopy(cfg)
+                try:
+                    cfg = fn(cfg)
+                    show_summary(cfg, choice)
+                    save = prompt_yn("Save this section?", True)
+                except GoBack:
+                    original.clear()
+                    original.update(snapshot)
+                    cfg = original
+                    info("Section changes discarded — returned to section menu.")
+                    continue
+                dirty = True
+                if save:
                     _write_laser_task_config(cfg)
-                    if _save_stimgen_from_cfg(cfg.copy()):
-                        dirty = False
-            if prompt_yn("Generate sequences now?", True):
-                if run_sequence_generation(cfg.copy()):
-                    print()
-                    if prompt_yn("Start the experiment?", True):
-                        pf_warnings = _preflight_check(cfg)
-                        if _show_preflight_warnings(cfg, pf_warnings):
-                            print()
-                            info("Launching experiment …")
-                            print()
-                            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-                            return dirty
-        elif choice == "o":
-            from offline import prepare_offline_package
-            prepare_offline_package(cfg)
-        elif choice in SECTION_MAP:
-            desc, fn = SECTION_MAP[choice]
-            try:
-                cfg = fn(cfg)
-            except GoBack:
-                info("Returned to section menu.")
-                continue
-            dirty = True
-            show_summary(cfg, choice)
-            if prompt_yn("Save this section?", True):
-                _write_laser_task_config(cfg)
-                _save_stimgen_from_cfg(cfg.copy())
-                dirty = False
-                success(f"Section {choice} saved.")
+                    _save_stimgen_from_cfg(cfg.copy())
+                    dirty = False
+                    success(f"Section {choice} saved.")
+                else:
+                    info("Change held in memory.")
             else:
-                info("Change held in memory.")
-        else:
-            warn(f"Unknown option: '{choice}'")
+                warn(f"Unknown option: '{choice}'")
+        except GoBack:
+            info("Returned to section menu.")
+            continue
 
         if choice not in ("b", "q"):
             print()
@@ -3614,6 +3895,7 @@ def _run_preset_setup(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "6": configure_audio,
         "7": configure_stimgen,
         "8": configure_dialog,
+        "9": configure_instructions,
     }
 
     for sid in open_ids:
@@ -3661,107 +3943,114 @@ def run_section_menu(cfg: Dict[str, Any]) -> None:
         print()
         choice = input(_c(C["magenta"], "  ❯ ")).strip().lower()
 
-        if choice == "q":
-            if dirty:
-                if prompt_yn("Save changes before quitting?", True):
+        try:
+            if choice == "q":
+                if dirty:
+                    if prompt_yn("Save changes before quitting?", True):
+                        _write_laser_task_config(cfg)
+                        _save_stimgen_from_cfg(cfg.copy())
+                        success("Config saved.")
+                break
+            elif choice in ("1", "2"):
+                import copy
+
+                # 'back' anywhere in the setup (incl. the save prompt) discards its inputs.
+                original, snapshot = cfg, copy.deepcopy(cfg)
+                try:
+                    if choice == "1":
+                        cfg = _run_preset_setup(cfg)
+                    else:
+                        cfg = configure_quick(cfg)
+                        show_summary(cfg)
+                    save = prompt_yn("Save configuration?" if choice == "1" else "Save quick settings?", True)
+                except GoBack:
+                    original.clear()
+                    original.update(snapshot)
+                    cfg = original
+                    info("Setup cancelled — changes discarded.")
+                    continue
+                dirty = True
+                if choice == "2":
+                    active_preset_name = None
+                if not save:
+                    info("Changes held in memory — use 's' to review, 'q' to save & quit.")
+                elif choice == "1":
                     _write_laser_task_config(cfg)
                     _save_stimgen_from_cfg(cfg.copy())
-                    success("Config saved.")
-            break
-        elif choice == "1":
-            try:
-                cfg = _run_preset_setup(cfg)
-            except GoBack:
-                info("Preset setup cancelled.")
-                continue
-            dirty = True
-            if prompt_yn("Save configuration?", True):
-                _write_laser_task_config(cfg)
-                _save_stimgen_from_cfg(cfg.copy())
-                dirty = False
-                if cfg.get("_stimgen_updates") or not _sequences_exist():
-                    if prompt_yn("Generate sequences now?", True):
-                        if run_sequence_generation(cfg.copy()):
-                            success("Sequences generated.")
-                success("Configuration saved.")
-            else:
-                info("Changes held in memory — use 's' to review, 'q' to save & quit.")
-        elif choice == "2":
-            try:
-                cfg = configure_quick(cfg)
-            except GoBack:
-                info("Quick setup cancelled.")
-                continue
-            dirty = True
-            active_preset_name = None
-            show_summary(cfg)
-            if prompt_yn("Save quick settings?", True):
-                _write_laser_task_config(cfg)
-                _save_stimgen_from_cfg(cfg.copy())
-                dirty = False
-                success("Quick settings saved.")
-            else:
-                info("Changes held in memory — use 's' to review, 'q' to save & quit.")
-        elif choice == "3":
-            if _run_advanced_menu(cfg):
-                dirty = True
-                active_preset_name = None
-        elif choice == "s":
-            show_summary(cfg)
-        elif choice == "p":
-            _save_current_as_preset(cfg)
-        elif choice == "r":
-            show_slim_summary(cfg, "run")
-            if dirty:
-                warn("Unsaved config changes — run anyway?")
-                if not prompt_yn("Proceed without saving?", True):
-                    continue
-            # Pre-flight: compare generated sequences against current config
-            pf_warnings = _preflight_check(cfg)
-            if not _show_preflight_warnings(cfg, pf_warnings):
-                continue
-            print()
-            info("Launching experiment …")
-            print()
-            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-            return
-        elif choice == "o":
-            from offline import prepare_offline_package
-            prepare_offline_package(cfg)
-        elif choice == "v":
-            print()
-            info("Running sequence verification …")
-            from stimgen.laser.verify_sequences import run_verification
-            n = run_verification(show=True)  # try to display plots
-            print()
-            if n > 0:
-                seq_dir = PROJECT_ROOT / "sequences"
-                pngs = sorted(p for p in seq_dir.glob("*_VERIFY_*.png") if not p.name.endswith("_summary"))
-                success(f"{n} session(s) verified.")
-                info("Verification plots saved to:")
-                for p in pngs:
-                    info(f"  {p}")
-        elif choice == "g":
-            show_slim_summary(cfg, "generate")
-            if dirty:
-                warn("You have unsaved config changes.")
-                if prompt_yn("Save before generating?", True):
+                    dirty = False
+                    if cfg.get("_stimgen_updates") or not _sequences_exist():
+                        if prompt_yn("Generate sequences now?", True):
+                            if run_sequence_generation(cfg.copy()):
+                                success("Sequences generated.")
+                    success("Configuration saved.")
+                else:
                     _write_laser_task_config(cfg)
-                    if _save_stimgen_from_cfg(cfg.copy()):
-                        dirty = False
-            if prompt_yn("Generate sequences now?", True):
-                if run_sequence_generation(cfg.copy()):
-                    print()
-                    if prompt_yn("Start the experiment?", True):
-                        pf_warnings = _preflight_check(cfg)
-                        if _show_preflight_warnings(cfg, pf_warnings):
-                            print()
-                            info("Launching experiment …")
-                            print()
-                            subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
-                            return
-        else:
-            warn(f"Unknown option: '{choice}'")
+                    _save_stimgen_from_cfg(cfg.copy())
+                    dirty = False
+                    success("Quick settings saved.")
+            elif choice == "3":
+                if _run_advanced_menu(cfg):
+                    dirty = True
+                    active_preset_name = None
+            elif choice == "s":
+                show_summary(cfg)
+            elif choice == "p":
+                _save_current_as_preset(cfg)
+            elif choice == "r":
+                show_slim_summary(cfg, "run")
+                if dirty:
+                    warn("Unsaved config changes — run anyway?")
+                    if not prompt_yn("Proceed without saving?", True):
+                        continue
+                # Pre-flight: compare generated sequences against current config
+                pf_warnings = _preflight_check(cfg)
+                if not _show_preflight_warnings(cfg, pf_warnings):
+                    continue
+                print()
+                info("Launching experiment …")
+                print()
+                subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                return
+            elif choice == "o":
+                from offline import prepare_offline_package
+                prepare_offline_package(cfg)
+            elif choice == "v":
+                print()
+                info("Running sequence verification …")
+                from stimgen.laser.verify_sequences import run_verification
+                n = run_verification(show=True)  # try to display plots
+                print()
+                if n > 0:
+                    seq_dir = PROJECT_ROOT / "sequences"
+                    pngs = sorted(p for p in seq_dir.glob("*_VERIFY_*.png") if not p.name.endswith("_summary"))
+                    success(f"{n} session(s) verified.")
+                    info("Verification plots saved to:")
+                    for p in pngs:
+                        info(f"  {p}")
+            elif choice == "g":
+                show_slim_summary(cfg, "generate")
+                if dirty:
+                    warn("You have unsaved config changes.")
+                    if prompt_yn("Save before generating?", True):
+                        _write_laser_task_config(cfg)
+                        if _save_stimgen_from_cfg(cfg.copy()):
+                            dirty = False
+                if prompt_yn("Generate sequences now?", True):
+                    if run_sequence_generation(cfg.copy()):
+                        print()
+                        if prompt_yn("Start the experiment?", True):
+                            pf_warnings = _preflight_check(cfg)
+                            if _show_preflight_warnings(cfg, pf_warnings):
+                                print()
+                                info("Launching experiment …")
+                                print()
+                                subprocess.run([sys.executable, str(PROJECT_ROOT / "main.py")])
+                                return
+            else:
+                warn(f"Unknown option: '{choice}'")
+        except GoBack:
+            info("Returned to menu.")
+            continue
 
         if choice != "q":
             print()
@@ -3881,6 +4170,7 @@ def main() -> None:
         cfg = configure_audio(cfg)
         cfg = configure_dialog(cfg)
         cfg = configure_stimgen(cfg)
+        cfg = configure_instructions(cfg)
         show_summary(cfg)
         if prompt_yn("Save configuration and proceed?", True):
             _write_laser_task_config(cfg)

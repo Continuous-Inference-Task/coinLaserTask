@@ -47,15 +47,19 @@ def build_practice_session_path(cfg: ExperimentConfig, info: dict) -> str:
 
 
 def build_save_path(cfg: ExperimentConfig, info: dict) -> str:
-    """Construct the path for the custom output CSV."""
+    """Construct the path for the custom output CSV.
+
+    ``type-practice`` for practice-only sessions, ``type-main`` otherwise.
+    """
     visit = info.get("visit") or (cfg.visits[0] if cfg.visits else "1")
     session = info.get("session") or (cfg.sessions[0] if cfg.sessions else "1")
+    kind = "practice" if info.get("practice_mode") == "Practice Only" else "main"
     return (
         f"{cfg.data_root}"
         f"sub-{info['participant']}"
         f"_vis-{visit}"
         f"_ses-{session}"
-        f"_task-laser_type-main.csv"
+        f"_task-laser_type-{kind}.csv"
     )
 
 

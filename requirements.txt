@@ -12,6 +12,7 @@ psychtoolbox
 PyQt6
 pylsl
 sounddevice
+psychopy-visionscience
 
 # ============================================================
 # Scientific computing

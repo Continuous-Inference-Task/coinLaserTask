@@ -1,0 +1,7 @@
+Well done. You completed this task.
+Your total reward for saving the world is:
+
+{total_reward}
+
+
+Thank you!

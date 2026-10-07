@@ -66,8 +66,8 @@ class AudioStimulationManager:
     ):
         self.enabled = config.enable_audio
         self.cfg = config
+        self.win = win
         self.trigger_mgr = trigger_manager
-
         if not self.enabled:
             logging.exp("Audio stimulation DISABLED")
             return
@@ -78,7 +78,7 @@ class AudioStimulationManager:
                 config.tone_freq_standard,
                 secs=config.tone_duration_standard,
                 stereo=True, hamming=True,
-                syncToWin=True, name="tone_standard",
+                syncToWin=self.win, name="tone_standard",
             )
             self.tone_standard.setVolume(config.tone_volume)
 
@@ -86,7 +86,7 @@ class AudioStimulationManager:
                 config.tone_freq_deviant,
                 secs=config.tone_duration_deviant,
                 stereo=True, hamming=True,
-                syncToWin=True, name="tone_deviant",
+                syncToWin=self.win, name="tone_deviant",
             )
             self.tone_deviant.setVolume(config.tone_volume)
         else:
@@ -105,55 +105,90 @@ class AudioStimulationManager:
 
     # --------------------------------------------------------------------- #
     def _reset(self):
-        self.is_playing = False
-        self.is_waiting = False
         self.current_trigger = 0
         self.frame_ctr = 0
         self.tone_idx = 0
         self._cur_id: Optional[str] = None
         self._next_onset = 0
+        self._block_frames: Optional[int] = None
         self.sequence: List[str] = []
         self.onsets: List[int] = []
         self.isis: List[int] = []
+    # --------------------------------------------------------------------- #
+    def _get_soa_frames(self) -> int:
+        """Return the stimulus-onset asynchrony (SOA) in frames.
+
+        SOA is the duration from one tone onset to the next tone onset.
+        For frequency MMN, SOA = tone_frames + tone_isi_frames.
+        For duration MMN, SOA = standard_tone_frames + base_isi_frames,
+        which remains constant across standard and deviant tones.
+        """
+        fps = self.cfg.target_refresh_rate
+        std_dur = (
+            self.cfg.tone_duration_standard
+            if self.cfg.tone_duration_standard > 0
+            else self.cfg.tone_duration
+        )
+        std_frames = int(round(std_dur * fps))
+        return std_frames + self.cfg.tone_isi_frames
 
     # --------------------------------------------------------------------- #
-    def load_block_sequence(self, filepath: str) -> None:
+    def load_block_sequence(
+        self, filepath: str, n_block_frames: Optional[int] = None
+    ) -> None:
         """Read tone-identity sequence (``"1"`` / ``"2"``) from *filepath*."""
         if not self.enabled:
             return
         self._reset()
+        raw_tokens: List[str] = []
         with open(filepath, "r") as fh:
-            self.sequence = [
-                line.strip().split(",")[0].strip() for line in fh
-            ]
-        self.tone_idx = 1  # index 0 is typically a header / skip
-        self._cur_id = self.sequence[self.tone_idx]
-
-    # --------------------------------------------------------------------- #
-    def _get_isi_frames(self) -> int:
-        """Return ISI in frames for the upcoming tone.
-
-        For frequency MMN the ISI is fixed regardless of tone type.
-        For duration MMN the ISI is shortened for the longer (deviant)
-        tone so that the stimulus-onset asynchrony (SOA) stays constant.
-        """
-        if self.cfg.mmn_type == "duration":
-            base_isi = self.cfg.tone_isi_frames
-            std_dur = (
-                self.cfg.tone_duration_standard
-                if self.cfg.tone_duration_standard > 0
-                else self.cfg.tone_duration
+            for line in fh:
+                token = line.strip().split(",")[0].strip()
+                if token:
+                    raw_tokens.append(token)
+        # Skip header row if present (e.g. "toneType" or any non-numeric label)
+        if raw_tokens and raw_tokens[0] not in {"1", "2"}:
+            raw_tokens = raw_tokens[1:]
+        # Filter for valid tone identities; warn if any invalid entry found
+        valid_sequence: List[str] = []
+        for t in raw_tokens:
+            if t in {"1", "2"}:
+                valid_sequence.append(t)
+            else:
+                logging.warning(
+                    f"Audio sequence: ignoring invalid tone identifier '{t}' in {filepath}"
+                )
+        self.sequence = valid_sequence
+        self.tone_idx = 0
+        if len(self.sequence) > 0:
+            self._cur_id = self.sequence[self.tone_idx]
+            soa = self._get_soa_frames()
+            n_tones = len(self.sequence)
+            max_std_frames = int(
+                round(
+                    max(
+                        self.cfg.tone_duration_standard,
+                        self.cfg.tone_duration_deviant,
+                    )
+                    * self.cfg.target_refresh_rate
+                )
             )
-            dev_dur = (
-                self.cfg.tone_duration_deviant
-                if self.cfg.tone_duration_deviant > 0
-                else self.cfg.tone_duration
-            )
-            extra_frames = int(round((dev_dur - std_dur) * self.cfg.target_refresh_rate))
-            if self._cur_id == "2":  # deviant
-                return max(1, base_isi - extra_frames)
-            return base_isi
-        return self.cfg.tone_isi_frames
+            total_span = (n_tones - 1) * soa + max_std_frames
+            if n_block_frames is None:
+                n_block_frames = 14400
+                logging.warning(
+                    "Audio schedule: block length unknown, assuming 14400 frames."
+                )
+            self._block_frames = n_block_frames
+            if n_block_frames - total_span < 1:
+                logging.error(
+                    f"Audio schedule cannot fit {n_tones} tones (needs {total_span} frames, "
+                    f"block has {n_block_frames}). Clamping first onset to frame 1; last tone(s) will be truncated."
+                )
+                latest_first_onset = 1
+            else:
+                latest_first_onset = max(1, n_block_frames - total_span)
+            self._next_onset = min(self.cfg.tone_isi_frames, latest_first_onset)
 
     # --------------------------------------------------------------------- #
     def update_frame(self) -> int:
@@ -164,62 +199,39 @@ class AudioStimulationManager:
         int
             Trigger code emitted this frame (0 if none).
         """
-        if not self.enabled:
-            return 0
-        if not self.sequence or self._cur_id is None:
+        if not self.enabled or not self.sequence or self._cur_id is None:
             return 0
 
         self.frame_ctr += 1
         self.current_trigger = 0
 
-        if not self.is_playing and not self.is_waiting:
-            isi = self._get_isi_frames()
-            self.isis.append(isi)
-            self._next_onset = self.frame_ctr + isi
-            self.is_waiting = True
-
-        elif not self.is_playing and self.is_waiting:
-            if self.frame_ctr >= self._next_onset:
-                self._play()
-
-        elif self.is_playing:
-            self._check_done()
+        # When the scheduled onset frame is reached, play and trigger the next tone
+        if self._cur_id is not None and self.frame_ctr >= self._next_onset:
+            self._play()
+            soa = self._get_soa_frames()
+            self.isis.append(soa)
+            self._next_onset = self.frame_ctr + soa
 
         return self.current_trigger
 
     # --------------------------------------------------------------------- #
     def _play(self):
-        if self._cur_id not in {"1", "2"}:
-            self.is_playing = False
-            self.is_waiting = False
-            return
-        if self._cur_id == "1":
-            self.tone_standard.play()
-            self.current_trigger = TRIGGER_CODES["tone_standard"]
-        elif self._cur_id == "2":
-            self.tone_deviant.play()
-            self.current_trigger = TRIGGER_CODES["tone_deviant"]
+        tone = self.tone_standard if self._cur_id == "1" else self.tone_deviant
+        if sys.platform == "win32":
+            tone.play()  # sound.Sound(syncToWin=win) defers onset to the next flip
+        else:
+            self.win.callOnFlip(tone.play)
+        self.current_trigger = (
+            TRIGGER_CODES["tone_standard"]
+            if self._cur_id == "1"
+            else TRIGGER_CODES["tone_deviant"]
+        )
         self.onsets.append(self.frame_ctr)
-        self.trigger_mgr.send(self.current_trigger)
-        self.is_playing = True
-        self.is_waiting = False
-
-    def _check_done(self):
-        self.current_trigger = 0
-        tone = (
-            self.tone_standard if self._cur_id == "1" else self.tone_deviant
-        )
-        end_frame = (
-            self._next_onset
-            + tone.secs * self.cfg.target_refresh_rate
-            + 3
-        )
-        if self.frame_ctr >= end_frame:
-            tone.stop()
-            self.is_playing = False
-            self.tone_idx += 1
-            if self.tone_idx < len(self.sequence):
-                self._cur_id = self.sequence[self.tone_idx]
+        self.tone_idx += 1
+        if self.tone_idx < len(self.sequence):
+            self._cur_id = self.sequence[self.tone_idx]
+        else:
+            self._cur_id = None
 
     # --------------------------------------------------------------------- #
     def stop(self):
@@ -228,5 +240,3 @@ class AudioStimulationManager:
             return
         self.tone_standard.stop()
         self.tone_deviant.stop()
-        self.is_playing = False
-        self.is_waiting = False
