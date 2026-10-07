@@ -20,6 +20,6 @@ The sources are marked with different colours:
 
 The difference between these sources is how often they change their emission angle over time, and therefore how often you will have to adjust your shield position. Some of the sources will change their main angle of attack more often, whereas others will remain stable for longer.
 
-This game has {n_main_blocks} blocks. You will encounter each source once.
+This game has {n_main_blocks} {blocks_word}. You will encounter each source once.
 
 {continue_prompt}

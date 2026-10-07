@@ -145,7 +145,6 @@ def wait_for_key(
     exp_handler: data.ExperimentHandler,
     min_wait: float = 0.0,
     label: str = "screen",
-    allowed_keys: Optional[List[str]] = None,
 ) -> Optional[str]:
     """Show *stimuli* and block until the participant presses any key.
 
@@ -172,10 +171,7 @@ def wait_for_key(
 
     while True:
         if clk.getTime() >= min_wait:
-            keys = default_kb.getKeys(
-                keyList=allowed_keys,
-                waitRelease=False,
-            )
+            keys = default_kb.getKeys(waitRelease=False)
             if keys:
                 key_name = keys[-1].name
                 exp_handler.addData(f"{label}.key", key_name)
@@ -473,8 +469,6 @@ def run_experiment(
             f"(no conflicts with shortest run lengths)."
         )
 
-    trig.send(TRIGGER_CODES["exp_start"])
-
     instr_ctx = build_instruction_context(
         cfg,
         exp_info=exp_info,
@@ -483,6 +477,25 @@ def run_experiment(
 
     def _quit():
         quit_experiment(win, trig)
+
+    # ------------------------------------------------------------------ #
+    #  START RECORDING SCREEN (LSL only)                                  #
+    #  The outlet now exists; hold here until LabRecorder is actually      #
+    #  recording, so exp_start is captured.                              #
+    # ------------------------------------------------------------------ #
+    if cfg.trigger_mode == "lsl":
+        show_instruction_section(
+            "start_recording",
+            win=win,
+            trig=trig,
+            default_kb=default_kb,
+            the_exp=the_exp,
+            cfg=cfg,
+            context=instr_ctx,
+            quit_callback=_quit,
+        )
+
+    trig.send(TRIGGER_CODES["exp_start"])
 
     show_instruction_section(
         "pre_experiment",

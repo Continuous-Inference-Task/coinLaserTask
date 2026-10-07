@@ -11,6 +11,7 @@ a section is shown only if its .txt file exists and is non-empty.
   - before_main_block.txt
   - after_main_block.txt
   - post_experiment.txt
+  - start_recording.txt       (required when trigger_mode is 'lsl')
   - stop_recording.txt        (required when trigger_mode is 'lsl')
 
 Usage:
@@ -20,15 +21,19 @@ Usage:
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
     from PIL import Image
+except Exception:
+    Image = None
+try:
     from psychopy import core, visual, monitors
     from psychopy.hardware import keyboard
 except Exception:
-    Image = core = visual = monitors = keyboard = None
+    core = visual = monitors = keyboard = None
 
 from laserTask.config import ExperimentConfig
 
@@ -137,6 +142,7 @@ def build_instruction_context(
         "initial_reward": f"{cfg.initial_reward:.2f}",
         "loss_factor": f"{cfg.loss_factor:.3f}",
         "n_main_blocks": kwargs.get("n_main_blocks", cfg.n_blocks),
+        "blocks_word": "block" if kwargs.get("n_main_blocks", cfg.n_blocks) == 1 else "blocks",
         "block_duration_min": block_dur_str,
         "practice_duration_min": prac_dur_str,
         "phase_block_idx": kwargs.get("phase_block_idx", 1),
@@ -174,6 +180,7 @@ SECTIONS: Tuple[str, ...] = (
     "before_main_block",
     "after_main_block",
     "post_experiment",
+    "start_recording",
     "stop_recording",
 )
 
@@ -210,25 +217,66 @@ def read_section_text(section: str, cfg: ExperimentConfig, framing: str) -> str:
 def validate_instructions(cfg: ExperimentConfig, framing: str) -> None:
     """Fail before the session starts if the instruction folder is unusable.
 
-    With LSL triggers the stop_recording screen is what keeps the stream
-    alive until LabRecorder is stopped, so it must not be missing.
+    With LSL triggers the start_recording/stop_recording screens are what
+    keep the stream alive until LabRecorder has been started/stopped, so
+    they must not be missing. Every existing section is additionally
+    rendered once with a realistic context, strictly: unknown placeholders,
+    format errors, and ``@image:`` paths that don't exist raise here, so
+    they can never appear on a participant's screen. The runtime render in
+    ``load_section_pages`` stays tolerant.
     """
     folder = resolve_instruction_dir(cfg)
-    if cfg.trigger_mode == "lsl" and not read_section_text("stop_recording", cfg, framing):
-        raise FileNotFoundError(
-            f"{folder / 'stop_recording.txt'} is missing or empty. With LSL triggers this screen "
-            "holds the stream open until LabRecorder is stopped; add the file before running."
-        )
+
+    required = ["start_recording", "stop_recording"] if cfg.trigger_mode == "lsl" else []
+    for section in required:
+        if not read_section_text(section, cfg, framing):
+            raise FileNotFoundError(
+                f"{folder / f'{section}.txt'} is missing or empty. With LSL triggers this screen "
+                "holds the stream open until LabRecorder has been started/stopped; add the file before running."
+            )
+
+    ctx = build_instruction_context(
+        cfg,
+        exp_info={"framing": framing},
+        block_duration_min=3.0,
+        practice_duration_min=1.0,
+        source_img="radioactive1.png",
+    )
+    for section in SECTIONS:
+        if not read_section_text(section, cfg, framing):
+            continue
+        pages = load_section_pages(section, cfg, ctx, strict=True)
+        for i, (text, images) in enumerate(pages, 1):
+            for img in images:
+                p = Path(img)
+                if not p.is_absolute():
+                    p = _PROJECT_ROOT / p
+                if not p.is_file():
+                    raise FileNotFoundError(
+                        f"{section}.txt (page {i}): @image: path '{img}' does not exist "
+                        f"(looked for {p})."
+                    )
+
 
 
 # ------------------------------------------------------------------ #
 #  Slide Loader: Splits on '---' and parses '@image:'                #
 # ------------------------------------------------------------------ #
 
-def load_section_pages(section: str, cfg: ExperimentConfig, context: Dict[str, Any]) -> List[Tuple[str, List[str]]]:
+def load_section_pages(
+    section: str,
+    cfg: ExperimentConfig,
+    context: Dict[str, Any],
+    strict: bool = False,
+) -> List[Tuple[str, List[str]]]:
     """Load (text, [images]) slides for a section. Pages split on '---'.
 
     Returns [] when the section has no file (or an empty one): no screen.
+
+    With ``strict=False`` (runtime) rendering is tolerant: an unknown
+    placeholder stays visible as ``{typo}`` and a format error falls back
+    to the raw text. With ``strict=True`` (validate_instructions) the
+    same conditions raise, so broken text can never reach a participant.
     """
     raw = read_section_text(section, cfg, context.get("framing", "loss"))
     if not raw:
@@ -254,12 +302,30 @@ def load_section_pages(section: str, cfg: ExperimentConfig, context: Dict[str, A
         ):
             images.append(context["source_image_path"])
 
-        try:
-            class _Safe(dict):
-                def __missing__(self, k): return f"{{{k}}}"
-            body = "\n".join(text_lines).strip().format_map(_Safe(context))
-        except Exception:
-            body = "\n".join(text_lines).strip()
+        joined = "\n".join(text_lines).strip()
+        if strict:
+            class _Strict(dict):
+                def __missing__(self, k): raise KeyError(k)
+
+            try:
+                body = joined.format_map(_Strict(context))
+            except KeyError as exc:
+                raise ValueError(
+                    f"{section}.txt (page {len(slides) + 1}): unknown placeholder {exc}. "
+                    "See presets/INSTRUCTIONS_GUIDE.md for the available placeholders."
+                ) from exc
+            except (IndexError, ValueError) as exc:
+                raise ValueError(
+                    f"{section}.txt (page {len(slides) + 1}): cannot render text ({exc!r}). "
+                    "Check the placeholders against presets/INSTRUCTIONS_GUIDE.md."
+                ) from exc
+        else:
+            try:
+                class _Safe(dict):
+                    def __missing__(self, k): return f"{{{k}}}"
+                body = joined.format_map(_Safe(context))
+            except Exception:
+                body = joined
         if body or images:
             slides.append((body, images))
 
@@ -293,7 +359,9 @@ def show_instruction_section(
 
         if section == "post_experiment":
             _show_timed(win, stims, default_kb, duration=5.0, quit_callback=quit_callback)
-        elif section == "stop_recording":
+        elif section in ("start_recording", "stop_recording"):
+            # Experimenter screens: RETURN advances (never the participant's
+            # key_next), and the keypress ends its own data row.
             _show_wait(win, stims, default_kb, the_exp, label, ["return"], 0.0, quit_callback)
             if the_exp is not None:
                 the_exp.nextEntry()
@@ -427,6 +495,28 @@ def _show_timed(win: Any, stims: List[Any], kb: Any, duration: float = 5.0, quit
 #  CLI Preview Tool                                                  #
 # ------------------------------------------------------------------ #
 
+def _preset_main_block_count(stimgen: Dict[str, Any]) -> int:
+    """Number of main blocks in one session, computed like wizard.py:
+    block types (volatility × noise) × MAIN_N_SESSIONS."""
+    sys.path.insert(0, str(_PROJECT_ROOT / "stimgen" / "laser"))
+    try:
+        from stimgen.laser.design_vola_stocha import get_block_count
+        n_types = get_block_count(
+            stimgen.get("MAIN_VOLATILITY", ["stable", "volatile"]),
+            stimgen.get("MAIN_NOISE", ["noisy"]),
+            stimgen.get("MAIN_NOISE_MODE", "counterbalanced"),
+            volatility_presets=stimgen.get("VOLATILITY_PRESETS", {}),
+            noise_presets=stimgen.get("NOISE_PRESETS", {}),
+        )
+    except Exception:
+        n_types = 0
+    n_sessions = stimgen.get("MAIN_N_SESSIONS", 1)
+    try:
+        return int(n_types) * int(n_sessions)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _load_preset(cfg: ExperimentConfig, preset: str) -> Dict[str, Any]:
     """Apply a preset's experiment settings to *cfg*; return its stimgen dict."""
     preset_path = Path(preset)
@@ -438,10 +528,6 @@ def _load_preset(cfg: ExperimentConfig, preset: str) -> Dict[str, Any]:
     for k, v in exp_dict.items():
         if k not in skip_keys and hasattr(cfg, k):
             setattr(cfg, k, tuple(v) if k == "window_size" else v)
-    if "n_blocks" in exp_dict:
-        cfg.n_blocks = exp_dict["n_blocks"]
-    elif isinstance(exp_dict.get("orders"), list):
-        cfg.n_blocks = len(exp_dict["orders"])
     cfg.__post_init__()
     return preset_data.get("stimgen", {})
 
@@ -467,6 +553,12 @@ def preview_instructions(
         stimgen = {
             "MAIN_BLOCK_DURATION_MIN": _stimgen_cfg.MAIN_BLOCK_DURATION_MIN,
             "PRACTICE_BLOCK_DURATION_MIN": _stimgen_cfg.PRACTICE_BLOCK_DURATION_MIN,
+            "MAIN_VOLATILITY": _stimgen_cfg.MAIN_VOLATILITY,
+            "MAIN_NOISE": _stimgen_cfg.MAIN_NOISE,
+            "MAIN_NOISE_MODE": _stimgen_cfg.MAIN_NOISE_MODE,
+            "MAIN_N_SESSIONS": _stimgen_cfg.MAIN_N_SESSIONS,
+            "VOLATILITY_PRESETS": _stimgen_cfg.VOLATILITY_PRESETS,
+            "NOISE_PRESETS": _stimgen_cfg.NOISE_PRESETS,
         }
     if instruction_dir:
         cfg.instruction_dir = instruction_dir
@@ -475,12 +567,19 @@ def preview_instructions(
     if screen is not None:
         cfg.screen_index = screen
 
+    # Main block count for {n_main_blocks}: block types × sessions, computed
+    # from the (preset's or active) stimgen design exactly like wizard.py;
+    # 0 means the design could not be read and the raw number is shown.
+    n_main = _preset_main_block_count(stimgen)
+
     durations = dict(
-        block_duration_min=float(stimgen["MAIN_BLOCK_DURATION_MIN"]),
-        practice_duration_min=float(stimgen["PRACTICE_BLOCK_DURATION_MIN"]),
+        block_duration_min=float(stimgen.get("MAIN_BLOCK_DURATION_MIN", 4)),
+        practice_duration_min=float(stimgen.get("PRACTICE_BLOCK_DURATION_MIN", 1)),
     )
     title = folder.name
     framings_to_show = [framing] if framing else ["loss", "win"]
+    # Actual advance behaviour on instruction screens (see show_instruction_section).
+    advance_hint = f"Press '{cfg.key_next.upper()}' to advance" if cfg.key_next else "Press any key to advance"
 
     # Standard PsychoPy window creation (matches laserTask/experiment.py)
     try:
@@ -491,7 +590,6 @@ def preview_instructions(
             try:
                 import wx
             except Exception:
-                import sys
                 from unittest.mock import MagicMock
                 sys.modules.setdefault("wx", MagicMock())
             from psychopy import core as _c, visual as _v, monitors as _m
@@ -525,7 +623,7 @@ def preview_instructions(
             ctx = build_instruction_context(
                 cfg,
                 exp_info={"framing": frm},
-                n_main_blocks=cfg.n_blocks,
+                n_main_blocks=n_main,
                 source_img="radioactive1.png",
                 **durations,
             )
@@ -536,7 +634,7 @@ def preview_instructions(
                     frm_label = f" ({frm})" if len(framings_to_show) > 1 else ""
                     banner.setText(
                         f"[{title} PREVIEW{frm_label}: {sec} "
-                        f"(Page {i}/{len(pages)}) | Press SPACE to advance, ESC to quit]"
+                        f"(Page {i}/{len(pages)}) | {advance_hint}, ESC to quit]"
                     )
                     for s in stims:
                         s.setAutoDraw(True)
@@ -570,7 +668,7 @@ def preview_instructions(
             ctx = build_instruction_context(
                 cfg,
                 exp_info={"framing": frm},
-                n_main_blocks=cfg.n_blocks,
+                n_main_blocks=n_main,
                 source_img="radioactive1.png",
                 **durations,
             )

@@ -17,6 +17,7 @@ ExperimentConfig        <- in-memory object used by the experiment
 Running `python bootstrap.py --preset NAME` copies the preset's values into `laserTask/config.json`, then prompts you for machine-specific settings (monitor, triggers). Running `python bootstrap.py` without a preset lets you configure everything manually.
 
 Derived fields (`shield_sizes`, `keyboard_backend` when empty, `serial_port` when empty, tone duration fallbacks) are computed at load time and are **not** stored in `config.json`.
+``instruction_dir`` is required: it has no default value, so the task refuses to start until a preset or the wizard has set it to an existing instruction folder (see [presets/INSTRUCTIONS_GUIDE.md](presets/INSTRUCTIONS_GUIDE.md)).
 
 ---
 

@@ -43,7 +43,7 @@
         "tone_isi_frames": 24,
         "enable_practice": true,
         "reset_reward_after_practice": true,
-        "instruction_dir": "presets/cogpsy_instructions/",
+        "instruction_dir": "presets/cogpsy_original_instructions/",
         "min_laser_duration_frames": 6,
         "visits": ["1"],
         "sessions": ["1"],

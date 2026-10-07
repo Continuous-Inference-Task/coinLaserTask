@@ -1648,7 +1648,8 @@ def _instruction_folders() -> List[str]:
 # Short hints shown next to the shipped study folders in the wizard.
 _INSTRUCTION_FOLDER_TIPS: Dict[str, str] = {
     "presets/peduks_instructions/": "PEDUKS study text - the standard full set; recommended starting point",
-    "presets/cogpsy_instructions/": "CogPsy (PEACE) study text - 3-page intro, MEG rules, source colour legend",
+    "presets/cogpsy_rob_instructions/": "CogPsy adapted for Rob (PEACE) - round progress circle, MEG rules, source colour legend",
+    "presets/cogpsy_original_instructions/": "Original CogPsy study - bottom progress bar, MEG rules, source colour legend",
     "presets/sleps_instructions/": "SLEPS study text - separate loss/win intros, EEG fixation, neutral sources",
 }
 
@@ -1690,8 +1691,9 @@ def _create_instruction_folder(folders: List[str]) -> str:
             **{f: _instruction_folder_description(f) for f in folders},
             fresh: (
                 "One empty .txt file per screen - write your own text from scratch.\n"
-                "Empty files show nothing until you fill them. stop_recording.txt is\n"
-                "pre-filled with the LabRecorder operator prompt (needed for LSL)."
+                "Empty files show nothing until you fill them. start_recording.txt and\n"
+                "stop_recording.txt are pre-filled with the LabRecorder operator prompts\n"
+                "(needed for LSL)."
             ),
         },
         hint_text="Copy an existing study's text, or start from empty files",
@@ -1713,9 +1715,13 @@ def _create_instruction_folder(folders: List[str]) -> str:
     dest_path = PROJECT_ROOT / dest
     if src == fresh:
         dest_path.mkdir(parents=True)
-        stop_src = PROJECT_ROOT / peduks / "stop_recording.txt"
+        prefill = {"start_recording", "stop_recording"}
         for s in SECTIONS:
-            text = stop_src.read_text(encoding="utf-8") if s == "stop_recording" and stop_src.is_file() else ""
+            text = ""
+            if s in prefill:
+                src_file = PROJECT_ROOT / peduks / f"{s}.txt"
+                if src_file.is_file():
+                    text = src_file.read_text(encoding="utf-8")
             (dest_path / f"{s}.txt").write_text(text, encoding="utf-8")
         success(f"Created {dest} with {len(SECTIONS)} empty screen files")
         info("  Fill the files you want to show; empty or deleted files are skipped.")
@@ -1725,11 +1731,11 @@ def _create_instruction_folder(folders: List[str]) -> str:
     return dest
 
 
-def configure_instructions(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    from laserTask.instructions import SECTIONS
+def _pick_instruction_folder(cfg: Dict[str, Any]) -> str:
+    """Prompt for an instruction folder (existing study or new); return its path.
 
-    section("Instructions & Slide Text")
-
+    Shared by section 9 and Quick Setup - the single place the folder is chosen.
+    """
     prev_dir = cfg.get("instruction_dir", "")
     folders = _instruction_folders()
     if prev_dir and prev_dir not in folders:
@@ -1745,8 +1751,12 @@ def configure_instructions(cfg: Dict[str, Any]) -> Dict[str, Any]:
         },
         hint_text="Each .txt file in the folder is one instruction screen; no file = no screen",
     )
-    instruction_dir = _create_instruction_folder(_instruction_folders()) if choice == new_option else choice
-    cfg["instruction_dir"] = instruction_dir
+    return _create_instruction_folder(_instruction_folders()) if choice == new_option else choice
+
+
+def _report_instruction_folder(instruction_dir: str, trigger_mode: str) -> None:
+    """Print which screens the folder shows and warn about LSL operator screens."""
+    from laserTask.instructions import SECTIONS
 
     present = _instruction_folder_sections(instruction_dir)
     print()
@@ -1755,13 +1765,21 @@ def configure_instructions(cfg: Dict[str, Any]) -> Dict[str, Any]:
     absent = [s for s in SECTIONS if s not in present]
     if absent:
         info("  No screen (missing or empty file): " + ", ".join(absent))
-    if "stop_recording" not in present:
-        warn("stop_recording.txt is missing or empty: sessions with LSL triggers will refuse to start.")
+    for s in ("start_recording", "stop_recording"):
+        if s not in present:
+            warn(f"{s}.txt is missing or empty: sessions with LSL triggers will refuse to start.")
+
+
+def configure_instructions(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    section("Instructions & Slide Text")
+
+    cfg["instruction_dir"] = _pick_instruction_folder(cfg)
+    _report_instruction_folder(cfg["instruction_dir"], cfg.get("trigger_mode", "dummy"))
 
     if prompt_yn("Preview instructions in terminal now?", False):
         from laserTask.instructions import preview_instructions
         print()
-        preview_instructions(instruction_dir=instruction_dir, terminal=True)
+        preview_instructions(instruction_dir=cfg["instruction_dir"], terminal=True)
         print()
 
     return cfg
@@ -2963,6 +2981,12 @@ def configure_quick(cfg: Dict[str, Any]) -> Dict[str, Any]:
     else:
         info("Audio disabled — no tones will play.")
 
+    # ── 9.: Instruction folder (required; the task refuses to start without one) ──
+    print()
+    info(_c(C["bold"], "Instructions"))
+    cfg["instruction_dir"] = _pick_instruction_folder(cfg)
+    _report_instruction_folder(cfg["instruction_dir"], cfg.get("trigger_mode", "dummy"))
+
     # ── 8.: All sequence generation parameters ──
     cfg = configure_stimgen(cfg)
 
@@ -3267,6 +3291,7 @@ def show_slim_summary(cfg: Dict[str, Any], mode: str = "generate") -> None:
             ("Practice", "Yes" if cfg.get("enable_practice") else "No"),
             ("Shield", shield),
             ("Currency", f"{cfg.get('currency_symbol', '?')} (loss factor {cfg.get('loss_factor', '?')})"),
+            ("Instructions", cfg.get("instruction_dir") or "(not set!)"),
             ("Combinations", f"{' × '.join(str(len(x)) for x in [visits, sessions, orders, framings])} = {n_combos}"),
         ]
     else:
@@ -3297,8 +3322,9 @@ def _preflight_check(cfg: Dict[str, Any]) -> List[str]:
 
     Returns a list of warning strings.  Empty list = everything OK.
     Checks:
-      1. pkl metadata vs. stimgen config (block types, noise, durations, counts)
-      2. min_laser_duration_frames vs. actual shortest laser runs in block CSVs
+      1. instruction_dir set and existing; with LSL also start/stop_recording.txt
+      2. pkl metadata vs. stimgen config (block types, noise, durations, counts)
+      3. min_laser_duration_frames vs. actual shortest laser runs in block CSVs
     """
     import csv
     import pickle
@@ -3308,7 +3334,32 @@ def _preflight_check(cfg: Dict[str, Any]) -> List[str]:
     seq_dir = PROJECT_ROOT / "sequences"
     stimgen = _read_stimgen_config()
 
-    # ── 1. Check if sequences exist at all ──
+    # ── 1. Instruction folder (the task refuses to start without one) ──
+    instr_dir = (cfg.get("instruction_dir") or "").strip()
+    if not instr_dir:
+        warnings.append(
+            "instruction_dir is not set - the experiment will refuse to start. "
+            "Pick an instruction folder (Advanced §9 or Quick Setup)."
+        )
+    else:
+        instr_path = Path(instr_dir)
+        if not instr_path.is_absolute():
+            instr_path = PROJECT_ROOT / instr_path
+        if not instr_path.is_dir():
+            warnings.append(
+                f"instruction_dir '{instr_dir}' does not exist - the experiment will refuse to start."
+            )
+        elif cfg.get("trigger_mode") == "lsl":
+            present = _instruction_folder_sections(instr_dir)
+            for screen in ("start_recording", "stop_recording"):
+                if screen not in present:
+                    f = instr_path / f"{screen}.txt"
+                    warnings.append(
+                        f"{f} is missing or empty - required with LSL triggers; "
+                        "the experiment will refuse to start."
+                    )
+
+    # ── 2. Check if sequences exist at all ──
     if not seq_dir.is_dir():
         warnings.append("No sequences/ directory found — generate sequences first.")
         return warnings

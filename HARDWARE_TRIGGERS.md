@@ -56,9 +56,11 @@ Some guides recommend `string` for human readability. We keep `int32` because:
 - It avoids string↔int conversion in analysis scripts.
 
 ### LSL Best Practices
-1. **Create the outlet BEFORE starting LabRecorder.** The stream must exist when you click "Start Recording." Our code creates the `StreamOutlet` right after the dialog/window opens, well before any trial events.
-2. **Keep the outlet alive for the entire experiment.** The `TriggerManager` holds the outlet as an instance attribute from creation until `close()` is called.
-3. **Stop LabRecorder before the stream dies.** After the final reward screen, a **stop-recording screen** appears that holds the experiment open. The experimenter must stop the recording in LabRecorder and then press **RETURN** to close the task. This prevents the LSL stream from vanishing while LabRecorder is still writing.
+1. **Launch the task first, then start LabRecorder.** The task creates the `StreamOutlet` right after the session dialog, so the stream only exists once the task is running. Fill in the session dialog; the **start-recording screen** then appears (the outlet already exists). Now start LabRecorder, press **Update**, make sure `LaserTask_Triggers` is selected, and click **Start Recording**.
+2. **Press RETURN on the start-recording screen once recording is running.** That keypress sends `exp_start` and begins the experiment; every trigger from here on is captured.
+3. **Keep the outlet alive for the entire experiment.** The `TriggerManager` holds the outlet as an instance attribute from creation until `close()` is called.
+4. **Stop LabRecorder before the stream dies.** After the final reward screen, a **stop-recording screen** appears that holds the experiment open. The experimenter must stop the recording in LabRecorder and then press **RETURN** to close the task. This prevents the LSL stream from vanishing while LabRecorder is still writing.
+5. **A failed outlet creation aborts the task.** If the LSL outlet cannot be created (e.g. pylsl missing or multicast blocked), the task raises a `RuntimeError` instead of silently falling back to dummy triggers — check the network/firewall settings listed under Troubleshooting.
 
 ---
 
@@ -81,6 +83,8 @@ if size_trig_val:
     win.callOnFlip(trig.send, size_trig_val)
 if do_send:
     win.callOnFlip(trig.send, trig_val)
+if tone_trig:
+    win.callOnFlip(trig.send, tone_trig)
 
 cur_frame += 1
 win.flip()   # all registered callbacks fire at the exact swap instant
@@ -100,8 +104,9 @@ On Linux/macOS, both playback and marker dispatch are queued on the same flip: `
 |--------------|-------------|------|
 | Laser hit/miss, key presses, shield size | `win.callOnFlip(trig.send, code)` | `experiment.py` |
 | Tone standard/deviant | `win.callOnFlip(trig.send, code)` / `win.callOnFlip(tone.play)` | `audio.py` + `experiment.py` |
-| Block/experiment start/end | Immediate (not frame-synced, events are long-duration) | `experiment.py` |
+| Block/experiment start/end | Immediate (not frame-synced, events are long-duration). With LSL, `exp_start` is only sent after the experimenter presses RETURN on the start-recording screen | `experiment.py` |
 | `last_frame` | Immediate (no subsequent flip to sync to) | `experiment.py` |
+
 ---
 
 ## 5. Customizing Event Marker Codes
@@ -132,14 +137,18 @@ TRIGGER_CODES: Dict[str, int] = {
 
 Typical session flow for the experimenter:
 
-1. **Start LabRecorder** and verify the `LaserTask_Triggers` stream is visible.
-2. **Click "Start Recording"** in LabRecorder.
-3. **Launch the experiment** (`python bootstrap.py` or `python laserTask/experiment.py`).
-4. The participant completes the task. The `exp_start`, block, and trial triggers are recorded automatically.
-5. After the final reward screen, a **stop-recording screen** appears:
-   > "Experimenter: Please stop the recording in LabRecorder now. Press RETURN to close the experiment once recording is stopped."
-6. **Click "Stop Recording"** in LabRecorder.
-7. **Press RETURN** to close the experiment and release the LSL outlet.
+1. **Launch the experiment** (`python bootstrap.py` or `python laserTask/experiment.py`) and fill in the session dialog. The LSL outlet is created as soon as the task starts.
+2. The **start-recording screen** appears (the outlet already exists):
+   > "Please START the recording in LabRecorder now (check that the LaserTask_Triggers stream is selected). Once recording is running, press ENTER to begin the experiment."
+3. **Start LabRecorder**, press **Update**, make sure the `LaserTask_Triggers` stream is selected, and **click "Start Recording"**.
+4. **Press RETURN** on the start-recording screen. `exp_start` is sent and the experiment begins; the block and trial triggers are recorded automatically.
+5. The participant completes the task.
+6. After the final reward screen, a **stop-recording screen** appears:
+   > "Please STOP the recording in LabRecorder now. Once recording has stopped, press ENTER to finish."
+7. **Click "Stop Recording"** in LabRecorder.
+8. **Press RETURN** to close the experiment and release the LSL outlet.
+
+In non-LSL modes nothing changes: no start-recording screen is shown and `exp_start` is sent where the task reaches that point.
 
 ---
 

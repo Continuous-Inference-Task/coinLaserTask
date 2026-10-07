@@ -20,6 +20,6 @@ A yellow and a blue source.
 
 The difference between these sources is how often they change their emission angle over time, and therefore how often you will have to adjust your shield position. One of the sources will change its main angle of attack more often, whereas the other will remain stable for longer.
 
-This game has {n_main_blocks} blocks. You will encounter each source once.
+This game has {n_main_blocks} {blocks_word}. You will encounter each source once.
 
 {continue_prompt}
